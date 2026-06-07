@@ -2,14 +2,14 @@ import type { UserRole } from '../store/useAuthStore';
 import { apiRequest } from './apiClient';
 
 export enum BackendRole {
-  Admin = 0,
-  Manager = 1,
-  Staff = 2,
-  Driver = 3,
+  Admin = 1,
+  Dispatcher = 2,
+  Sales = 3,
+  Customer = 4,
+  Driver = 5,
 }
 
-// Backend currently has no Customer role; RegisterRequest defaults to Staff.
-export const DEFAULT_REGISTER_ROLE = BackendRole.Staff;
+export const DEFAULT_REGISTER_ROLE = BackendRole.Customer;
 
 export type RegisterPayload = {
   fullName: string;
@@ -26,9 +26,12 @@ export type LoginPayload = {
 
 export type AuthUserDto = {
   userId: string;
+  customerId?: string | null;
+  username?: string | null;
   fullName: string;
-  email: string;
-  role: BackendRole | number | string;
+  email?: string | null;
+  role?: BackendRole | number | string | null;
+  status?: string | null;
   accessToken: string;
   refreshToken: string;
   accessTokenExpiresAt: string;
@@ -102,20 +105,29 @@ export function deleteUser(accessToken: string, userId: string) {
 }
 
 export function mapBackendRoleToAppRole(role: AuthUserDto['role']): UserRole {
-  if (
-    role === BackendRole.Driver ||
-    Number(role) === BackendRole.Driver ||
-    role === 'Driver' ||
-    role === 'DRIVER'
-  ) {
+  return getMobileRoleFromBackend(role) ?? 'CUSTOMER';
+}
+
+export function getMobileRoleFromBackend(role: AuthUserDto['role']): UserRole | null {
+  const normalizedRole = normalizeBackendRole(role);
+
+  if (normalizedRole === 'DRIVER' || normalizedRole === String(BackendRole.Driver)) {
     return 'DRIVER';
   }
 
-  return 'CUSTOMER';
+  if (normalizedRole === 'CUSTOMER' || normalizedRole === String(BackendRole.Customer)) {
+    return 'CUSTOMER';
+  }
+
+  return null;
 }
 
 function getAuthHeaders(accessToken: string) {
   return {
     Authorization: `Bearer ${accessToken}`,
   };
+}
+
+function normalizeBackendRole(role: AuthUserDto['role']) {
+  return String(role ?? '').trim().toUpperCase();
 }

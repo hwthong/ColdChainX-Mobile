@@ -90,16 +90,19 @@ export const useAuthStore = create<AuthState>()(
             throw new Error('Refresh response is missing accessToken.');
           }
 
+          const appRole = mapBackendRoleToAppRole(authData.role);
+          const currentUser = get().user;
+
           set({
             token: authData.accessToken,
             refreshToken: authData.refreshToken,
             accessTokenExpiresAt: authData.accessTokenExpiresAt,
-            role: mapBackendRoleToAppRole(authData.role),
+            role: appRole,
             user: {
               userId: authData.userId,
               fullName: authData.fullName,
-              email: authData.email,
-              backendRole: authData.role,
+              email: authData.email ?? currentUser?.email ?? '',
+              backendRole: authData.role ?? appRole,
             },
           });
 

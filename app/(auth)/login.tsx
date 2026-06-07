@@ -1,18 +1,37 @@
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
-import { Pressable, Text, TextInput, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { AuthBackground } from '../../components/AuthBackground';
 import { ApiClientError, getApiErrorMessage } from '../../services/apiClient';
-import { login as loginApi, mapBackendRoleToAppRole } from '../../services/authApi';
-import { useAuthStore } from '../../store/useAuthStore';
+import {
+  getMobileRoleFromBackend,
+  login as loginApi,
+  logout as logoutApi,
+} from '../../services/authApi';
+import { useAuthStore, type UserRole } from '../../store/useAuthStore';
 
 const LOGIN_CREDENTIALS_ERROR = 'Email hoặc mật khẩu sai.';
+const LOGIN_ROLE_MISMATCH_ERROR = 'Vai trò đã chọn không khớp với tài khoản.';
+const UNSUPPORTED_MOBILE_ROLE_ERROR = 'Tài khoản này không hỗ trợ đăng nhập trên mobile.';
+const LOGIN_ROLE_OPTIONS: { label: string; value: UserRole }[] = [
+  { label: 'User', value: 'CUSTOMER' },
+  { label: 'Driver', value: 'DRIVER' },
+];
 
 export default function LoginScreen() {
   const router = useRouter();
   const saveAuth = useAuthStore((state) => state.login);
+  const [selectedRole, setSelectedRole] = useState<UserRole>('CUSTOMER');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -42,16 +61,27 @@ export default function LoginScreen() {
         throw new Error('Phản hồi đăng nhập thiếu accessToken.');
       }
 
+      const appRole = getMobileRoleFromBackend(authData.role);
+      if (!appRole) {
+        await revokeIssuedToken(authData.accessToken);
+        throw new Error(UNSUPPORTED_MOBILE_ROLE_ERROR);
+      }
+
+      if (appRole !== selectedRole) {
+        await revokeIssuedToken(authData.accessToken);
+        throw new Error(LOGIN_ROLE_MISMATCH_ERROR);
+      }
+
       saveAuth({
         token: authData.accessToken,
         refreshToken: authData.refreshToken,
         accessTokenExpiresAt: authData.accessTokenExpiresAt,
-        role: mapBackendRoleToAppRole(authData.role),
+        role: appRole,
         user: {
           userId: authData.userId,
           fullName: authData.fullName,
-          email: authData.email,
-          backendRole: authData.role,
+          email: authData.email ?? email.trim(),
+          backendRole: authData.role ?? appRole,
         },
       });
     } catch (error) {
@@ -63,112 +93,174 @@ export default function LoginScreen() {
 
   return (
     <AuthBackground>
-      <View className="flex-1 justify-end items-center px-5 pt-10 pb-12">
-        <View className="items-center mb-12">
-          <Ionicons
-            name="snow"
-            size={53}
-            color="#FFFFFF"
-            style={{
-              marginBottom: 8,
-              shadowColor: '#000000',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.12,
-              shadowRadius: 4,
-            }}
-          />
-          <Text
-            className="text-white text-base leading-6 font-normal"
-            style={{
-              shadowColor: '#000000',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.12,
-              shadowRadius: 4,
-            }}
-          >
-            ColdChainX
-          </Text>
-        </View>
-
-        <View className="w-full max-w-[350px] h-[392px] gap-3">
-          {errorMessage ? (
-            <Text className="absolute -top-10 left-0 right-0 text-center text-sm leading-5 text-red-200">
-              {errorMessage}
-            </Text>
-          ) : null}
-
-          <View className="w-full h-14 flex-row items-center bg-[#F8F9FA] rounded-xl px-4 shadow-sm">
-            <Ionicons name="mail-outline" size={22} color="#877369" />
-            <TextInput
-              autoCapitalize="none"
-              keyboardType="email-address"
-              placeholder="Email"
-              placeholderTextColor="#877369"
-              value={email}
-              onChangeText={setEmail}
-              className="flex-1 ml-3 text-[#877369] text-base leading-[19px]"
-            />
-          </View>
-
-          <View className="w-full h-14 flex-row items-center bg-[#F8F9FA] rounded-xl px-4 shadow-sm">
-            <Ionicons name="lock-closed-outline" size={22} color="#877369" />
-            <TextInput
-              placeholder="Mật khẩu"
-              placeholderTextColor="#877369"
-              secureTextEntry
-              value={password}
-              onChangeText={setPassword}
-              className="flex-1 ml-3 text-[#877369] text-base leading-[19px]"
-            />
-          </View>
-
-          <View className="w-full h-20 pt-6">
-            <Pressable
-              accessibilityRole="button"
-              onPress={handleLogin}
-              disabled={isLoading}
-              className={[
-                'w-full h-14 rounded-xl justify-center items-center bg-[#75FF68] shadow-xl',
-                isLoading ? 'opacity-70' : '',
-              ].join(' ')}
-            >
-              <Text className="uppercase text-[#002201] text-base leading-6 font-normal">
-                {isLoading ? 'ĐANG ĐĂNG NHẬP...' : 'ĐĂNG NHẬP'}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        className="flex-1"
+      >
+        <ScrollView
+          className="flex-1"
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{
+            flexGrow: 1,
+            justifyContent: 'flex-end',
+            alignItems: 'center',
+            paddingHorizontal: 20,
+            paddingTop: 88,
+            paddingBottom: 32,
+          }}
+        >
+          <View className="w-full max-w-[350px] pb-3">
+            <View className="items-center mb-12">
+              <Ionicons
+                name="snow"
+                size={53}
+                color="#FFFFFF"
+                style={{
+                  marginBottom: 8,
+                  shadowColor: '#000000',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.12,
+                  shadowRadius: 4,
+                }}
+              />
+              <Text
+                className="text-white text-base leading-6 font-normal"
+                style={{
+                  shadowColor: '#000000',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.12,
+                  shadowRadius: 4,
+                }}
+              >
+                ColdChainX
               </Text>
-            </Pressable>
-          </View>
+            </View>
 
-          <View className="w-full h-12 pt-6 items-center">
-            <Pressable accessibilityRole="link">
-              <Text className="text-[#F8F9FA]/70 text-base leading-6 font-normal">
-                Quên mật khẩu?
-              </Text>
-            </Pressable>
-          </View>
-
-          <View className="w-full h-[104px] pt-4">
-            <View className="w-full h-[88px] items-center">
-              <View className="pb-2">
-                <Text className="text-[#F8F9FA]/50 text-base leading-6 font-normal">
-                  Chưa có tài khoản?
+            <View className="w-full gap-3">
+              {errorMessage ? (
+                <Text className="min-h-5 text-center text-sm leading-5 text-red-200">
+                  {errorMessage}
                 </Text>
+              ) : (
+                <View className="h-5" />
+              )}
+
+              <View className="h-11 w-full flex-row rounded-xl border border-white/20 bg-white/10 p-1">
+                {LOGIN_ROLE_OPTIONS.map((option) => {
+                  const isSelected = selectedRole === option.value;
+
+                  return (
+                    <Pressable
+                      key={option.value}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: isSelected }}
+                      onPress={() => setSelectedRole(option.value)}
+                      className={[
+                        'h-full flex-1 items-center justify-center rounded-lg',
+                        isSelected ? 'bg-[#75FF68]' : '',
+                      ].join(' ')}
+                    >
+                      <Text
+                        className={[
+                          'text-sm font-semibold',
+                          isSelected ? 'text-[#002201]' : 'text-white/75',
+                        ].join(' ')}
+                      >
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
               </View>
 
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => router.push('/(auth)/register')}
-                className="w-full h-14 rounded-xl border-2 border-[#75FF68] justify-center items-center"
-              >
-                <Text className="uppercase text-white text-base leading-6 font-normal">
-                  ĐĂNG KÝ
-                </Text>
-              </Pressable>
+              <View className="w-full h-14 flex-row items-center bg-[#F8F9FA] rounded-xl px-4 shadow-sm">
+                <Ionicons name="mail-outline" size={22} color="#877369" />
+                <TextInput
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  placeholder="Email"
+                  placeholderTextColor="#877369"
+                  returnKeyType="next"
+                  value={email}
+                  onChangeText={setEmail}
+                  className="flex-1 ml-3 text-[#877369] text-base leading-[19px]"
+                />
+              </View>
+
+              <View className="w-full h-14 flex-row items-center bg-[#F8F9FA] rounded-xl px-4 shadow-sm">
+                <Ionicons name="lock-closed-outline" size={22} color="#877369" />
+                <TextInput
+                  placeholder="Mật khẩu"
+                  placeholderTextColor="#877369"
+                  returnKeyType="done"
+                  secureTextEntry
+                  value={password}
+                  onChangeText={setPassword}
+                  onSubmitEditing={handleLogin}
+                  className="flex-1 ml-3 text-[#877369] text-base leading-[19px]"
+                />
+              </View>
+
+              <View className="w-full pt-6">
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={handleLogin}
+                  disabled={isLoading}
+                  className={[
+                    'w-full h-14 rounded-xl justify-center items-center bg-[#75FF68] shadow-xl',
+                    isLoading ? 'opacity-70' : '',
+                  ].join(' ')}
+                >
+                  <Text className="uppercase text-[#002201] text-base leading-6 font-normal">
+                    {isLoading ? 'ĐANG ĐĂNG NHẬP...' : 'ĐĂNG NHẬP'}
+                  </Text>
+                </Pressable>
+              </View>
+
+              <View className="w-full pt-6 items-center">
+                <Pressable accessibilityRole="link">
+                  <Text className="text-[#F8F9FA]/70 text-base leading-6 font-normal">
+                    Quên mật khẩu?
+                  </Text>
+                </Pressable>
+              </View>
+
+              <View className="w-full pt-4">
+                <View className="w-full items-center">
+                  <View className="pb-2">
+                    <Text className="text-[#F8F9FA]/50 text-base leading-6 font-normal">
+                      Chưa có tài khoản?
+                    </Text>
+                  </View>
+
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => router.push('/(auth)/register')}
+                    className="w-full h-14 rounded-xl border-2 border-[#75FF68] justify-center items-center"
+                  >
+                    <Text className="uppercase text-white text-base leading-6 font-normal">
+                      ĐĂNG KÝ
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
             </View>
           </View>
-        </View>
-      </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </AuthBackground>
   );
+}
+
+async function revokeIssuedToken(accessToken: string) {
+  try {
+    await logoutApi(accessToken);
+  } catch (error) {
+    console.error('[login] Failed to revoke token after role check failed', {
+      message: getApiErrorMessage(error),
+    });
+  }
 }
 
 function getLoginErrorMessage(error: unknown) {
