@@ -4,9 +4,11 @@ import { Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { AuthBackground } from '../../components/AuthBackground';
-import { getApiErrorMessage } from '../../services/apiClient';
+import { ApiClientError, getApiErrorMessage } from '../../services/apiClient';
 import { login as loginApi, mapBackendRoleToAppRole } from '../../services/authApi';
 import { useAuthStore } from '../../store/useAuthStore';
+
+const LOGIN_CREDENTIALS_ERROR = 'Email hoặc mật khẩu sai.';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -32,7 +34,7 @@ export default function LoginScreen() {
       });
 
       if (!response.success) {
-        throw new Error(response.message ?? 'Đăng nhập thất bại.');
+        throw new Error(LOGIN_CREDENTIALS_ERROR);
       }
 
       const authData = response.data;
@@ -53,7 +55,7 @@ export default function LoginScreen() {
         },
       });
     } catch (error) {
-      setErrorMessage(getApiErrorMessage(error));
+      setErrorMessage(getLoginErrorMessage(error));
     } finally {
       setIsLoading(false);
     }
@@ -167,4 +169,16 @@ export default function LoginScreen() {
       </View>
     </AuthBackground>
   );
+}
+
+function getLoginErrorMessage(error: unknown) {
+  if (error instanceof ApiClientError && (error.status === 400 || error.status === 401)) {
+    return LOGIN_CREDENTIALS_ERROR;
+  }
+
+  if (error instanceof Error && error.message === LOGIN_CREDENTIALS_ERROR) {
+    return LOGIN_CREDENTIALS_ERROR;
+  }
+
+  return getApiErrorMessage(error);
 }
