@@ -5,47 +5,134 @@ import {
   TextInput,
   Pressable,
   ScrollView,
-  Modal,
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { GoodsType, GoodsTypeSelector } from '../../components/GoodsTypeSelector';
-import { TemperatureSelector } from '../../components/TemperatureSelector';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 
-interface Quote {
-  id: string;
-  price: string;
-}
+import { GoodsType, GoodsTypeSelector } from '../../components/GoodsTypeSelector';
+import { TemperatureSelector } from '../../components/TemperatureSelector';
+import { createOrder } from '../../services/orderApi';
+import { useAuthStore } from '../../store/useAuthStore';
+import { getApiErrorMessage } from '../../services/apiClient';
 
 export default function CreateOrderScreen() {
   const router = useRouter();
+  const accessToken = useAuthStore((state) => state.token);
+
+  // Form State
   const [goodsType, setGoodsType] = useState<GoodsType>('Pharma');
   const [temperature, setTemperature] = useState<number>(-18);
-  const [pickupAddress, setPickupAddress] = useState('Kho lạnh Mega Hub, Bình Dương');
-  const [deliveryAddress, setDeliveryAddress] = useState('Bệnh viện Chợ Rẫy, Q5, TP.HCM');
-  const [quotePopup, setQuotePopup] = useState<Quote | null>(null);
+  const [pickupAddress, setPickupAddress] = useState(''); // Not used by backend yet, but keep for UI completeness
+  const [deliveryAddress, setDeliveryAddress] = useState('');
+  
+  // New backend fields
+  const [itemName, setItemName] = useState('');
+  const [expectedWeightKg, setExpectedWeightKg] = useState('');
+  const [quantity, setQuantity] = useState('1');
+  const [packagingType, setPackagingType] = useState('Thùng Carton');
+  const [lengthCm, setLengthCm] = useState('');
+  const [widthCm, setWidthCm] = useState('');
+  const [heightCm, setHeightCm] = useState('');
+  
+  // Image State
+  const [imageUri, setImageUri] = useState<string | null>(null);
 
-  const handleSubmit = () => {
-    if (!pickupAddress.trim() || !deliveryAddress.trim()) {
-      Alert.alert('Lỗi', 'Vui lòng nhập đầy đủ điểm lấy hàng và điểm giao hàng.');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const pickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 0.8,
+    });
+
+    if (!result.canceled) {
+      setImageUri(result.assets[0].uri);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (
+      !deliveryAddress.trim() ||
+      !itemName.trim() ||
+      !expectedWeightKg.trim() ||
+      !quantity.trim() ||
+      !lengthCm.trim() ||
+      !widthCm.trim() ||
+      !heightCm.trim() ||
+      !imageUri
+    ) {
+      Alert.alert('Lỗi', 'Vui lòng nhập đầy đủ thông tin bắt buộc và đính kèm hình ảnh.');
+      return;
+    }
+
+    if (!accessToken) {
+      Alert.alert('Lỗi', 'Bạn chưa đăng nhập.');
       return;
     }
     
-    // Show Quote Popup
-    setQuotePopup({
-      id: 'ORD-' + Math.floor(Math.random() * 10000),
-      price: '2,450,000 VND',
-    });
+    setIsLoading(true);
+    try {
+      const response = await createOrder(accessToken, {
+        ItemName: itemName.trim(),
+        Category: goodsType,
+        TempCondition: temperature,
+        ExpectedWeightKg: parseFloat(expectedWeightKg),
+        Quantity: parseInt(quantity, 10),
+        PackagingType: packagingType,
+        LengthCm: parseFloat(lengthCm),
+        WidthCm: parseFloat(widthCm),
+        HeightCm: parseFloat(heightCm),
+        DestAddressText: deliveryAddress.trim(),
+        DocumentImageUri: imageUri,
+      });
+
+      if (!response.success) {
+        throw new Error(response.message || 'Tạo đơn thất bại.');
+      }
+
+      Alert.alert('Thành công', `Tạo đơn thành công!\nMã vận đơn: ${response.data?.trackingCode}`, [
+        { text: 'OK', onPress: () => router.replace('/(customer)/status') }
+      ]);
+    } catch (error) {
+      Alert.alert('Lỗi', getApiErrorMessage(error));
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleAcceptQuote = () => {
-    setQuotePopup(null);
-    // Navigate to status tab
-    router.replace('/(customer)/status');
-  };
+  const renderInput = (
+    icon: keyof typeof Ionicons.glyphMap,
+    iconColor: string,
+    placeholder: string,
+    value: string,
+    onChangeText: (t: string) => void,
+    keyboardType: 'default' | 'numeric' = 'default'
+  ) => (
+    <View className="w-full flex-row items-center pr-2 bg-[#F8F9FA] border border-[#DAC2B6]/60 rounded-[14px] h-[52px]">
+      <View className="w-12 h-[52px] items-center justify-center">
+        <View className={`w-5 h-5 rounded-full items-center justify-center shadow-md border-2 border-white`} style={{ backgroundColor: iconColor }}>
+          <View className="w-1.5 h-1.5 bg-white rounded-full" />
+        </View>
+      </View>
+      <TextInput
+        className="flex-1 h-[52px] text-[#3A1F04] font-medium text-[13px]"
+        placeholder={placeholder}
+        placeholderTextColor="#877369"
+        value={value}
+        onChangeText={onChangeText}
+        keyboardType={keyboardType}
+      />
+      <View className="p-2 flex-row items-center gap-1.5 bg-white border border-[#DAC2B6]/60 rounded-xl shadow-sm">
+        <Ionicons name={icon} size={16} color={iconColor} />
+      </View>
+    </View>
+  );
 
   return (
     <KeyboardAvoidingView
@@ -57,12 +144,10 @@ export default function CreateOrderScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 120 }}
       >
-        {/* Map Header Section - Heritage Style */}
+        {/* Map Header Section */}
         <View className="h-[210px] w-full bg-[#EAE6E1] relative overflow-hidden border-b border-[#DAC2B6]/60">
-          {/* Mock Map Background */}
           <View className="absolute inset-0 opacity-10 bg-[#8B4513]" />
 
-          {/* Pick Up Pin */}
           <View className="absolute left-[90px] top-[90px] flex-col items-center -ml-5 -mt-10">
             <View className="w-10 h-10 rounded-full bg-white shadow-sm items-center justify-center border-2 border-[#8B4513] mb-1.5 overflow-hidden">
               <View className="absolute inset-0 bg-[#8B4513]/5" />
@@ -71,7 +156,6 @@ export default function CreateOrderScreen() {
             <View className="w-2 h-2 bg-[#8B4513] border-2 border-white rounded-full shadow-sm" />
           </View>
 
-          {/* Drop Off Pin */}
           <View className="absolute left-[310px] top-[140px] flex-col items-center -ml-5 -mt-10">
             <View className="w-10 h-10 rounded-full bg-[#006E0A] shadow-sm items-center justify-center border-2 border-white mb-1.5">
               <Ionicons name="location-sharp" size={20} color="white" />
@@ -81,47 +165,47 @@ export default function CreateOrderScreen() {
         </View>
 
         <View className="px-5 -mt-10 relative z-20 gap-5">
-          {/* Locations Input */}
+          
+          {/* Journey Info */}
           <View className="bg-white rounded-2xl p-6 shadow-sm border border-[#DAC2B6]/50 gap-4">
             <Text className="text-[#8B4513] font-bold text-base mb-1">Thông Tin Hành Trình</Text>
+            {renderInput('locate', '#8B4513', 'Nhập điểm lấy hàng...', pickupAddress, setPickupAddress)}
+            {renderInput('locate', '#006E0A', 'Nhập điểm giao hàng (Bắt buộc)...', deliveryAddress, setDeliveryAddress)}
+          </View>
 
-            {/* Pick Up Input */}
-            <View className="w-full flex-row items-center pr-2 bg-[#F8F9FA] border border-[#DAC2B6]/60 rounded-[14px] mb-4 h-[52px]">
-              <View className="w-12 h-[52px] items-center justify-center">
-                <View className="w-5 h-5 bg-[#8B4513] rounded-full items-center justify-center shadow-md border-2 border-white">
-                  <View className="w-1.5 h-1.5 bg-white rounded-full" />
-                </View>
-              </View>
-              <TextInput
-                className="flex-1 h-[52px] text-[#3A1F04] font-medium text-[13px]"
-                placeholder="Nhập điểm lấy hàng..."
-                placeholderTextColor="#877369"
-                value={pickupAddress}
-                onChangeText={setPickupAddress}
-              />
-              <Pressable className="p-2 flex-row items-center gap-1.5 bg-white border border-[#DAC2B6]/60 rounded-xl shadow-sm">
-                <Ionicons name="locate" size={16} color="#8B4513" />
-              </Pressable>
+          {/* Cargo Info */}
+          <View className="bg-white rounded-2xl p-6 shadow-sm border border-[#DAC2B6]/50 gap-4">
+            <Text className="text-[#8B4513] font-bold text-base mb-1">Thông Tin Hàng Hóa</Text>
+            
+            {renderInput('cube', '#8B4513', 'Tên hàng hóa...', itemName, setItemName)}
+            
+            <View className="flex-row gap-3">
+              <View className="flex-1">{renderInput('scale', '#8B4513', 'Nặng (KG)', expectedWeightKg, setExpectedWeightKg, 'numeric')}</View>
+              <View className="flex-1">{renderInput('apps', '#8B4513', 'Số lượng', quantity, setQuantity, 'numeric')}</View>
             </View>
 
-            {/* Drop Off Input */}
-            <View className="w-full flex-row items-center pr-2 bg-[#F8F9FA] border border-[#DAC2B6]/60 rounded-[14px] h-[52px]">
-              <View className="w-12 h-[52px] items-center justify-center">
-                <View className="w-5 h-5 bg-[#006E0A] rounded-full items-center justify-center shadow-md border-2 border-white">
-                  <View className="w-1.5 h-1.5 bg-white rounded-full" />
-                </View>
-              </View>
-              <TextInput
-                className="flex-1 h-[52px] text-[#3A1F04] font-medium text-[13px]"
-                placeholder="Nhập điểm giao hàng..."
-                placeholderTextColor="#877369"
-                value={deliveryAddress}
-                onChangeText={setDeliveryAddress}
-              />
-              <Pressable className="p-2 flex-row items-center gap-1.5 bg-white border border-[#DAC2B6]/60 rounded-xl shadow-sm">
-                <Ionicons name="locate" size={16} color="#006E0A" />
-              </Pressable>
+            <View className="flex-row gap-3">
+              <View className="flex-1">{renderInput('resize', '#8B4513', 'Dài (cm)', lengthCm, setLengthCm, 'numeric')}</View>
+              <View className="flex-1">{renderInput('resize', '#8B4513', 'Rộng (cm)', widthCm, setWidthCm, 'numeric')}</View>
+              <View className="flex-1">{renderInput('resize', '#8B4513', 'Cao (cm)', heightCm, setHeightCm, 'numeric')}</View>
             </View>
+
+            {renderInput('briefcase', '#8B4513', 'Loại bao bì (vd: Thùng Carton)', packagingType, setPackagingType)}
+
+            {/* Image Picker */}
+            <Pressable
+              onPress={pickImage}
+              className="mt-2 w-full h-[120px] rounded-[14px] border-2 border-dashed border-[#DAC2B6]/60 bg-[#F8F9FA] items-center justify-center overflow-hidden"
+            >
+              {imageUri ? (
+                <Image source={{ uri: imageUri }} className="w-full h-full" resizeMode="cover" />
+              ) : (
+                <View className="items-center">
+                  <Ionicons name="camera-outline" size={32} color="#8B4513" />
+                  <Text className="text-[#877369] font-medium text-[13px] mt-2">Chụp hoặc tải ảnh kiện hàng</Text>
+                </View>
+              )}
+            </Pressable>
           </View>
 
           {/* Goods Type Selection */}
@@ -140,61 +224,16 @@ export default function CreateOrderScreen() {
 
       {/* Fixed Bottom Action */}
       <View className="absolute bottom-0 inset-x-0 h-32 flex justify-end pb-8 px-5 z-30 pointer-events-none">
-        {/* Fake gradient background using an overlay view with opacity could be used here, but keeping it simple */}
         <Pressable
           onPress={handleSubmit}
-          className="w-full h-14 bg-[#8B4513] rounded-[16px] items-center justify-center shadow-md pointer-events-auto active:opacity-80"
+          disabled={isLoading}
+          className={`w-full h-14 bg-[#8B4513] rounded-[16px] items-center justify-center shadow-md pointer-events-auto active:opacity-80 ${isLoading ? 'opacity-70' : ''}`}
         >
           <Text className="text-[#FFC29F] font-bold text-[18px] tracking-wide">
-            LÊN ĐƠN GIAO HÀNG
+            {isLoading ? 'ĐANG TẠO ĐƠN...' : 'LÊN ĐƠN GIAO HÀNG'}
           </Text>
         </Pressable>
       </View>
-
-      {/* Quote Popup Overlay */}
-      <Modal visible={!!quotePopup} transparent animationType="fade">
-        <View className="flex-1 bg-black/70 justify-center items-center p-6">
-          <View className="w-full bg-white rounded-3xl p-6 shadow-2xl border border-[#DAC2B6]/50">
-            <Pressable
-              onPress={() => setQuotePopup(null)}
-              className="absolute top-4 right-4 bg-gray-100 rounded-full p-1"
-            >
-              <Ionicons name="close" size={20} color="#666" />
-            </Pressable>
-
-            <View className="flex-row items-center gap-2 mt-2">
-              <View className="w-10 h-10 rounded-full bg-[#006E0A]/10 items-center justify-center">
-                <Ionicons name="checkmark-circle" size={24} color="#006E0A" />
-              </View>
-              <Text className="text-[#191C1D] font-bold text-xl">Đã xác nhận</Text>
-            </View>
-
-            <Text className="text-[#877369] font-medium text-sm border-b border-gray-200 pb-4 mt-2">
-              Mã vận đơn:{' '}
-              <Text className="text-[#8B4513] font-bold">{quotePopup?.id}</Text>
-            </Text>
-
-            <View className="bg-[#F8F9FA] rounded-[20px] p-5 border border-[#DAC2B6]/30 items-center my-4">
-              <Text className="text-[#54433A] text-xs font-semibold uppercase tracking-wider mb-2">
-                Tổng chi phí dự kiến
-              </Text>
-              <Text className="text-3xl font-bold text-[#8B4513] mb-1">
-                {quotePopup?.price}
-              </Text>
-              <Text className="text-[#877369] text-[10px] italic">
-                * Đã bao gồm phí giám sát nhiệt độ 24/7
-              </Text>
-            </View>
-
-            <Pressable
-              onPress={handleAcceptQuote}
-              className="w-full h-14 bg-[#006E0A] rounded-xl items-center justify-center active:opacity-80"
-            >
-              <Text className="text-white font-bold text-lg">CHUYỂN SANG ĐANG GIAO</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
     </KeyboardAvoidingView>
   );
 }

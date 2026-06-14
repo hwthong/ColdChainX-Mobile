@@ -13,6 +13,7 @@ export type UserRole = 'DRIVER' | 'CUSTOMER';
 
 export type AuthUser = {
   userId: string;
+  customerId?: string | null;
   fullName: string;
   email: string;
   backendRole: number | string;
@@ -100,6 +101,7 @@ export const useAuthStore = create<AuthState>()(
             role: appRole,
             user: {
               userId: authData.userId,
+              customerId: authData.customerId,
               fullName: authData.fullName,
               email: authData.email ?? currentUser?.email ?? '',
               backendRole: authData.role ?? appRole,
