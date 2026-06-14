@@ -61,6 +61,8 @@ export default function LoginScreen() {
         throw new Error('Phản hồi đăng nhập thiếu accessToken.');
       }
 
+      console.log('JWT Token:', authData.accessToken);
+
       const appRole = getMobileRoleFromBackend(authData.role);
       if (!appRole) {
         await revokeIssuedToken(authData.accessToken);

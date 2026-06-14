@@ -19,6 +19,18 @@ export type RegisterPayload = {
   role: BackendRole;
 };
 
+export interface CreateCustomerRequest {
+  username?: string;
+  fullName: string;
+  email: string;
+  password: string;
+  phone?: string;
+  companyName: string;
+  taxCode: string;
+  address?: string;
+  paymentTerm?: number;
+}
+
 export type LoginPayload = {
   email: string;
   password: string;
@@ -64,6 +76,24 @@ export function register(payload: RegisterPayload) {
   return apiRequest<ApiResponse<AuthUserDto>>('/api/auth/register', {
     method: 'POST',
     body: payload,
+  });
+}
+
+export function registerCustomer(data: CreateCustomerRequest) {
+  const formData = new FormData();
+  if (data.username) formData.append('username', data.username);
+  formData.append('fullName', data.fullName);
+  formData.append('email', data.email);
+  formData.append('password', data.password);
+  if (data.phone) formData.append('phone', data.phone);
+  formData.append('companyName', data.companyName);
+  formData.append('taxCode', data.taxCode);
+  if (data.address) formData.append('address', data.address);
+  if (data.paymentTerm !== undefined) formData.append('paymentTerm', String(data.paymentTerm));
+
+  return apiRequest<ApiResponse<AuthUserDto>>('/api/auth/create-customer', {
+    method: 'POST',
+    body: formData,
   });
 }
 

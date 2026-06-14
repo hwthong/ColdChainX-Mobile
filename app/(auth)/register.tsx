@@ -8,34 +8,21 @@ import {
   Text,
   TextInput,
   View,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { AuthBackground } from '../../components/AuthBackground';
 import { getApiErrorMessage } from '../../services/apiClient';
-import {
-  BackendRole,
-  DEFAULT_REGISTER_ROLE,
-  getMobileRoleFromBackend,
-  mapBackendRoleToAppRole,
-  register as registerApi,
-} from '../../services/authApi';
-import { useAuthStore } from '../../store/useAuthStore';
-
-const REGISTER_ROLE_OPTIONS: { label: string; value: BackendRole.Customer | BackendRole.Driver }[] = [
-  { label: 'Customer', value: BackendRole.Customer },
-  { label: 'Driver', value: BackendRole.Driver },
-];
+import { registerCustomer } from '../../services/authApi';
 
 export default function RegisterScreen() {
   const router = useRouter();
-  const saveAuth = useAuthStore((state) => state.login);
-  const [selectedRole, setSelectedRole] = useState<BackendRole.Customer | BackendRole.Driver>(
-    DEFAULT_REGISTER_ROLE
-  );
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [fullName, setFullName] = useState('');
+  const [companyName, setCompanyName] = useState('');
+  const [taxCode, setTaxCode] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -50,46 +37,29 @@ export default function RegisterScreen() {
       return;
     }
 
-    if (!fullName.trim() || !email.trim() || !password) {
-      setErrorMessage('Vui lòng nhập tên, email và mật khẩu.');
+    if (!fullName.trim() || !companyName.trim() || !taxCode.trim() || !email.trim() || !password) {
+      setErrorMessage('Vui lòng điền đầy đủ tên, công ty, mã số thuế, email và mật khẩu.');
       return;
     }
 
     setIsLoading(true);
     try {
-      const response = await registerApi({
+      const response = await registerCustomer({
         fullName: fullName.trim(),
-        phoneNumber: phoneNumber.trim() || null,
         email: email.trim(),
         password,
-        role: selectedRole,
+        phone: phoneNumber.trim() || undefined,
+        companyName: companyName.trim(),
+        taxCode: taxCode.trim(),
       });
 
       if (!response.success) {
         throw new Error(response.message ?? 'Đăng ký thất bại.');
       }
 
-      const authData = response.data;
-      if (authData?.accessToken) {
-        const appRole =
-          getMobileRoleFromBackend(authData.role) ?? mapBackendRoleToAppRole(selectedRole);
-
-        saveAuth({
-          token: authData.accessToken,
-          refreshToken: authData.refreshToken,
-          accessTokenExpiresAt: authData.accessTokenExpiresAt,
-          role: appRole,
-          user: {
-            userId: authData.userId,
-            fullName: authData.fullName,
-            email: authData.email ?? email.trim(),
-            backendRole: authData.role ?? selectedRole,
-          },
-        });
-        return;
-      }
-
-      router.replace('/(auth)/login');
+      Alert.alert('Thành công', 'Đăng ký tài khoản thành công', [
+        { text: 'OK', onPress: () => router.replace('/(auth)/login') }
+      ]);
     } catch (error) {
       setErrorMessage(getApiErrorMessage(error));
     } finally {
@@ -147,43 +117,43 @@ export default function RegisterScreen() {
             </View>
 
             <View className="w-full rounded-2xl bg-white/10 border border-white/10 p-6 shadow-xl gap-3">
-              <View className="h-11 w-full flex-row rounded-xl border border-white/20 bg-white/10 p-1">
-                {REGISTER_ROLE_OPTIONS.map((option) => {
-                  const isSelected = selectedRole === option.value;
-
-                  return (
-                    <Pressable
-                      key={option.value}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected: isSelected }}
-                      onPress={() => setSelectedRole(option.value)}
-                      className={[
-                        'h-full flex-1 items-center justify-center rounded-lg',
-                        isSelected ? 'bg-[#75FF68]' : '',
-                      ].join(' ')}
-                    >
-                      <Text
-                        className={[
-                          'text-sm font-semibold',
-                          isSelected ? 'text-[#002201]' : 'text-white/75',
-                        ].join(' ')}
-                      >
-                        {option.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-
               <View className="relative h-14 w-full justify-center">
                 <View className="h-14 w-full flex-row items-center rounded-xl bg-[#F8F9FA] px-3 shadow-sm">
                   <Ionicons name="person-outline" size={18} color="#877369" className="mr-3" />
                   <TextInput
-                    placeholder="Tên đầy đủ / Doanh nghiệp"
+                    placeholder="Tên người đại diện"
                     placeholderTextColor="#877369"
                     returnKeyType="next"
                     value={fullName}
                     onChangeText={setFullName}
+                    className="flex-1 text-[#877369] text-base leading-[19px]"
+                  />
+                </View>
+              </View>
+
+              <View className="relative h-14 w-full justify-center">
+                <View className="h-14 w-full flex-row items-center rounded-xl bg-[#F8F9FA] px-3 shadow-sm">
+                  <Ionicons name="business-outline" size={18} color="#877369" className="mr-3" />
+                  <TextInput
+                    placeholder="Tên doanh nghiệp"
+                    placeholderTextColor="#877369"
+                    returnKeyType="next"
+                    value={companyName}
+                    onChangeText={setCompanyName}
+                    className="flex-1 text-[#877369] text-base leading-[19px]"
+                  />
+                </View>
+              </View>
+
+              <View className="relative h-14 w-full justify-center">
+                <View className="h-14 w-full flex-row items-center rounded-xl bg-[#F8F9FA] px-3 shadow-sm">
+                  <Ionicons name="card-outline" size={18} color="#877369" className="mr-3" />
+                  <TextInput
+                    placeholder="Mã số thuế"
+                    placeholderTextColor="#877369"
+                    returnKeyType="next"
+                    value={taxCode}
+                    onChangeText={setTaxCode}
                     className="flex-1 text-[#877369] text-base leading-[19px]"
                   />
                 </View>

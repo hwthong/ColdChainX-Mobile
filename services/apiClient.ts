@@ -27,28 +27,49 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   const finalRequestUrl = `${API_BASE_URL}${normalizedPath}`;
   const method = options.method ?? 'GET';
 
+  const isFormData = options.body instanceof FormData;
+  const requestHeaders: Record<string, string> = {
+    Accept: 'application/json',
+    ...options.headers,
+  };
+
+  if (!isFormData && !requestHeaders['Content-Type']) {
+    requestHeaders['Content-Type'] = 'application/json';
+  }
+
+  const requestBody = isFormData
+    ? (options.body as BodyInit)
+    : options.body === undefined
+      ? undefined
+      : JSON.stringify(options.body);
+
+  if (__DEV__) {
+    console.log('[apiClient] Request details:', {
+      baseUrl: API_BASE_URL,
+      endpoint: normalizedPath,
+      finalRequestUrl,
+      method,
+    });
+  }
+
   const response = await fetch(finalRequestUrl, {
     method,
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    headers: requestHeaders,
+    body: requestBody,
     signal: options.signal,
   }).catch((error: unknown) => {
     console.error('[apiClient] Network request failed', {
       finalRequestUrl,
       method,
       baseUrl: API_BASE_URL,
-      hint: 'Check EXPO_PUBLIC_API_BASE_URL. Render free services may sleep, so the first request can be slow.',
+      hint: 'Cannot reach backend. Check EXPO_PUBLIC_API_BASE_URL, backend LAN binding, firewall, and same WiFi.',
       error: error instanceof Error ? error.message : error,
     });
 
     throw new ApiClientError(
       error instanceof Error
-        ? `Không thể kết nối tới máy chủ: ${error.message}`
-        : 'Không thể kết nối tới máy chủ'
+        ? `Cannot reach backend. Check EXPO_PUBLIC_API_BASE_URL, backend LAN binding, firewall, and same WiFi. (${error.message})`
+        : 'Cannot reach backend. Check EXPO_PUBLIC_API_BASE_URL, backend LAN binding, firewall, and same WiFi.'
     );
   });
 
