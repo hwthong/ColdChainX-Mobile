@@ -8,7 +8,7 @@ import {
   refreshTokens as refreshTokensApi,
 } from '../services/authApi';
 import { getApiErrorMessage } from '../services/apiClient';
-import { getCustomerIdFromToken } from '../services/jwt';
+import { getCustomerIdFromToken, getUserIdFromToken } from '../services/jwt';
 
 export type UserRole = 'DRIVER' | 'CUSTOMER';
 
@@ -80,14 +80,15 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       login: ({ token, role, refreshToken = null, accessTokenExpiresAt = null, user = null }) => {
         const customerId = user?.customerId ?? getCustomerIdFromToken(token);
+        const userId = user?.userId ?? getUserIdFromToken(token);
 
         set({
           token,
           role,
           refreshToken,
           accessTokenExpiresAt,
-          user: user ? { ...user, customerId } : user,
-          userId: user?.userId ?? null,
+          user: user && userId ? { ...user, userId, customerId } : user,
+          userId,
           customerId,
           fullName: user?.fullName ?? null,
           email: user?.email ?? null,
@@ -132,18 +133,19 @@ export const useAuthStore = create<AuthState>()(
           const currentUser = get().user;
           const customerId =
             authData.customerId ?? currentUser?.customerId ?? getCustomerIdFromToken(authData.accessToken);
+          const userId = authData.userId ?? currentUser?.userId ?? getUserIdFromToken(authData.accessToken);
 
           set({
             token: authData.accessToken,
             refreshToken: authData.refreshToken,
             accessTokenExpiresAt: authData.accessTokenExpiresAt,
             role: appRole,
-            userId: authData.userId,
+            userId,
             customerId,
             fullName: authData.fullName,
             email: authData.email ?? currentUser?.email ?? '',
             user: {
-              userId: authData.userId,
+              userId: userId ?? authData.userId,
               customerId,
               fullName: authData.fullName,
               email: authData.email ?? currentUser?.email ?? '',

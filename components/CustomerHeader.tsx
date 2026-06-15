@@ -1,8 +1,12 @@
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
+
+import { getUserNotifications } from '../services/notificationApi';
+import { getUserIdFromToken } from '../services/jwt';
+import { useAuthStore } from '../store/useAuthStore';
 
 interface CustomerHeaderProps {
   title: string;
@@ -12,6 +16,39 @@ interface CustomerHeaderProps {
 export function CustomerHeader({ title, showBackButton = false }: CustomerHeaderProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const accessToken = useAuthStore((state) => state.token);
+  const storedUserId = useAuthStore((state) => state.userId ?? state.user?.userId ?? null);
+  const userId = storedUserId ?? (accessToken ? getUserIdFromToken(accessToken) : null);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  const fetchUnreadCount = useCallback(async () => {
+    if (!accessToken || !userId) {
+      setUnreadCount(0);
+      return;
+    }
+
+    try {
+      const response = await getUserNotifications(accessToken, userId, {
+        unreadOnly: true,
+        pageNumber: 1,
+        pageSize: 10,
+      });
+
+      if (response.success && response.data) {
+        setUnreadCount(response.data.totalRecords);
+      }
+    } catch (error) {
+      console.error('[CustomerHeader] Failed to load unread notifications', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }, [accessToken, userId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchUnreadCount();
+    }, [fetchUnreadCount])
+  );
 
   return (
     <View
@@ -38,8 +75,18 @@ export function CustomerHeader({ title, showBackButton = false }: CustomerHeader
           {title}
         </Text>
 
-        <Pressable className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 active:bg-white/20 transition-colors">
-          <Ionicons name="search" size={20} color="#FFFFFF" />
+        <Pressable
+          onPress={() => router.push('/(customer)/notifications' as never)}
+          className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 active:bg-white/20 transition-colors"
+        >
+          <Ionicons name="notifications-outline" size={21} color="#FFFFFF" />
+          {unreadCount > 0 ? (
+            <View className="absolute right-1 top-1 min-w-[18px] h-[18px] items-center justify-center rounded-full bg-[#FF4D4F] px-1">
+              <Text className="text-[10px] font-bold text-white">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </Text>
+            </View>
+          ) : null}
         </Pressable>
       </View>
     </View>

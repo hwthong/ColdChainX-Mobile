@@ -1,12 +1,18 @@
 export function getCustomerIdFromToken(token: string): string | null {
   const payload = decodeJwtPayload(token);
 
-  if (!payload || typeof payload !== 'object') {
-    return null;
-  }
+  return getStringClaim(payload, 'CustomerId');
+}
 
-  const customerId = (payload as Record<string, unknown>).CustomerId;
-  return typeof customerId === 'string' && customerId.trim() ? customerId : null;
+export function getUserIdFromToken(token: string): string | null {
+  const payload = decodeJwtPayload(token);
+
+  return (
+    getStringClaim(payload, 'sub') ??
+    getStringClaim(payload, 'nameidentifier') ??
+    getStringClaim(payload, 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier') ??
+    getStringClaim(payload, 'http://schemas.microsoft.com/ws/2008/06/identity/claims/nameidentifier')
+  );
 }
 
 function decodeJwtPayload(token: string): unknown {
@@ -36,4 +42,13 @@ function decodeBase64Url(value: string) {
       .map((char) => `%${char.charCodeAt(0).toString(16).padStart(2, '0')}`)
       .join('')
   );
+}
+
+function getStringClaim(payload: unknown, claimName: string) {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const value = (payload as Record<string, unknown>)[claimName];
+  return typeof value === 'string' && value.trim() ? value : null;
 }

@@ -35,6 +35,10 @@ export interface OrderDocumentResponse {
 
 export interface OrderQuotationResponse {
   quoteId: string;
+  orderId?: string | null;
+  trackingCode?: string | null;
+  customerId?: string | null;
+  customerName?: string | null;
   baseFreight: number;
   lastMileSurcharge?: number | null;
   vasAmount?: number | null;
@@ -43,6 +47,17 @@ export interface OrderQuotationResponse {
   fileUrl?: string | null;
   status: string;
   createdAt?: string | null;
+}
+
+export type QuotationResponse = OrderQuotationResponse;
+
+export interface AcceptQuotationResponse {
+  quoteId: string;
+  orderId: string;
+  trackingCode: string;
+  fileUrl?: string | null;
+  quoteStatus: string;
+  orderStatus: string;
 }
 
 export interface OrderResponse {
@@ -160,6 +175,42 @@ export function getOrderById(accessToken: string, orderId: string) {
     method: 'GET',
     headers: {
       Authorization: `Bearer ${accessToken}`,
+    },
+  });
+}
+
+export function getOrderQuotations(accessToken: string, orderId: string, page = 1, size = 10) {
+  return apiRequest<ApiResponse<PagedResult<QuotationResponse>>>(
+    `/api/orders/${orderId}/quotations?pageNumber=${page}&pageSize=${size}`,
+    {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    }
+  ).then((response): ApiResponse<QuotationResponse[]> => ({
+    ...response,
+    data: response.data?.data ?? response.data?.items ?? [],
+  }));
+}
+
+export function getQuotationById(accessToken: string, quoteId: string) {
+  return apiRequest<ApiResponse<QuotationResponse>>(`/api/quotations/${quoteId}`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+}
+
+export function acceptQuotation(accessToken: string, quoteId: string, customerId: string) {
+  return apiRequest<ApiResponse<AcceptQuotationResponse>>(`/api/quotations/${quoteId}/accept`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: {
+      Customer_ID: customerId,
     },
   });
 }

@@ -1,165 +1,472 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, ActivityIndicator, Pressable, Image } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useCallback, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Image,
+  Linking,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from 'react-native';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { getOrderById, OrderResponse } from '../../../services/orderApi';
+
+import { API_BASE_URL, getApiErrorMessage } from '../../../services/apiClient';
+import { getCustomerIdFromToken } from '../../../services/jwt';
+import {
+  acceptQuotation,
+  getOrderById,
+  getOrderQuotations,
+  OrderResponse,
+  QuotationResponse,
+} from '../../../services/orderApi';
 import { useAuthStore } from '../../../store/useAuthStore';
-import { getApiErrorMessage, API_BASE_URL } from '../../../services/apiClient';
 
 export default function OrderDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const accessToken = useAuthStore((state) => state.token);
+  const storedCustomerId = useAuthStore((state) => state.customerId ?? state.user?.customerId ?? null);
+  const customerId = storedCustomerId ?? (accessToken ? getCustomerIdFromToken(accessToken) : null);
 
   const [order, setOrder] = useState<OrderResponse | null>(null);
+  const [quotations, setQuotations] = useState<QuotationResponse[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAcceptingQuoteId, setIsAcceptingQuoteId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function fetchOrder() {
-      if (!accessToken || !id) return;
-      try {
-        setError(null);
-        const res = await getOrderById(accessToken, id);
-        if (res.success && res.data) {
-          setOrder(res.data);
-        } else {
-          setError(res.message || 'Không thể lấy thông tin đơn hàng.');
-        }
-      } catch (err) {
-        setError(getApiErrorMessage(err));
-      } finally {
-        setIsLoading(false);
-      }
+  const orderId = Array.isArray(id) ? id[0] : id;
+
+  const fetchOrderDetail = useCallback(async () => {
+    if (!accessToken || !orderId) {
+      setError('Không tìm thấy phiên đăng nhập hoặc mã đơn hàng.');
+      setIsLoading(false);
+      return;
     }
-    fetchOrder();
-  }, [id, accessToken]);
 
-  const translateStatus = (status: string) => {
-    switch (status.toUpperCase()) {
-      case 'PENDING': 
-      case 'PENDING_REVIEW': return 'Chờ duyệt';
-      case 'APPROVED': return 'Đã duyệt';
-      case 'IN_TRANSIT': return 'Đang giao';
-      case 'DELIVERED': return 'Đã giao';
-      case 'CANCELLED': return 'Đã hủy';
-      default: return status;
+    try {
+      setError(null);
+      const orderResponse = await getOrderById(accessToken, orderId);
+
+      if (orderResponse.success && orderResponse.data) {
+        setOrder(orderResponse.data);
+      } else {
+        setError(orderResponse.message || 'Không thể lấy thông tin đơn hàng.');
+        return;
+      }
+
+      try {
+        const quotationsResponse = await getOrderQuotations(accessToken, orderId);
+        setQuotations(quotationsResponse.success ? quotationsResponse.data ?? [] : orderResponse.data.quotations);
+      } catch {
+        setQuotations(orderResponse.data?.quotations ?? []);
+      }
+    } catch (err) {
+      setError(getApiErrorMessage(err));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [accessToken, orderId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      setIsLoading(true);
+      fetchOrderDetail();
+    }, [fetchOrderDetail])
+  );
+
+  const displayedQuotations = useMemo(
+    () => (quotations.length > 0 ? quotations : order?.quotations ?? []),
+    [order?.quotations, quotations]
+  );
+
+  const acceptedQuotation = displayedQuotations.find((quote) => isAcceptedQuote(quote.status));
+  const showContractPlaceholder =
+    Boolean(acceptedQuotation) || (order ? isContractReadyStatus(order.status) : false);
+  const documentImage = getFullAssetUrl(getOrderImageUrl(order));
+
+  const handleAcceptQuotation = async (quote: QuotationResponse) => {
+    if (!accessToken) {
+      setError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+      return;
+    }
+
+    if (!customerId) {
+      setError('Không tìm thấy mã khách hàng. Vui lòng đăng xuất và đăng nhập lại.');
+      return;
+    }
+
+    setIsAcceptingQuoteId(quote.quoteId);
+    setError(null);
+    setSuccessMessage(null);
+
+    try {
+      const response = await acceptQuotation(accessToken, quote.quoteId, customerId);
+      if (!response.success) {
+        throw new Error(response.message || 'Không thể chấp nhận báo giá.');
+      }
+
+      setSuccessMessage('Bạn đã chấp nhận báo giá.');
+      await fetchOrderDetail();
+    } catch (err) {
+      setError(getApiErrorMessage(err));
+    } finally {
+      setIsAcceptingQuoteId(null);
     }
   };
 
   if (isLoading) {
     return (
-      <View className="flex-1 bg-[#F5F2F0] items-center justify-center">
+      <View className="flex-1 items-center justify-center bg-[#F5F2F0]">
         <ActivityIndicator size="large" color="#8B4513" />
+        <Text className="mt-4 font-medium text-[#8B4513]">Đang tải chi tiết đơn...</Text>
       </View>
     );
   }
 
-  if (error || !order) {
+  if (error && !order) {
     return (
-      <View className="flex-1 bg-[#F5F2F0] items-center justify-center p-6">
+      <View className="flex-1 items-center justify-center bg-[#F5F2F0] p-6">
         <Ionicons name="alert-circle-outline" size={48} color="#dc2626" />
-        <Text className="text-red-600 text-center mt-4 font-medium">{error || 'Không tìm thấy đơn hàng'}</Text>
-        <Pressable onPress={() => router.back()} className="mt-4 px-6 py-2 bg-gray-200 rounded-xl">
-          <Text className="text-gray-800 font-bold">Quay lại</Text>
+        <Text className="mt-4 text-center font-medium leading-6 text-red-600">{error}</Text>
+        <Pressable onPress={() => router.back()} className="mt-4 rounded-xl bg-gray-200 px-6 py-2">
+          <Text className="font-bold text-gray-800">Quay lại</Text>
         </Pressable>
       </View>
     );
   }
 
-  const rawDocumentImage = order.documents.find(d => d.docType === 'CargoImage')?.imageUrl || order.documents[0]?.imageUrl;
-  
-  const getFullImageUrl = (url?: string | null) => {
-    if (!url) return null;
-    if (url.startsWith('http')) return url;
-    return `${API_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
-  };
-
-  const documentImage = getFullImageUrl(rawDocumentImage);
+  if (!order) {
+    return (
+      <View className="flex-1 items-center justify-center bg-[#F5F2F0] p-6">
+        <Text className="text-center font-medium text-[#877369]">Không tìm thấy đơn hàng.</Text>
+      </View>
+    );
+  }
 
   return (
-    <ScrollView className="flex-1 bg-[#F5F2F0]" contentContainerStyle={{ padding: 20, paddingBottom: 60 }}>
-      {/* Header Info */}
-      <View className="bg-white rounded-2xl p-6 shadow-sm border border-[#DAC2B6]/50 mb-4">
-        <View className="flex-row items-center gap-2 mb-2">
-          <Ionicons name="barcode-outline" size={20} color="#8B4513" />
-          <Text className="text-[#8B4513] font-bold text-xl">{order.trackingCode}</Text>
+    <ScrollView className="flex-1 bg-[#F5F2F0]" contentContainerStyle={{ padding: 20, paddingBottom: 80 }}>
+      {error ? (
+        <View className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4">
+          <Text className="font-semibold leading-5 text-red-700">{error}</Text>
         </View>
-        <Text className="text-[#877369] font-medium mb-4">Trạng thái: <Text className="text-[#006E0A]">{translateStatus(order.status)}</Text></Text>
-        
-        <View className="flex-row items-center gap-2 pt-4 border-t border-gray-100">
-          <Ionicons name="calendar-outline" size={16} color="#877369" />
-          <Text className="text-[#3A1F04] font-medium text-sm">Ngày tạo: {order.createdAt ? new Date(order.createdAt).toLocaleString('vi-VN') : 'N/A'}</Text>
-        </View>
-      </View>
+      ) : null}
 
-      {/* Cargo Info */}
-      <View className="bg-white rounded-2xl p-6 shadow-sm border border-[#DAC2B6]/50 mb-4 gap-3">
-        <Text className="text-[#8B4513] font-bold text-base mb-2 border-b border-[#DAC2B6]/30 pb-2">Thông Tin Hàng Hóa</Text>
-        
-        <View className="flex-row justify-between">
-          <Text className="text-[#877369]">Tên hàng:</Text>
-          <Text className="font-medium text-[#3A1F04]">{order.itemName}</Text>
+      {successMessage ? (
+        <View className="mb-4 rounded-2xl border border-green-200 bg-green-50 p-4">
+          <Text className="font-semibold leading-5 text-green-700">{successMessage}</Text>
         </View>
-        <View className="flex-row justify-between">
-          <Text className="text-[#877369]">Loại hàng:</Text>
-          <Text className="font-medium text-[#3A1F04]">{order.category}</Text>
-        </View>
-        <View className="flex-row justify-between">
-          <Text className="text-[#877369]">Bao bì:</Text>
-          <Text className="font-medium text-[#3A1F04]">{order.packingType} (SL: {order.quantity})</Text>
-        </View>
-        <View className="flex-row justify-between">
-          <Text className="text-[#877369]">Trọng lượng:</Text>
-          <Text className="font-medium text-[#3A1F04]">{order.expectedWeightKg} kg</Text>
-        </View>
-        <View className="flex-row justify-between">
-          <Text className="text-[#877369]">Thể tích (CBM):</Text>
-          <Text className="font-medium text-[#3A1F04]">{order.expectedCbm}</Text>
-        </View>
-        <View className="flex-row justify-between mt-2 pt-2 border-t border-gray-100">
-          <Text className="text-[#877369] font-medium">Nhiệt độ yêu cầu:</Text>
-          <Text className="font-bold text-[#006E0A]">{order.tempCondition} °C</Text>
-        </View>
-      </View>
+      ) : null}
 
-      {/* Destination Info */}
-      <View className="bg-white rounded-2xl p-6 shadow-sm border border-[#DAC2B6]/50 mb-4 gap-2">
-        <Text className="text-[#8B4513] font-bold text-base mb-2 border-b border-[#DAC2B6]/30 pb-2">Giao Hàng Đến</Text>
-        <View className="flex-row items-start gap-2">
-          <Ionicons name="location-sharp" size={18} color="#006E0A" className="mt-0.5" />
-          <Text className="text-[#3A1F04] font-medium leading-5 flex-1">{order.destination?.address || 'Chưa cập nhật'}</Text>
-        </View>
-      </View>
-
-      {/* Cargo Image */}
-      {documentImage && (
-        <View className="bg-white rounded-2xl p-6 shadow-sm border border-[#DAC2B6]/50 mb-4 gap-3">
-          <Text className="text-[#8B4513] font-bold text-base mb-2 border-b border-[#DAC2B6]/30 pb-2">Hình Ảnh Kiện Hàng</Text>
-          <Image 
-            source={{ uri: documentImage }} 
-            className="w-full h-48 rounded-xl bg-gray-100" 
-            resizeMode="cover" 
-          />
-        </View>
-      )}
-
-      {/* Quotation Section */}
-      <View className="bg-[#F8F9FA] rounded-2xl p-6 shadow-sm border border-[#DAC2B6]/50 mb-4">
-        <Text className="text-[#8B4513] font-bold text-base mb-2">Chi Phí & Báo Giá</Text>
-        {order.quotations && order.quotations.length > 0 ? (
-          <View>
-             {order.quotations.map(q => (
-               <View key={q.quoteId} className="bg-white p-4 rounded-xl border border-gray-200 mt-2">
-                 <Text className="text-[#877369] mb-1">Mã Báo Giá: {q.quoteId}</Text>
-                 <Text className="text-[#3A1F04] font-bold">Tổng tiền: {q.finalAmount.toLocaleString('vi-VN')} VND</Text>
-               </View>
-             ))}
+      <View className="mb-4 rounded-2xl border border-[#DAC2B6]/50 bg-white p-5 shadow-sm">
+        <View className="mb-4 flex-row items-start justify-between gap-3">
+          <View className="flex-1">
+            <View className="flex-row items-center gap-2">
+              <Ionicons name="barcode-outline" size={20} color="#8B4513" />
+              <Text className="text-xl font-bold text-[#8B4513]">{order.trackingCode}</Text>
+            </View>
+            <Text className="mt-2 text-sm text-[#877369]">{formatDate(order.createdAt)}</Text>
           </View>
+          <StatusBadge status={order.status} />
+        </View>
+      </View>
+
+      <InfoCard title="Thông tin hàng hóa" icon="cube-outline">
+        <InfoRow label="Tên hàng" value={order.itemName} />
+        <InfoRow label="Phân loại" value={formatCategory(order.category)} />
+        <InfoRow label="Số lượng" value={`${order.quantity}`} />
+        <InfoRow label="Quy cách đóng gói" value={order.packingType} />
+        <InfoRow label="Khối lượng dự kiến" value={`${order.expectedWeightKg} kg`} />
+        <InfoRow label="Nhiệt độ yêu cầu" value={formatTemperature(order.tempCondition)} strong />
+      </InfoCard>
+
+      <InfoCard title="Giao hàng đến" icon="location-sharp">
+        <Text className="text-sm font-semibold leading-5 text-[#3A1F04]">
+          {order.destination?.address || 'Chưa cập nhật địa chỉ'}
+        </Text>
+      </InfoCard>
+
+      {hasCoordinates(order) ? (
+        <InfoCard title="Vị trí giao hàng" icon="map-outline">
+          <InfoRow label="Latitude" value={`${order.destination?.latitude}`} />
+          <InfoRow label="Longitude" value={`${order.destination?.longitude}`} />
+          <Text className="mt-2 text-xs leading-5 text-[#877369]">
+            Bản đồ sẽ được hiển thị khi ứng dụng tích hợp thư viện bản đồ phù hợp.
+          </Text>
+        </InfoCard>
+      ) : null}
+
+      {documentImage ? (
+        <View className="mb-4 rounded-2xl border border-[#DAC2B6]/50 bg-white p-5 shadow-sm">
+          <View className="mb-3 flex-row items-center gap-2 border-b border-[#DAC2B6]/30 pb-3">
+            <Ionicons name="image-outline" size={18} color="#8B4513" />
+            <Text className="text-base font-bold text-[#8B4513]">Ảnh kiện hàng</Text>
+          </View>
+          <Image source={{ uri: documentImage }} className="h-52 w-full rounded-xl bg-gray-100" resizeMode="cover" />
+        </View>
+      ) : null}
+
+      <View className="mb-4 rounded-2xl border border-[#DAC2B6]/50 bg-white p-5 shadow-sm">
+        <View className="mb-3 flex-row items-center gap-2 border-b border-[#DAC2B6]/30 pb-3">
+          <Ionicons name="receipt-outline" size={18} color="#8B4513" />
+          <Text className="text-base font-bold text-[#8B4513]">Báo giá</Text>
+        </View>
+
+        {displayedQuotations.length === 0 ? (
+          <Text className="text-sm leading-6 text-[#877369]">
+            Đơn hàng đang chờ Sales kiểm duyệt và gửi báo giá.
+          </Text>
         ) : (
-          <Text className="text-[#877369] italic">Đang chờ ColdChainX tính toán báo giá...</Text>
+          <View className="gap-4">
+            {displayedQuotations.map((quote) => (
+              <QuotationCard
+                key={quote.quoteId}
+                quote={quote}
+                isAccepting={isAcceptingQuoteId === quote.quoteId}
+                onAccept={() => handleAcceptQuotation(quote)}
+              />
+            ))}
+          </View>
         )}
       </View>
+
+      {showContractPlaceholder ? (
+        <View className="mb-4 rounded-2xl border border-[#DAC2B6]/50 bg-white p-5 shadow-sm">
+          <View className="mb-3 flex-row items-center gap-2 border-b border-[#DAC2B6]/30 pb-3">
+            <Ionicons name="document-text-outline" size={18} color="#8B4513" />
+            <Text className="text-base font-bold text-[#8B4513]">Hợp đồng</Text>
+          </View>
+          <Text className="text-sm leading-6 text-[#877369]">
+            Hợp đồng sẽ khả dụng sau khi báo giá được chấp nhận và Sales tạo hợp đồng.
+          </Text>
+        </View>
+      ) : null}
     </ScrollView>
+  );
+}
+
+function QuotationCard({
+  quote,
+  isAccepting,
+  onAccept,
+}: {
+  quote: QuotationResponse;
+  isAccepting: boolean;
+  onAccept: () => void;
+}) {
+  const canAccept = isAcceptableQuote(quote.status);
+  const accepted = isAcceptedQuote(quote.status);
+  const fullFileUrl = getFullAssetUrl(quote.fileUrl);
+
+  return (
+    <View className="rounded-2xl border border-[#DAC2B6]/60 bg-[#F8F9FA] p-4">
+      <View className="mb-3 flex-row items-start justify-between gap-3">
+        <View>
+          <Text className="text-sm font-bold text-[#3A1F04]">Báo giá</Text>
+          <Text className="mt-1 text-xs text-[#877369]">{formatDate(quote.createdAt)}</Text>
+        </View>
+        <StatusBadge status={quote.status} />
+      </View>
+
+      <View className="gap-2">
+        <InfoRow label="Tổng tiền" value={formatMoney(quote.finalAmount)} strong />
+        <InfoRow label="Cước vận chuyển" value={formatMoney(quote.baseFreight)} />
+        <InfoRow label="Phụ phí last-mile" value={formatMoney(quote.lastMileSurcharge)} />
+        <InfoRow label="VAS" value={formatMoney(quote.vasAmount)} />
+        <InfoRow label="VAT" value={formatMoney(quote.vatAmount)} />
+      </View>
+
+      {fullFileUrl ? (
+        <Pressable onPress={() => Linking.openURL(fullFileUrl)} className="mt-4 flex-row items-center gap-2">
+          <Ionicons name="document-attach-outline" size={16} color="#8B4513" />
+          <Text className="text-sm font-semibold text-[#8B4513]">Xem file báo giá</Text>
+        </Pressable>
+      ) : null}
+
+      {canAccept ? (
+        <Pressable
+          onPress={onAccept}
+          disabled={isAccepting}
+          className={[
+            'mt-4 h-12 items-center justify-center rounded-xl bg-[#8B4513]',
+            isAccepting ? 'opacity-70' : '',
+          ].join(' ')}
+        >
+          <Text className="font-bold text-white">
+            {isAccepting ? 'ĐANG XỬ LÝ...' : 'Chấp nhận báo giá'}
+          </Text>
+        </Pressable>
+      ) : null}
+
+      {accepted ? (
+        <View className="mt-4 rounded-xl border border-green-200 bg-green-50 p-3">
+          <Text className="text-sm font-semibold leading-5 text-green-700">
+            Bạn đã chấp nhận báo giá. Hợp đồng sẽ được tạo trong bước tiếp theo.
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function InfoCard({
+  title,
+  icon,
+  children,
+}: {
+  title: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  children: React.ReactNode;
+}) {
+  return (
+    <View className="mb-4 rounded-2xl border border-[#DAC2B6]/50 bg-white p-5 shadow-sm">
+      <View className="mb-3 flex-row items-center gap-2 border-b border-[#DAC2B6]/30 pb-3">
+        <Ionicons name={icon} size={18} color="#8B4513" />
+        <Text className="text-base font-bold text-[#8B4513]">{title}</Text>
+      </View>
+      <View className="gap-3">{children}</View>
+    </View>
+  );
+}
+
+function InfoRow({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <View className="flex-row items-start justify-between gap-4">
+      <Text className="text-sm text-[#877369]">{label}</Text>
+      <Text className={['flex-1 text-right text-sm', strong ? 'font-bold text-[#006E0A]' : 'font-semibold text-[#3A1F04]'].join(' ')}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const styles = getStatusColor(status);
+
+  return (
+    <View className={`rounded-full border px-2.5 py-1 ${styles.container}`}>
+      <Text className={`text-[10px] font-bold uppercase tracking-wider ${styles.text}`}>
+        {translateStatus(status)}
+      </Text>
+    </View>
+  );
+}
+
+function getStatusColor(status: string) {
+  switch (status.toUpperCase()) {
+    case 'PENDING':
+    case 'PENDING_REVIEW':
+      return { container: 'bg-yellow-100 border-yellow-200', text: 'text-yellow-800' };
+    case 'QUOTING':
+    case 'SENT':
+      return { container: 'bg-orange-100 border-orange-200', text: 'text-orange-800' };
+    case 'CONTRACT_PENDING':
+      return { container: 'bg-amber-100 border-amber-200', text: 'text-amber-800' };
+    case 'ASSIGNED':
+      return { container: 'bg-blue-100 border-blue-200', text: 'text-blue-800' };
+    case 'IN_TRANSIT':
+      return { container: 'bg-purple-100 border-purple-200', text: 'text-purple-800' };
+    case 'ACCEPTED':
+    case 'DELIVERED':
+      return { container: 'bg-green-100 border-green-200', text: 'text-green-800' };
+    case 'REJECTED':
+    case 'CANCELLED':
+      return { container: 'bg-red-100 border-red-200', text: 'text-red-800' };
+    default:
+      return { container: 'bg-gray-100 border-gray-200', text: 'text-gray-800' };
+  }
+}
+
+function translateStatus(status: string) {
+  switch (status.toUpperCase()) {
+    case 'PENDING':
+    case 'PENDING_REVIEW':
+      return 'Chờ duyệt';
+    case 'QUOTING':
+      return 'Đang báo giá';
+    case 'SENT':
+      return 'Đã gửi';
+    case 'CONTRACT_PENDING':
+      return 'Chờ hợp đồng';
+    case 'ASSIGNED':
+      return 'Đã phân xe';
+    case 'IN_TRANSIT':
+      return 'Đang giao';
+    case 'ACCEPTED':
+      return 'Đã chấp nhận';
+    case 'DELIVERED':
+      return 'Đã giao';
+    case 'REJECTED':
+      return 'Từ chối';
+    case 'CANCELLED':
+      return 'Đã hủy';
+    default:
+      return status;
+  }
+}
+
+function isAcceptableQuote(status: string) {
+  const normalized = status.toUpperCase();
+  return normalized === 'SENT' || normalized === 'PENDING';
+}
+
+function isAcceptedQuote(status: string) {
+  return status.toUpperCase() === 'ACCEPTED';
+}
+
+function isContractReadyStatus(status: string) {
+  return ['CONTRACT_PENDING', 'ASSIGNED', 'IN_TRANSIT', 'DELIVERED'].includes(status.toUpperCase());
+}
+
+function getOrderImageUrl(order: OrderResponse | null) {
+  if (!order) return null;
+
+  return (
+    order.documents?.find((document) => document.docType === 'CargoImage')?.imageUrl ??
+    order.documents?.[0]?.imageUrl ??
+    order.documentUrl
+  );
+}
+
+function getFullAssetUrl(url?: string | null) {
+  if (!url) return null;
+  if (url.startsWith('http')) return url;
+  return `${API_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+}
+
+function formatDate(value?: string | null) {
+  return value ? new Date(value).toLocaleString('vi-VN') : 'Chưa cập nhật';
+}
+
+function formatMoney(value?: number | null) {
+  if (value === null || value === undefined) return '0 đ';
+  return `${Number(value).toLocaleString('vi-VN')} đ`;
+}
+
+function formatTemperature(value: string | number) {
+  const text = String(value);
+  return text.includes('°') ? text : `${text} °C`;
+}
+
+function formatCategory(category: string) {
+  switch (category) {
+    case 'FROZEN_FRUITS_VEGGIES':
+      return 'Thực phẩm đông lạnh';
+    case 'PHARMACEUTICALS':
+      return 'Dược phẩm';
+    case 'MEAT_SEAFOOD':
+      return 'Thịt / Hải sản';
+    default:
+      return category;
+  }
+}
+
+function hasCoordinates(order: OrderResponse) {
+  return (
+    order.destination?.latitude !== null &&
+    order.destination?.latitude !== undefined &&
+    order.destination?.longitude !== null &&
+    order.destination?.longitude !== undefined
   );
 }

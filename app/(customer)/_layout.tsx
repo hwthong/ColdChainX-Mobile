@@ -14,6 +14,7 @@ export default function CustomerLayout() {
             status: 'Trạng thái đơn',
             tracking: 'Giám sát đơn',
             profile: 'Hồ sơ cá nhân',
+            notifications: 'Thông báo',
           };
           const title = titleMap[route.name] || 'ColdChainX';
           const showBackButton = route.name !== 'home' && route.name !== 'profile';
@@ -70,6 +71,12 @@ export default function CustomerLayout() {
       />
       <Tabs.Screen
         name="orders/[id]"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="notifications"
         options={{
           href: null,
         }}
