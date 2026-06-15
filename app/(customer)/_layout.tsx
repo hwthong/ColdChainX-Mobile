@@ -68,6 +68,12 @@ export default function CustomerLayout() {
           tabBarIcon: ({ color }) => <Ionicons name="person-outline" size={24} color={color} />,
         }}
       />
+      <Tabs.Screen
+        name="orders/[id]"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }

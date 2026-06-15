@@ -4,7 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { getOrderById, OrderResponse } from '../../../services/orderApi';
 import { useAuthStore } from '../../../store/useAuthStore';
-import { getApiErrorMessage } from '../../../services/apiClient';
+import { getApiErrorMessage, API_BASE_URL } from '../../../services/apiClient';
 
 export default function OrderDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -37,7 +37,8 @@ export default function OrderDetailScreen() {
 
   const translateStatus = (status: string) => {
     switch (status.toUpperCase()) {
-      case 'PENDING': return 'Chờ duyệt';
+      case 'PENDING': 
+      case 'PENDING_REVIEW': return 'Chờ duyệt';
       case 'APPROVED': return 'Đã duyệt';
       case 'IN_TRANSIT': return 'Đang giao';
       case 'DELIVERED': return 'Đã giao';
@@ -66,7 +67,15 @@ export default function OrderDetailScreen() {
     );
   }
 
-  const documentImage = order.documents.find(d => d.docType === 'CargoImage')?.imageUrl || order.documents[0]?.imageUrl;
+  const rawDocumentImage = order.documents.find(d => d.docType === 'CargoImage')?.imageUrl || order.documents[0]?.imageUrl;
+  
+  const getFullImageUrl = (url?: string | null) => {
+    if (!url) return null;
+    if (url.startsWith('http')) return url;
+    return `${API_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+  };
+
+  const documentImage = getFullImageUrl(rawDocumentImage);
 
   return (
     <ScrollView className="flex-1 bg-[#F5F2F0]" contentContainerStyle={{ padding: 20, paddingBottom: 60 }}>

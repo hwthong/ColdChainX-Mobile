@@ -12,19 +12,21 @@ export function TemperatureSelector({ temperature, setTemperature }: Temperature
   const increase = () => setTemperature(temperature + 1);
 
   return (
-    <View className="bg-white rounded-2xl p-6 shadow-sm border border-[#DAC2B6]/50 gap-4">
+    <View className="bg-white rounded-2xl p-5 shadow-sm border border-[#DAC2B6]/50 gap-4">
       <View className="flex-row items-center justify-between border-b border-[#DAC2B6]/30 pb-3">
-        <Text className="text-[#8B4513] font-bold text-base">Nhiệt Độ Yêu Cầu</Text>
-        <View className="px-3 py-1.5 rounded-full bg-[#006E0A]/10 border border-[#006E0A]/20 flex-row items-center gap-1.5">
-          <Ionicons name="thermometer-outline" size={14} color="#006E0A" />
+        <View className="flex-row items-center gap-2">
+          <Ionicons name="thermometer-outline" size={18} color="#8B4513" />
+          <Text className="text-[#8B4513] font-bold text-base">Nhiệt độ yêu cầu</Text>
+        </View>
+        <View className="px-3 py-1.5 rounded-full bg-[#006E0A]/10 border border-[#006E0A]/20">
           <Text className="text-[#006E0A] font-bold text-[10px] uppercase tracking-wide">
-            Đề xuất
+            Chuỗi lạnh
           </Text>
         </View>
       </View>
 
-      <View className="items-center py-4">
-        <View className="w-36 h-36 rounded-full border-[8px] border-[#F8F9FA] bg-white items-center justify-center mb-6 shadow-sm">
+      <View className="items-center py-2">
+        <View className="w-32 h-32 rounded-full border-[8px] border-[#F8F9FA] bg-white items-center justify-center mb-5 shadow-sm">
           <View className="flex-row items-start">
             <Text className="font-bold text-5xl text-[#8B4513] tracking-tighter leading-none">
               {temperature}
@@ -42,7 +44,7 @@ export function TemperatureSelector({ temperature, setTemperature }: Temperature
           >
             <Ionicons name="remove" size={24} color="#8B4513" />
           </Pressable>
-          
+
           <Pressable
             onPress={increase}
             className="w-12 h-12 rounded-full bg-[#F8F9FA] border border-[#DAC2B6]/50 items-center justify-center active:bg-[#F2EFEA]"
@@ -51,6 +53,10 @@ export function TemperatureSelector({ temperature, setTemperature }: Temperature
           </Pressable>
         </View>
       </View>
+
+      <Text className="text-center text-xs leading-5 text-[#877369]">
+        Nhiệt độ này sẽ được dùng để kiểm soát chuỗi lạnh trong quá trình vận chuyển.
+      </Text>
     </View>
   );
 }

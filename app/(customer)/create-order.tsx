@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
+  ActivityIndicator,
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   Pressable,
   ScrollView,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  Image,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -16,121 +18,283 @@ import { useRouter } from 'expo-router';
 
 import { GoodsType, GoodsTypeSelector } from '../../components/GoodsTypeSelector';
 import { TemperatureSelector } from '../../components/TemperatureSelector';
+import { ApiClientError, getApiErrorMessage } from '../../services/apiClient';
 import { createOrder } from '../../services/orderApi';
 import { useAuthStore } from '../../store/useAuthStore';
-import { getApiErrorMessage } from '../../services/apiClient';
 
+type FieldKey =
+  | 'itemName'
+  | 'category'
+  | 'tempCondition'
+  | 'expectedWeightKg'
+  | 'quantity'
+  | 'packagingType'
+  | 'lengthCm'
+  | 'widthCm'
+  | 'heightCm'
+  | 'destAddressText'
+  | 'documentImage';
+
+type ValidationErrors = Partial<Record<FieldKey, string>>;
+
+type DocumentImage = {
+  uri: string;
+  mimeType?: string | null;
+  fileName?: string | null;
+};
+
+type SuccessData = {
+  orderId: string;
+  trackingCode: string;
+  status: string;
+  documentUrl?: string | null;
+};
+
+const REQUIRED_ERROR = 'Vui lòng nhập thông tin này.';
 export default function CreateOrderScreen() {
   const router = useRouter();
   const accessToken = useAuthStore((state) => state.token);
 
-  // Form State
-  const [goodsType, setGoodsType] = useState<GoodsType>('Pharma');
-  const [temperature, setTemperature] = useState<number>(-18);
-  const [pickupAddress, setPickupAddress] = useState(''); // Not used by backend yet, but keep for UI completeness
-  const [deliveryAddress, setDeliveryAddress] = useState('');
-  
-  // New backend fields
+  const [category, setCategory] = useState<GoodsType>('FROZEN_FRUITS_VEGGIES');
+  const [tempCondition, setTempCondition] = useState<number>(-6);
+  const [destAddressText, setDestAddressText] = useState('');
   const [itemName, setItemName] = useState('');
   const [expectedWeightKg, setExpectedWeightKg] = useState('');
   const [quantity, setQuantity] = useState('1');
-  const [packagingType, setPackagingType] = useState('Thùng Carton');
+  const [packagingType, setPackagingType] = useState('');
   const [lengthCm, setLengthCm] = useState('');
   const [widthCm, setWidthCm] = useState('');
   const [heightCm, setHeightCm] = useState('');
-  
-  // Image State
-  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [documentImage, setDocumentImage] = useState<DocumentImage | null>(null);
 
+  const [errors, setErrors] = useState<ValidationErrors>({});
+  const [formError, setFormError] = useState<string | null>(null);
+  const [backendError, setBackendError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [successData, setSuccessData] = useState<SuccessData | null>(null);
 
-  const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      quality: 0.8,
-    });
+  const validateForm = () => {
+    const nextErrors: ValidationErrors = {};
 
-    if (!result.canceled) {
-      setImageUri(result.assets[0].uri);
+    if (!itemName.trim()) nextErrors.itemName = REQUIRED_ERROR;
+    if (!category) nextErrors.category = 'Vui lòng chọn phân loại hàng hóa.';
+    if (!Number.isFinite(tempCondition)) nextErrors.tempCondition = 'Vui lòng chọn nhiệt độ yêu cầu.';
+    if (!isPositiveNumber(expectedWeightKg)) nextErrors.expectedWeightKg = 'Khối lượng phải lớn hơn 0.';
+    if (!isPositiveInteger(quantity)) nextErrors.quantity = 'Số lượng kiện phải từ 1 trở lên.';
+    if (!packagingType.trim()) nextErrors.packagingType = REQUIRED_ERROR;
+    if (!isPositiveNumber(lengthCm)) nextErrors.lengthCm = 'Chiều dài phải lớn hơn 0.';
+    if (!isPositiveNumber(widthCm)) nextErrors.widthCm = 'Chiều rộng phải lớn hơn 0.';
+    if (!isPositiveNumber(heightCm)) nextErrors.heightCm = 'Chiều cao phải lớn hơn 0.';
+    if (destAddressText.trim().length < 5) {
+      nextErrors.destAddressText = 'Địa chỉ giao hàng cần ít nhất 5 ký tự.';
     }
+    if (!documentImage) nextErrors.documentImage = 'Vui lòng chọn ảnh lô hàng.';
+
+    return nextErrors;
   };
 
   const handleSubmit = async () => {
-    if (
-      !deliveryAddress.trim() ||
-      !itemName.trim() ||
-      !expectedWeightKg.trim() ||
-      !quantity.trim() ||
-      !lengthCm.trim() ||
-      !widthCm.trim() ||
-      !heightCm.trim() ||
-      !imageUri
-    ) {
-      Alert.alert('Lỗi', 'Vui lòng nhập đầy đủ thông tin bắt buộc và đính kèm hình ảnh.');
+    console.log('[CreateOrder] submit pressed');
+
+    const nextErrors = validateForm();
+
+    console.log('[CreateOrder] hasToken:', Boolean(accessToken));
+    console.log('[CreateOrder] hasImage:', Boolean(documentImage));
+    console.log('[CreateOrder] form values:', {
+      itemName,
+      category,
+      tempCondition,
+      expectedWeightKg,
+      quantity,
+      packagingType,
+      lengthCm,
+      widthCm,
+      heightCm,
+      destAddressText,
+    });
+    console.log('[CreateOrder] validation errors:', nextErrors);
+
+    setErrors(nextErrors);
+    setBackendError(null);
+
+    if (Object.keys(nextErrors).length > 0) {
+      setFormError('Vui lòng kiểm tra lại thông tin bắt buộc.');
       return;
     }
 
     if (!accessToken) {
-      Alert.alert('Lỗi', 'Bạn chưa đăng nhập.');
+      setFormError('Bạn cần đăng nhập lại trước khi tạo đơn.');
       return;
     }
-    
+
+    if (!documentImage) {
+      setFormError('Vui lòng chọn ảnh lô hàng.');
+      return;
+    }
+
+    setFormError(null);
     setIsLoading(true);
+
     try {
       const response = await createOrder(accessToken, {
-        ItemName: itemName.trim(),
-        Category: goodsType,
-        TempCondition: temperature,
-        ExpectedWeightKg: parseFloat(expectedWeightKg),
-        Quantity: parseInt(quantity, 10),
-        PackagingType: packagingType,
-        LengthCm: parseFloat(lengthCm),
-        WidthCm: parseFloat(widthCm),
-        HeightCm: parseFloat(heightCm),
-        DestAddressText: deliveryAddress.trim(),
-        DocumentImageUri: imageUri,
+        itemName: itemName.trim(),
+        category,
+        tempCondition,
+        expectedWeightKg: parseDecimal(expectedWeightKg),
+        quantity: parseInt(quantity, 10),
+        packagingType: packagingType.trim(),
+        lengthCm: parseDecimal(lengthCm),
+        widthCm: parseDecimal(widthCm),
+        heightCm: parseDecimal(heightCm),
+        destAddressText: destAddressText.trim(),
+        image: {
+          uri: documentImage.uri,
+          mimeType: documentImage.mimeType || 'image/jpeg',
+          fileName: documentImage.fileName || 'cargo.jpg',
+        },
       });
 
       if (!response.success) {
         throw new Error(response.message || 'Tạo đơn thất bại.');
       }
 
-      Alert.alert('Thành công', `Tạo đơn thành công!\nMã vận đơn: ${response.data?.trackingCode}`, [
-        { text: 'OK', onPress: () => router.replace('/(customer)/status') }
-      ]);
+      setSuccessData({
+        trackingCode: response.data?.trackingCode || '',
+        orderId: response.data?.orderId || '',
+        status: response.data?.status || 'PENDING_REVIEW',
+        documentUrl: response.data?.documentUrl,
+      });
     } catch (error) {
-      Alert.alert('Lỗi', getApiErrorMessage(error));
+      let errorMessage = 'Không thể tạo đơn lúc này. Vui lòng thử lại sau.';
+
+      if (error instanceof ApiClientError) {
+        if (error.status === 401) {
+          errorMessage = 'Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.';
+        } else if (error.status === 400) {
+          errorMessage = error.message;
+          if (errorMessage.toLowerCase().includes('goong')) {
+            errorMessage =
+              'Không thể xác thực địa chỉ giao hàng. Vui lòng nhập địa chỉ rõ hơn hoặc thử lại sau.';
+          }
+        } else {
+          errorMessage = getApiErrorMessage(error);
+        }
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+
+      setBackendError(errorMessage);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const renderInput = (
-    icon: keyof typeof Ionicons.glyphMap,
-    iconColor: string,
+  const openImagePicker = () => {
+    Alert.alert('Ảnh lô hàng', 'Chọn nguồn ảnh kiện hàng', [
+      { text: 'Chụp ảnh', onPress: captureImage },
+      { text: 'Chọn từ thư viện', onPress: selectImageFromLibrary },
+      { text: 'Hủy', style: 'cancel' },
+    ]);
+  };
+
+  const selectImageFromLibrary = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      setBackendError('Vui lòng cấp quyền truy cập thư viện ảnh để tải ảnh kiện hàng.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.8,
+    });
+
+    handleImageResult(result);
+  };
+
+  const captureImage = async () => {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      setBackendError('Vui lòng cấp quyền camera để chụp ảnh kiện hàng.');
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.8,
+    });
+
+    handleImageResult(result);
+  };
+
+  const handleImageResult = (result: ImagePicker.ImagePickerResult) => {
+    if (result.canceled) return;
+
+    const asset = result.assets[0];
+    if (!asset || asset.type === 'video') {
+      setErrors((current) => ({
+        ...current,
+        documentImage: 'Vui lòng chọn ảnh lô hàng, không chọn video.',
+      }));
+      setFormError('Vui lòng kiểm tra lại thông tin bắt buộc.');
+      return;
+    }
+
+    setDocumentImage({
+      uri: asset.uri,
+      mimeType: asset.mimeType || 'image/jpeg',
+      fileName: asset.fileName || 'cargo.jpg',
+    });
+    setErrors((current) => ({ ...current, documentImage: undefined }));
+    setFormError(null);
+    setBackendError(null);
+  };
+
+  const resetForm = () => {
+    setCategory('FROZEN_FRUITS_VEGGIES');
+    setTempCondition(-6);
+    setDestAddressText('');
+    setItemName('');
+    setExpectedWeightKg('');
+    setQuantity('1');
+    setPackagingType('');
+    setLengthCm('');
+    setWidthCm('');
+    setHeightCm('');
+    setDocumentImage(null);
+    setErrors({});
+    setFormError(null);
+    setBackendError(null);
+    setSuccessData(null);
+  };
+
+  const renderField = (
+    field: FieldKey,
+    label: string,
     placeholder: string,
     value: string,
-    onChangeText: (t: string) => void,
+    onChangeText: (text: string) => void,
     keyboardType: 'default' | 'numeric' = 'default'
   ) => (
-    <View className="w-full flex-row items-center pr-2 bg-[#F8F9FA] border border-[#DAC2B6]/60 rounded-[14px] h-[52px]">
-      <View className="w-12 h-[52px] items-center justify-center">
-        <View className={`w-5 h-5 rounded-full items-center justify-center shadow-md border-2 border-white`} style={{ backgroundColor: iconColor }}>
-          <View className="w-1.5 h-1.5 bg-white rounded-full" />
-        </View>
-      </View>
+    <View className="gap-1.5">
+      <Text className="text-[#3A1F04] text-[13px] font-bold">{label}</Text>
       <TextInput
-        className="flex-1 h-[52px] text-[#3A1F04] font-medium text-[13px]"
+        className={[
+          'min-h-[52px] rounded-[14px] border bg-[#F8F9FA] px-4 text-[14px] font-medium text-[#3A1F04]',
+          errors[field] ? 'border-red-300' : 'border-[#DAC2B6]/60',
+        ].join(' ')}
         placeholder={placeholder}
         placeholderTextColor="#877369"
         value={value}
-        onChangeText={onChangeText}
+        onChangeText={(text) => {
+          onChangeText(text);
+          if (errors[field]) setErrors((current) => ({ ...current, [field]: undefined }));
+        }}
         keyboardType={keyboardType}
       />
-      <View className="p-2 flex-row items-center gap-1.5 bg-white border border-[#DAC2B6]/60 rounded-xl shadow-sm">
-        <Ionicons name={icon} size={16} color={iconColor} />
-      </View>
+      {errors[field] ? <Text className="text-xs font-medium text-red-600">{errors[field]}</Text> : null}
     </View>
   );
 
@@ -141,99 +305,299 @@ export default function CreateOrderScreen() {
     >
       <ScrollView
         className="flex-1"
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 120 }}
+        contentContainerStyle={{ padding: 20, paddingBottom: 128, gap: 18 }}
       >
-        {/* Map Header Section */}
-        <View className="h-[210px] w-full bg-[#EAE6E1] relative overflow-hidden border-b border-[#DAC2B6]/60">
-          <View className="absolute inset-0 opacity-10 bg-[#8B4513]" />
-
-          <View className="absolute left-[90px] top-[90px] flex-col items-center -ml-5 -mt-10">
-            <View className="w-10 h-10 rounded-full bg-white shadow-sm items-center justify-center border-2 border-[#8B4513] mb-1.5 overflow-hidden">
-              <View className="absolute inset-0 bg-[#8B4513]/5" />
-              <Ionicons name="cube-outline" size={20} color="#8B4513" />
+        {(formError || backendError) && (
+          <View className="rounded-2xl border border-red-200 bg-red-50 p-4">
+            <View className="flex-row items-start gap-2">
+              <Ionicons name="alert-circle-outline" size={20} color="#dc2626" />
+              <Text className="flex-1 text-sm font-semibold leading-5 text-red-700">
+                {formError || backendError}
+              </Text>
             </View>
-            <View className="w-2 h-2 bg-[#8B4513] border-2 border-white rounded-full shadow-sm" />
+          </View>
+        )}
+
+        <View className="rounded-2xl border border-[#DAC2B6]/50 bg-white p-5 shadow-sm gap-4">
+          <View className="flex-row items-center justify-between">
+            <View>
+              <Text className="text-[#8B4513] text-base font-bold">Tuyến giao dự kiến</Text>
+              <Text className="text-[#877369] text-xs font-medium mt-1">
+                Hệ thống sẽ xác thực địa chỉ và tọa độ sau khi gửi yêu cầu.
+              </Text>
+            </View>
+            <View className="h-10 w-10 items-center justify-center rounded-full bg-[#8B4513]/10">
+              <Ionicons name="map-outline" size={20} color="#8B4513" />
+            </View>
           </View>
 
-          <View className="absolute left-[310px] top-[140px] flex-col items-center -ml-5 -mt-10">
-            <View className="w-10 h-10 rounded-full bg-[#006E0A] shadow-sm items-center justify-center border-2 border-white mb-1.5">
-              <Ionicons name="location-sharp" size={20} color="white" />
-            </View>
-            <View className="w-2 h-2 bg-[#006E0A] border-2 border-white rounded-full shadow-sm" />
+          <View className="gap-3">
+            <RouteRow
+              icon="cube-outline"
+              color="#8B4513"
+              label="Điểm lấy hàng / Hub tiếp nhận"
+              value="Hub ColdChainX sẽ được xác nhận sau khi yêu cầu được duyệt"
+            />
+            <View className="h-6 w-px bg-[#DAC2B6] ml-5" />
+            <RouteRow
+              icon="location-sharp"
+              color="#006E0A"
+              label="Địa chỉ giao hàng"
+              value={destAddressText.trim() || 'Chưa nhập địa chỉ giao hàng'}
+            />
           </View>
         </View>
 
-        <View className="px-5 -mt-10 relative z-20 gap-5">
-          
-          {/* Journey Info */}
-          <View className="bg-white rounded-2xl p-6 shadow-sm border border-[#DAC2B6]/50 gap-4">
-            <Text className="text-[#8B4513] font-bold text-base mb-1">Thông Tin Hành Trình</Text>
-            {renderInput('locate', '#8B4513', 'Nhập điểm lấy hàng...', pickupAddress, setPickupAddress)}
-            {renderInput('locate', '#006E0A', 'Nhập điểm giao hàng (Bắt buộc)...', deliveryAddress, setDeliveryAddress)}
+        <View className="rounded-2xl border border-[#DAC2B6]/50 bg-white p-5 shadow-sm gap-4">
+          <SectionTitle title="Giao hàng" icon="navigate-outline" />
+
+          <View className="rounded-[14px] border border-[#DAC2B6]/60 bg-[#F8F9FA] p-4">
+            <Text className="text-[#3A1F04] text-[13px] font-bold">
+              Điểm lấy hàng / Hub tiếp nhận
+            </Text>
+            <Text className="mt-2 text-sm leading-5 text-[#877369]">
+              Hub ColdChainX sẽ được xác nhận sau khi yêu cầu được duyệt
+            </Text>
           </View>
 
-          {/* Cargo Info */}
-          <View className="bg-white rounded-2xl p-6 shadow-sm border border-[#DAC2B6]/50 gap-4">
-            <Text className="text-[#8B4513] font-bold text-base mb-1">Thông Tin Hàng Hóa</Text>
-            
-            {renderInput('cube', '#8B4513', 'Tên hàng hóa...', itemName, setItemName)}
-            
-            <View className="flex-row gap-3">
-              <View className="flex-1">{renderInput('scale', '#8B4513', 'Nặng (KG)', expectedWeightKg, setExpectedWeightKg, 'numeric')}</View>
-              <View className="flex-1">{renderInput('apps', '#8B4513', 'Số lượng', quantity, setQuantity, 'numeric')}</View>
+          {renderField(
+            'destAddressText',
+            'Địa chỉ giao hàng',
+            'Ví dụ: 201B Nguyễn Chí Thanh, Quận 5, TP.HCM',
+            destAddressText,
+            setDestAddressText
+          )}
+        </View>
+
+        <View className="rounded-2xl border border-[#DAC2B6]/50 bg-white p-5 shadow-sm gap-4">
+          <SectionTitle title="Thông tin hàng hóa" icon="cube-outline" />
+
+          {renderField(
+            'itemName',
+            'Tên hàng hóa',
+            'Ví dụ: Nho Mỹ, Vaccine Pfizer, Cá hồi...',
+            itemName,
+            setItemName
+          )}
+
+          <View className="flex-row gap-3">
+            <View className="flex-1">
+              {renderField(
+                'expectedWeightKg',
+                'Khối lượng dự kiến KG',
+                'Ví dụ: 12.5',
+                expectedWeightKg,
+                setExpectedWeightKg,
+                'numeric'
+              )}
             </View>
-
-            <View className="flex-row gap-3">
-              <View className="flex-1">{renderInput('resize', '#8B4513', 'Dài (cm)', lengthCm, setLengthCm, 'numeric')}</View>
-              <View className="flex-1">{renderInput('resize', '#8B4513', 'Rộng (cm)', widthCm, setWidthCm, 'numeric')}</View>
-              <View className="flex-1">{renderInput('resize', '#8B4513', 'Cao (cm)', heightCm, setHeightCm, 'numeric')}</View>
+            <View className="w-[118px]">
+              {renderField('quantity', 'Số lượng kiện', '1', quantity, setQuantity, 'numeric')}
             </View>
+          </View>
 
-            {renderInput('briefcase', '#8B4513', 'Loại bao bì (vd: Thùng Carton)', packagingType, setPackagingType)}
+          {renderField(
+            'packagingType',
+            'Quy cách đóng gói',
+            'Ví dụ: Thùng carton, Bao, Khay xốp...',
+            packagingType,
+            setPackagingType
+          )}
 
-            {/* Image Picker */}
+          <View className="gap-2">
+            <Text className="text-[#3A1F04] text-[13px] font-bold">Kích thước kiện hàng</Text>
+            <View className="flex-row gap-2">
+              <View className="flex-1">
+                {renderField('lengthCm', 'Dài cm', 'Dài', lengthCm, setLengthCm, 'numeric')}
+              </View>
+              <View className="flex-1">
+                {renderField('widthCm', 'Rộng cm', 'Rộng', widthCm, setWidthCm, 'numeric')}
+              </View>
+              <View className="flex-1">
+                {renderField('heightCm', 'Cao cm', 'Cao', heightCm, setHeightCm, 'numeric')}
+              </View>
+            </View>
+          </View>
+
+          <View className="gap-2">
+            <Text className="text-[#3A1F04] text-[13px] font-bold">Ảnh lô hàng</Text>
             <Pressable
-              onPress={pickImage}
-              className="mt-2 w-full h-[120px] rounded-[14px] border-2 border-dashed border-[#DAC2B6]/60 bg-[#F8F9FA] items-center justify-center overflow-hidden"
+              onPress={openImagePicker}
+              className={[
+                'min-h-[148px] w-full overflow-hidden rounded-[14px] border-2 border-dashed bg-[#F8F9FA]',
+                errors.documentImage ? 'border-red-300' : 'border-[#DAC2B6]/70',
+              ].join(' ')}
             >
-              {imageUri ? (
-                <Image source={{ uri: imageUri }} className="w-full h-full" resizeMode="cover" />
+              {documentImage ? (
+                <View>
+                  <Image source={{ uri: documentImage.uri }} className="h-36 w-full" resizeMode="cover" />
+                  <View className="flex-row items-center gap-2 px-4 py-3">
+                    <Ionicons name="checkmark-circle" size={18} color="#006E0A" />
+                    <Text className="text-[#006E0A] text-sm font-bold">Đã chọn ảnh lô hàng</Text>
+                  </View>
+                </View>
               ) : (
-                <View className="items-center">
-                  <Ionicons name="camera-outline" size={32} color="#8B4513" />
-                  <Text className="text-[#877369] font-medium text-[13px] mt-2">Chụp hoặc tải ảnh kiện hàng</Text>
+                <View className="min-h-[148px] items-center justify-center px-5">
+                  <View className="h-12 w-12 items-center justify-center rounded-full bg-[#8B4513]/10">
+                    <Ionicons name="camera-outline" size={26} color="#8B4513" />
+                  </View>
+                  <Text className="mt-3 text-center text-sm font-bold text-[#3A1F04]">
+                    Chụp hoặc tải ảnh kiện hàng
+                  </Text>
+                  <Text className="mt-1 text-center text-xs leading-5 text-[#877369]">
+                    Chỉ chọn ảnh, không chọn video.
+                  </Text>
                 </View>
               )}
             </Pressable>
-          </View>
-
-          {/* Goods Type Selection */}
-          <GoodsTypeSelector value={goodsType} onChange={setGoodsType} />
-
-          {/* Temperature Settings */}
-          <TemperatureSelector temperature={temperature} setTemperature={setTemperature} />
-
-          <View className="items-center pt-2 pb-4">
-            <Text className="text-[10px] font-medium text-[#877369] uppercase tracking-widest leading-relaxed">
-              ColdChainX • Giữ trọn tinh hoa di sản
-            </Text>
+            {errors.documentImage ? (
+              <Text className="text-xs font-medium text-red-600">{errors.documentImage}</Text>
+            ) : null}
           </View>
         </View>
+
+        <GoodsTypeSelector value={category} onChange={setCategory} />
+        {errors.category ? <Text className="-mt-3 text-xs font-medium text-red-600">{errors.category}</Text> : null}
+
+        <TemperatureSelector temperature={tempCondition} setTemperature={setTempCondition} />
+
+        <Text className="pb-4 text-center text-[10px] font-medium uppercase tracking-widest text-[#877369]">
+          ColdChainX - Giữ trọn tinh hoa di sản
+        </Text>
       </ScrollView>
 
-      {/* Fixed Bottom Action */}
-      <View className="absolute bottom-0 inset-x-0 h-32 flex justify-end pb-8 px-5 z-30 pointer-events-none">
+      <View className="absolute bottom-0 inset-x-0 z-30 justify-end bg-[#F5F2F0]/95 px-5 pb-8 pt-4">
         <Pressable
           onPress={handleSubmit}
           disabled={isLoading}
-          className={`w-full h-14 bg-[#8B4513] rounded-[16px] items-center justify-center shadow-md pointer-events-auto active:opacity-80 ${isLoading ? 'opacity-70' : ''}`}
+          className={[
+            'h-14 w-full flex-row items-center justify-center gap-2 rounded-[16px] bg-[#8B4513] shadow-md active:opacity-80',
+            isLoading ? 'opacity-70' : '',
+          ].join(' ')}
         >
-          <Text className="text-[#FFC29F] font-bold text-[18px] tracking-wide">
-            {isLoading ? 'ĐANG TẠO ĐƠN...' : 'LÊN ĐƠN GIAO HÀNG'}
+          {isLoading ? <ActivityIndicator color="#FFC29F" /> : null}
+          <Text className="text-[17px] font-bold tracking-wide text-[#FFC29F]">
+            {isLoading ? 'ĐANG GỬI YÊU CẦU...' : 'LÊN ĐƠN GIAO HÀNG'}
           </Text>
         </Pressable>
       </View>
+
+      <Modal visible={!!successData} transparent animationType="fade">
+        <View className="flex-1 items-center justify-center bg-black/60 px-5">
+          <View className="w-full rounded-3xl bg-white p-6 shadow-lg">
+            <View className="items-center">
+              <View className="mb-4 h-16 w-16 items-center justify-center rounded-full bg-[#E8F5E9]">
+                <Ionicons name="checkmark-circle" size={42} color="#4CAF50" />
+              </View>
+              <Text className="text-center text-[20px] font-bold text-[#3A1F04]">
+                Gửi yêu cầu thành công
+              </Text>
+              <Text className="mt-2 text-center text-[14px] leading-6 text-[#877369]">
+                Bộ phận Sales sẽ kiểm duyệt yêu cầu và gửi báo giá cho bạn.
+              </Text>
+            </View>
+
+            <View className="my-6 gap-3 rounded-2xl border border-[#DAC2B6]/40 bg-[#F8F9FA] p-4">
+              <InfoRow label="Mã yêu cầu" value={successData?.trackingCode || 'Đang cập nhật'} />
+              <InfoRow label="Trạng thái" value={translateStatus(successData?.status || 'PENDING_REVIEW')} />
+            </View>
+
+            <View className="gap-3">
+              <Pressable
+                onPress={() => {
+                  setSuccessData(null);
+                  router.replace('/(customer)/status');
+                }}
+                className="h-12 w-full items-center justify-center rounded-xl bg-[#8B4513]"
+              >
+                <Text className="text-[15px] font-bold text-white">Xem trạng thái đơn</Text>
+              </Pressable>
+              <Pressable
+                onPress={resetForm}
+                className="h-12 w-full items-center justify-center rounded-xl border border-[#8B4513] bg-white"
+              >
+                <Text className="text-[15px] font-bold text-[#8B4513]">Tạo đơn khác</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
+}
+
+function SectionTitle({ title, icon }: { title: string; icon: keyof typeof Ionicons.glyphMap }) {
+  return (
+    <View className="flex-row items-center gap-2 border-b border-[#DAC2B6]/30 pb-3">
+      <Ionicons name={icon} size={18} color="#8B4513" />
+      <Text className="text-[#8B4513] text-base font-bold">{title}</Text>
+    </View>
+  );
+}
+
+function RouteRow({
+  icon,
+  color,
+  label,
+  value,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  color: string;
+  label: string;
+  value: string;
+}) {
+  return (
+    <View className="flex-row items-start gap-3">
+      <View className="h-10 w-10 items-center justify-center rounded-full bg-[#F8F9FA]">
+        <Ionicons name={icon} size={18} color={color} />
+      </View>
+      <View className="flex-1">
+        <Text className="text-xs font-bold uppercase tracking-wide text-[#877369]">{label}</Text>
+        <Text className="mt-1 text-sm font-semibold leading-5 text-[#3A1F04]">{value}</Text>
+      </View>
+    </View>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View className="flex-row items-center justify-between gap-4">
+      <Text className="text-[13px] text-[#877369]">{label}</Text>
+      <Text className="flex-1 text-right text-[13px] font-bold text-[#8B4513]">{value}</Text>
+    </View>
+  );
+}
+
+function parseDecimal(value: string) {
+  return Number(value.trim().replace(',', '.'));
+}
+
+function isPositiveNumber(value: string) {
+  const parsed = parseDecimal(value);
+  return Number.isFinite(parsed) && parsed > 0;
+}
+
+function isPositiveInteger(value: string) {
+  const parsed = Number(value.trim());
+  return Number.isInteger(parsed) && parsed >= 1;
+}
+
+function translateStatus(status: string) {
+  switch (status.toUpperCase()) {
+    case 'PENDING':
+    case 'PENDING_REVIEW':
+      return 'Chờ duyệt';
+    case 'APPROVED':
+      return 'Đã duyệt';
+    case 'IN_TRANSIT':
+      return 'Đang giao';
+    case 'DELIVERED':
+      return 'Đã giao';
+    case 'CANCELLED':
+      return 'Đã hủy';
+    default:
+      return status;
+  }
 }

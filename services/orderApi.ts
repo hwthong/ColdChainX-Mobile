@@ -1,19 +1,21 @@
 import { apiRequest } from './apiClient';
 
 export interface CreateOrderPayload {
-  ItemName: string;
-  Category: string;
-  TempCondition: number;
-  ExpectedWeightKg: number;
-  Quantity: number;
-  PackagingType: string;
-  LengthCm: number;
-  WidthCm: number;
-  HeightCm: number;
-  DestAddressText: string;
-  DocumentImageUri: string;
-  DocumentImageMimeType?: string;
-  DocumentImageFileName?: string;
+  itemName: string;
+  category: string;
+  tempCondition: number;
+  expectedWeightKg: number;
+  quantity: number;
+  packagingType: string;
+  lengthCm: number;
+  widthCm: number;
+  heightCm: number;
+  destAddressText: string;
+  image: {
+    uri: string;
+    mimeType?: string;
+    fileName?: string;
+  };
 }
 
 export interface OrderLocationResponse {
@@ -61,6 +63,7 @@ export interface OrderResponse {
   status: string;
   createdAt?: string | null;
   destination?: OrderLocationResponse | null;
+  documentUrl?: string | null;
   documents: OrderDocumentResponse[];
   quotations: OrderQuotationResponse[];
 }
@@ -77,9 +80,12 @@ export interface CreateOrderResponse {
 export interface PagedResult<T> {
   items: T[];
   totalCount: number;
+  totalRecords?: number;
+  currentPage?: number;
   pageNumber: number;
   pageSize: number;
   totalPages: number;
+  data?: T[];
 }
 
 export interface ApiResponse<T> {
@@ -88,28 +94,24 @@ export interface ApiResponse<T> {
   data?: T | null;
 }
 
-export function createOrder(accessToken: string, payload: CreateOrderPayload) {
+export function createOrder(accessToken: string, data: CreateOrderPayload) {
   const formData = new FormData();
-  formData.append('Item_Name', payload.ItemName);
-  formData.append('Category', payload.Category);
-  formData.append('Temp_Condition', String(payload.TempCondition));
-  formData.append('Expected_Weight_KG', String(payload.ExpectedWeightKg));
-  formData.append('Quantity', String(payload.Quantity));
-  formData.append('Packaging_Type', payload.PackagingType);
-  formData.append('Length_CM', String(payload.LengthCm));
-  formData.append('Width_CM', String(payload.WidthCm));
-  formData.append('Height_CM', String(payload.HeightCm));
-  formData.append('Dest_Address_Text', payload.DestAddressText);
+  formData.append('Item_Name', data.itemName);
+  formData.append('Category', data.category);
+  formData.append('Temp_Condition', String(data.tempCondition));
+  formData.append('Expected_Weight_KG', String(data.expectedWeightKg));
+  formData.append('Quantity', String(data.quantity));
+  formData.append('Packaging_Type', data.packagingType);
+  formData.append('Length_CM', String(data.lengthCm));
+  formData.append('Width_CM', String(data.widthCm));
+  formData.append('Height_CM', String(data.heightCm));
+  formData.append('Dest_Address_Text', data.destAddressText);
 
-  // Append image
-  // In React Native FormData, files look like this object
-  const fileToUpload = {
-    uri: payload.DocumentImageUri,
-    type: payload.DocumentImageMimeType || 'image/jpeg',
-    name: payload.DocumentImageFileName || 'document.jpg',
-  } as any;
-  
-  formData.append('DocumentImage', fileToUpload);
+  formData.append('DocumentImage', {
+    uri: data.image.uri,
+    name: data.image.fileName || 'cargo.jpg',
+    type: data.image.mimeType || 'image/jpeg',
+  } as any);
 
   return apiRequest<ApiResponse<CreateOrderResponse>>('/api/orders', {
     method: 'POST',
@@ -123,12 +125,34 @@ export function createOrder(accessToken: string, payload: CreateOrderPayload) {
 }
 
 export function getCustomerOrders(accessToken: string, customerId: string, page = 1, size = 10) {
-  return apiRequest<ApiResponse<PagedResult<OrderResponse>>>(`/api/customers/${customerId}/orders?pageNumber=${page}&pageSize=${size}`, {
+  return apiRequest<ApiResponse<PagedResult<OrderResponse>>>(
+    `/api/customers/${customerId}/orders?pageNumber=${page}&pageSize=${size}`,
+    {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    }
+  ).then((response): ApiResponse<OrderResponse[]> => {
+    const pagedData = response.data;
+
+    return {
+      ...response,
+      data: pagedData?.data ?? pagedData?.items ?? [],
+    };
+  });
+}
+
+export function getOrders(accessToken: string, page = 1, size = 10) {
+  return apiRequest<ApiResponse<PagedResult<OrderResponse>>>(`/api/orders?pageNumber=${page}&pageSize=${size}`, {
     method: 'GET',
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
-  });
+  }).then((response): ApiResponse<OrderResponse[]> => ({
+    ...response,
+    data: response.data?.data ?? response.data?.items ?? [],
+  }));
 }
 
 export function getOrderById(accessToken: string, orderId: string) {
