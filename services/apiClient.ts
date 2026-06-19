@@ -62,14 +62,14 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
       finalRequestUrl,
       method,
       baseUrl: API_BASE_URL,
-      hint: 'Cannot reach backend. Check EXPO_PUBLIC_API_BASE_URL, backend LAN binding, firewall, and same WiFi.',
+      hint: 'Cannot reach backend. Check EXPO_PUBLIC_API_BASE_URL or wait for the Render server to wake up.',
       error: error instanceof Error ? error.message : error,
     });
 
     throw new ApiClientError(
       error instanceof Error
-        ? `Cannot reach backend. Check EXPO_PUBLIC_API_BASE_URL, backend LAN binding, firewall, and same WiFi. (${error.message})`
-        : 'Cannot reach backend. Check EXPO_PUBLIC_API_BASE_URL, backend LAN binding, firewall, and same WiFi.'
+        ? `Cannot reach backend. Check EXPO_PUBLIC_API_BASE_URL or wait for the Render server to wake up. (${error.message})`
+        : 'Cannot reach backend. Check EXPO_PUBLIC_API_BASE_URL or wait for the Render server to wake up.'
     );
   });
 

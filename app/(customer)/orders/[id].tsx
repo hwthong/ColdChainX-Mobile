@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { API_BASE_URL, getApiErrorMessage } from '../../../services/apiClient';
 import { getCustomerIdFromToken } from '../../../services/jwt';
+import { getMockDeliveryFlow, MockDeliveryFlow } from '../../../services/mockDeliveryApi';
 import {
   acceptQuotation,
   getOrderById,
@@ -20,6 +21,7 @@ import {
   OrderResponse,
   QuotationResponse,
 } from '../../../services/orderApi';
+import { buildDispatchTimeline, buildInboundTimeline, TimelineStep } from '../../../services/trackingMock';
 import { useAuthStore } from '../../../store/useAuthStore';
 
 export default function OrderDetailScreen() {
@@ -85,6 +87,12 @@ export default function OrderDetailScreen() {
   const showContractPlaceholder =
     Boolean(acceptedQuotation) || (order ? isContractReadyStatus(order.status) : false);
   const documentImage = getFullAssetUrl(getOrderImageUrl(order));
+  const inboundTimeline = useMemo(() => buildInboundTimeline(order?.status ?? 'PENDING_REVIEW'), [order?.status]);
+  const dispatchTimeline = useMemo(() => buildDispatchTimeline(order?.status ?? 'PENDING_REVIEW'), [order?.status]);
+  const deliveryFlow = useMemo(
+    () => getMockDeliveryFlow(order?.status ?? 'PENDING_REVIEW', order?.destination?.address),
+    [order?.destination?.address, order?.status]
+  );
 
   const handleAcceptQuotation = async (quote: QuotationResponse) => {
     if (!accessToken) {
@@ -181,6 +189,16 @@ export default function OrderDetailScreen() {
         <InfoRow label="Nhiệt độ yêu cầu" value={formatTemperature(order.tempCondition)} strong />
       </InfoCard>
 
+      {order.route ? (
+        <InfoCard title="Tuyến vận chuyển" icon="git-branch-outline">
+          <InfoRow label="Mã tuyến" value={order.route.routeCode} strong />
+          <InfoRow label="Điểm đi" value={order.route.originCity} />
+          <InfoRow label="Điểm đến" value={order.route.destCity} />
+          <InfoRow label="Thời gian dự kiến" value={order.route.transitTime} />
+          <InfoRow label="Cut-off nhập hub" value={formatCutOffTime(order.route.cutOffTime)} />
+        </InfoCard>
+      ) : null}
+
       <InfoCard title="Giao hàng đến" icon="location-sharp">
         <Text className="text-sm font-semibold leading-5 text-[#3A1F04]">
           {order.destination?.address || 'Chưa cập nhật địa chỉ'}
@@ -237,11 +255,24 @@ export default function OrderDetailScreen() {
             <Ionicons name="document-text-outline" size={18} color="#8B4513" />
             <Text className="text-base font-bold text-[#8B4513]">Hợp đồng</Text>
           </View>
+          {/* TODO: connect contract API when contractId is available from backend response */}
           <Text className="text-sm leading-6 text-[#877369]">
             Hợp đồng sẽ khả dụng sau khi báo giá được chấp nhận và Sales tạo hợp đồng.
           </Text>
         </View>
       ) : null}
+
+      <InfoCard title="Hub Drop-off" icon="business-outline">
+        {/* TODO: replace inbound timeline with real warehouse receipt status API when available */}
+        <TimelineList steps={inboundTimeline} />
+      </InfoCard>
+
+      <InfoCard title="Dispatch & Load Planning" icon="file-tray-stacked-outline">
+        {/* TODO: connect real dispatch/trip status when customer tracking endpoint is available */}
+        <TimelineList steps={dispatchTimeline} />
+      </InfoCard>
+
+      <DeliveryFlowCard flow={deliveryFlow} />
     </ScrollView>
   );
 }
@@ -310,6 +341,55 @@ function QuotationCard({
   );
 }
 
+function TimelineList({ steps }: { steps: TimelineStep[] }) {
+  return (
+    <View className="gap-3">
+      {steps.map((step, index) => {
+        const styles = getTimelineStyles(step.state);
+        const isLast = index === steps.length - 1;
+
+        return (
+          <View key={step.key} className="flex-row gap-3">
+            <View className="items-center">
+              <View className={`h-8 w-8 items-center justify-center rounded-full ${styles.dot}`}>
+                <Ionicons name={styles.icon} size={16} color={styles.iconColor} />
+              </View>
+              {!isLast ? <View className="mt-2 h-8 w-px bg-[#DAC2B6]/70" /> : null}
+            </View>
+
+            <View className="flex-1 pb-1">
+              <Text className={`text-sm font-bold ${styles.title}`}>{step.title}</Text>
+              <Text className="mt-1 text-xs leading-5 text-[#877369]">{step.description}</Text>
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+function DeliveryFlowCard({ flow }: { flow: MockDeliveryFlow }) {
+  const deliverySteps: TimelineStep[] = flow.stops.map((stop) => ({
+    key: stop.id,
+    title: stop.label,
+    description: `${stop.address} - ETA ${stop.eta}`,
+    state: mapDeliveryState(stop.status),
+  }));
+
+  return (
+    <InfoCard title="Door Delivery & COD" icon="home-outline">
+      {/* TODO: replace mock delivery flow when backend provides delivery/check-in/ePOD/COD APIs */}
+      <TimelineList steps={deliverySteps} />
+
+      <View className="mt-2 gap-3 rounded-2xl border border-[#DAC2B6]/50 bg-[#F8F9FA] p-4">
+        <InfoRow label="e-POD" value={flow.epodStatus} />
+        <InfoRow label="COD" value={flow.codStatus} />
+        {flow.rejectionReason ? <InfoRow label="Lý do từ chối" value={flow.rejectionReason} /> : null}
+      </View>
+    </InfoCard>
+  );
+}
+
 function InfoCard({
   title,
   icon,
@@ -328,6 +408,57 @@ function InfoCard({
       <View className="gap-3">{children}</View>
     </View>
   );
+}
+
+function getTimelineStyles(state: TimelineStep['state']): {
+  dot: string;
+  title: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  iconColor: string;
+} {
+  switch (state) {
+    case 'done':
+      return {
+        dot: 'bg-green-100',
+        title: 'text-green-700',
+        icon: 'checkmark',
+        iconColor: '#15803d',
+      };
+    case 'current':
+      return {
+        dot: 'bg-[#8B4513]/10',
+        title: 'text-[#8B4513]',
+        icon: 'ellipse',
+        iconColor: '#8B4513',
+      };
+    case 'issue':
+      return {
+        dot: 'bg-red-100',
+        title: 'text-red-700',
+        icon: 'alert',
+        iconColor: '#b91c1c',
+      };
+    default:
+      return {
+        dot: 'bg-[#DAC2B6]/30',
+        title: 'text-[#877369]',
+        icon: 'time-outline',
+        iconColor: '#877369',
+      };
+  }
+}
+
+function mapDeliveryState(status: MockDeliveryFlow['stops'][number]['status']): TimelineStep['state'] {
+  switch (status) {
+    case 'done':
+      return 'done';
+    case 'current':
+      return 'current';
+    case 'issue':
+      return 'issue';
+    default:
+      return 'pending';
+  }
 }
 
 function InfoRow({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
@@ -437,6 +568,10 @@ function getFullAssetUrl(url?: string | null) {
 
 function formatDate(value?: string | null) {
   return value ? new Date(value).toLocaleString('vi-VN') : 'Chưa cập nhật';
+}
+
+function formatCutOffTime(value?: string | null) {
+  return value?.slice(0, 5) || 'Chưa cập nhật';
 }
 
 function formatMoney(value?: number | null) {

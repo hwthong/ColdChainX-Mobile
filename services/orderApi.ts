@@ -11,6 +11,7 @@ export interface CreateOrderPayload {
   widthCm: number;
   heightCm: number;
   destAddressText: string;
+  routeId: string;
   image: {
     uri: string;
     mimeType?: string;
@@ -49,6 +50,15 @@ export interface OrderQuotationResponse {
   createdAt?: string | null;
 }
 
+export interface OrderRouteResponse {
+  routeId: string;
+  routeCode: string;
+  originCity: string;
+  destCity: string;
+  transitTime: string;
+  cutOffTime: string;
+}
+
 export type QuotationResponse = OrderQuotationResponse;
 
 export interface AcceptQuotationResponse {
@@ -77,6 +87,7 @@ export interface OrderResponse {
   cargoValue: number;
   status: string;
   createdAt?: string | null;
+  route?: OrderRouteResponse | null;
   destination?: OrderLocationResponse | null;
   documentUrl?: string | null;
   documents: OrderDocumentResponse[];
@@ -90,6 +101,7 @@ export interface CreateOrderResponse {
   expectedCbm: number;
   documentUrl: string;
   status: string;
+  routeId?: string | null;
 }
 
 export interface PagedResult<T> {
@@ -121,6 +133,7 @@ export function createOrder(accessToken: string, data: CreateOrderPayload) {
   formData.append('Width_CM', String(data.widthCm));
   formData.append('Height_CM', String(data.heightCm));
   formData.append('Dest_Address_Text', data.destAddressText);
+  formData.append('Route_ID', data.routeId);
 
   formData.append('DocumentImage', {
     uri: data.image.uri,

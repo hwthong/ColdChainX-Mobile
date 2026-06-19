@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -20,6 +20,7 @@ import { GoodsType, GoodsTypeSelector } from '../../components/GoodsTypeSelector
 import { TemperatureSelector } from '../../components/TemperatureSelector';
 import { ApiClientError, getApiErrorMessage } from '../../services/apiClient';
 import { createOrder } from '../../services/orderApi';
+import { getRouteOptions, RouteOptionResponse } from '../../services/routeApi';
 import { useAuthStore } from '../../store/useAuthStore';
 
 type FieldKey =
@@ -33,6 +34,7 @@ type FieldKey =
   | 'widthCm'
   | 'heightCm'
   | 'destAddressText'
+  | 'routeId'
   | 'documentImage';
 
 type ValidationErrors = Partial<Record<FieldKey, string>>;
@@ -65,13 +67,43 @@ export default function CreateOrderScreen() {
   const [lengthCm, setLengthCm] = useState('');
   const [widthCm, setWidthCm] = useState('');
   const [heightCm, setHeightCm] = useState('');
+  const [selectedRouteId, setSelectedRouteId] = useState('');
   const [documentImage, setDocumentImage] = useState<DocumentImage | null>(null);
 
+  const [routeOptions, setRouteOptions] = useState<RouteOptionResponse[]>([]);
+  const [isLoadingRoutes, setIsLoadingRoutes] = useState(true);
+  const [routeError, setRouteError] = useState<string | null>(null);
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [backendError, setBackendError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [successData, setSuccessData] = useState<SuccessData | null>(null);
+  const selectedRoute = routeOptions.find((route) => route.routeId === selectedRouteId) ?? null;
+  const capacityWarning = getCapacityWarning(expectedWeightKg, lengthCm, widthCm, heightCm, quantity);
+
+  const fetchRoutes = useCallback(async () => {
+    setIsLoadingRoutes(true);
+    setRouteError(null);
+
+    try {
+      const response = await getRouteOptions();
+      if (response.success && response.data) {
+        const activeRoutes = response.data.filter((route) => route.status?.toUpperCase() !== 'INACTIVE');
+        setRouteOptions(activeRoutes);
+        setSelectedRouteId((current) => current || (activeRoutes.length === 1 ? activeRoutes[0].routeId : ''));
+      } else {
+        setRouteError(response.message || 'Không thể tải danh sách tuyến vận chuyển.');
+      }
+    } catch (error) {
+      setRouteError(getApiErrorMessage(error));
+    } finally {
+      setIsLoadingRoutes(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchRoutes();
+  }, [fetchRoutes]);
 
   const validateForm = () => {
     const nextErrors: ValidationErrors = {};
@@ -88,6 +120,7 @@ export default function CreateOrderScreen() {
     if (destAddressText.trim().length < 5) {
       nextErrors.destAddressText = 'Địa chỉ giao hàng cần ít nhất 5 ký tự.';
     }
+    if (!selectedRouteId) nextErrors.routeId = 'Vui lòng chọn tuyến vận chuyển.';
     if (!documentImage) nextErrors.documentImage = 'Vui lòng chọn ảnh lô hàng.';
 
     return nextErrors;
@@ -111,6 +144,7 @@ export default function CreateOrderScreen() {
       widthCm,
       heightCm,
       destAddressText,
+      routeId: selectedRouteId,
     });
     console.log('[CreateOrder] validation errors:', nextErrors);
 
@@ -147,6 +181,7 @@ export default function CreateOrderScreen() {
         widthCm: parseDecimal(widthCm),
         heightCm: parseDecimal(heightCm),
         destAddressText: destAddressText.trim(),
+        routeId: selectedRouteId,
         image: {
           uri: documentImage.uri,
           mimeType: documentImage.mimeType || 'image/jpeg',
@@ -263,6 +298,7 @@ export default function CreateOrderScreen() {
     setLengthCm('');
     setWidthCm('');
     setHeightCm('');
+    setSelectedRouteId('');
     setDocumentImage(null);
     setErrors({});
     setFormError(null);
@@ -342,6 +378,13 @@ export default function CreateOrderScreen() {
             />
             <View className="h-6 w-px bg-[#DAC2B6] ml-5" />
             <RouteRow
+              icon="git-branch-outline"
+              color="#8B4513"
+              label="Tuyến vận chuyển"
+              value={selectedRoute ? getRouteLabel(selectedRoute) : 'Chưa chọn tuyến vận chuyển'}
+            />
+            <View className="h-6 w-px bg-[#DAC2B6] ml-5" />
+            <RouteRow
               icon="location-sharp"
               color="#006E0A"
               label="Địa chỉ giao hàng"
@@ -361,6 +404,19 @@ export default function CreateOrderScreen() {
               Hub ColdChainX sẽ được xác nhận sau khi yêu cầu được duyệt
             </Text>
           </View>
+
+          <RouteOptionPicker
+            routes={routeOptions}
+            selectedRouteId={selectedRouteId}
+            isLoading={isLoadingRoutes}
+            error={routeError}
+            onRetry={fetchRoutes}
+            onSelect={(routeId) => {
+              setSelectedRouteId(routeId);
+              setErrors((current) => ({ ...current, routeId: undefined }));
+            }}
+          />
+          {errors.routeId ? <Text className="text-xs font-medium text-red-600">{errors.routeId}</Text> : null}
 
           {renderField(
             'destAddressText',
@@ -420,6 +476,17 @@ export default function CreateOrderScreen() {
               </View>
             </View>
           </View>
+
+          {capacityWarning ? (
+            <View className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <View className="flex-row items-start gap-2">
+                <Ionicons name="warning-outline" size={18} color="#b45309" />
+                <Text className="flex-1 text-sm font-semibold leading-5 text-amber-800">
+                  {capacityWarning}
+                </Text>
+              </View>
+            </View>
+          ) : null}
 
           <View className="gap-2">
             <Text className="text-[#3A1F04] text-[13px] font-bold">Ảnh lô hàng</Text>
@@ -507,12 +574,19 @@ export default function CreateOrderScreen() {
             <View className="gap-3">
               <Pressable
                 onPress={() => {
+                  const createdOrderId = successData?.orderId;
                   setSuccessData(null);
-                  router.replace('/(customer)/status');
+                  if (createdOrderId) {
+                    router.replace(`/(customer)/orders/${createdOrderId}` as never);
+                  } else {
+                    router.replace('/(customer)/status');
+                  }
                 }}
                 className="h-12 w-full items-center justify-center rounded-xl bg-[#8B4513]"
               >
-                <Text className="text-[15px] font-bold text-white">Xem trạng thái đơn</Text>
+                <Text className="text-[15px] font-bold text-white">
+                  {successData?.orderId ? 'Xem chi tiết đơn' : 'Xem trạng thái đơn'}
+                </Text>
               </Pressable>
               <Pressable
                 onPress={resetForm}
@@ -533,6 +607,77 @@ function SectionTitle({ title, icon }: { title: string; icon: keyof typeof Ionic
     <View className="flex-row items-center gap-2 border-b border-[#DAC2B6]/30 pb-3">
       <Ionicons name={icon} size={18} color="#8B4513" />
       <Text className="text-[#8B4513] text-base font-bold">{title}</Text>
+    </View>
+  );
+}
+
+function RouteOptionPicker({
+  routes,
+  selectedRouteId,
+  isLoading,
+  error,
+  onRetry,
+  onSelect,
+}: {
+  routes: RouteOptionResponse[];
+  selectedRouteId: string;
+  isLoading: boolean;
+  error: string | null;
+  onRetry: () => void;
+  onSelect: (routeId: string) => void;
+}) {
+  return (
+    <View className="gap-2">
+      <View className="flex-row items-center justify-between">
+        <Text className="text-[#3A1F04] text-[13px] font-bold">Tuyến vận chuyển</Text>
+        {isLoading ? <ActivityIndicator size="small" color="#8B4513" /> : null}
+      </View>
+
+      {error ? (
+        <View className="rounded-[14px] border border-red-200 bg-red-50 p-4">
+          <Text className="text-sm font-semibold leading-5 text-red-700">{error}</Text>
+          <Pressable onPress={onRetry} className="mt-3 self-start rounded-lg bg-[#8B4513] px-3 py-2">
+            <Text className="text-xs font-bold text-white">Tải lại tuyến</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {!isLoading && !error && routes.length === 0 ? (
+        <View className="rounded-[14px] border border-[#DAC2B6]/60 bg-[#F8F9FA] p-4">
+          <Text className="text-sm leading-5 text-[#877369]">
+            Chưa có tuyến vận chuyển khả dụng. Vui lòng thử lại sau.
+          </Text>
+        </View>
+      ) : null}
+
+      <View className="gap-3">
+        {routes.map((route) => {
+          const isSelected = selectedRouteId === route.routeId;
+
+          return (
+            <Pressable
+              key={route.routeId}
+              onPress={() => onSelect(route.routeId)}
+              className={[
+                'rounded-[14px] border p-4',
+                isSelected ? 'border-[#8B4513] bg-[#8B4513]' : 'border-[#DAC2B6]/60 bg-[#F8F9FA]',
+              ].join(' ')}
+            >
+              <View className="flex-row items-start justify-between gap-3">
+                <View className="flex-1">
+                  <Text className={['text-sm font-bold', isSelected ? 'text-white' : 'text-[#3A1F04]'].join(' ')}>
+                    {getRouteLabel(route)}
+                  </Text>
+                  <Text className={['mt-1 text-xs', isSelected ? 'text-white/75' : 'text-[#877369]'].join(' ')}>
+                    {getRouteMeta(route)}
+                  </Text>
+                </View>
+                {isSelected ? <Ionicons name="checkmark-circle" size={20} color="#FFC29F" /> : null}
+              </View>
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 }
@@ -572,6 +717,48 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 function parseDecimal(value: string) {
   return Number(value.trim().replace(',', '.'));
+}
+
+function getCapacityWarning(weightValue: string, lengthValue: string, widthValue: string, heightValue: string, quantityValue: string) {
+  const weightKg = parseDecimal(weightValue);
+  const lengthCm = parseDecimal(lengthValue);
+  const widthCm = parseDecimal(widthValue);
+  const heightCm = parseDecimal(heightValue);
+  const quantity = Number(quantityValue.trim());
+
+  if (Number.isFinite(weightKg) && weightKg > 1500) {
+    return 'Khối lượng dự kiến đã vượt khoảng 1.5 tấn. Backend sẽ kiểm tra năng lực tuyến và có thể yêu cầu điều chỉnh đơn.';
+  }
+
+  if (Number.isFinite(weightKg) && weightKg >= 1000) {
+    return 'Khối lượng dự kiến đang gần ngưỡng 1-1.5 tấn. Vui lòng kiểm tra lại trước khi gửi yêu cầu.';
+  }
+
+  if (
+    Number.isFinite(lengthCm) &&
+    Number.isFinite(widthCm) &&
+    Number.isFinite(heightCm) &&
+    Number.isFinite(quantity)
+  ) {
+    const estimatedCbm = (lengthCm * widthCm * heightCm * quantity) / 1_000_000;
+    if (estimatedCbm >= 8) {
+      return 'Kích thước quy đổi đang khá lớn. Backend sẽ xác nhận CBM và năng lực tuyến ở bước kiểm duyệt.';
+    }
+  }
+
+  return null;
+}
+
+function getRouteLabel(route: RouteOptionResponse) {
+  return `${route.routeCode} - ${route.originCity} -> ${route.destCity}`;
+}
+
+function getRouteMeta(route: RouteOptionResponse) {
+  return `ETA ${route.transitTime} | Cut-off ${formatCutOffTime(route.cutOffTime)}`;
+}
+
+function formatCutOffTime(value: string) {
+  return value?.slice(0, 5) || 'Chưa cập nhật';
 }
 
 function isPositiveNumber(value: string) {

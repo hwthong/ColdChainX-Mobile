@@ -92,6 +92,9 @@ export default function StatusScreen() {
           <View className="mb-3 flex-row items-start justify-between gap-3">
             <View className="flex-1">
               <Text className="text-lg font-bold text-[#8B4513]">{item.trackingCode}</Text>
+              <Text className="mt-1 text-[11px] font-medium text-[#877369]" numberOfLines={1}>
+                Order ID: {item.orderId}
+              </Text>
               <Text className="mt-1 text-xs text-[#877369]">{formatDate(item.createdAt)}</Text>
             </View>
             <StatusBadge status={item.status} />
@@ -125,6 +128,24 @@ export default function StatusScreen() {
                   {item.destination?.address || 'Chưa cập nhật địa chỉ'}
                 </Text>
               </View>
+
+              {item.route ? (
+                <View className="flex-row items-center gap-2">
+                  <Ionicons name="git-branch-outline" size={16} color="#8B4513" />
+                  <Text className="flex-1 text-sm font-semibold text-[#8B4513]">
+                    {`${item.route.routeCode} - ${item.route.originCity} -> ${item.route.destCity}`}
+                  </Text>
+                </View>
+              ) : null}
+
+              {getLatestQuotationStatus(item) ? (
+                <View className="flex-row items-center gap-2">
+                  <Ionicons name="receipt-outline" size={16} color="#877369" />
+                  <Text className="text-sm font-medium text-[#877369]">
+                    Báo giá: {translateStatus(getLatestQuotationStatus(item) ?? '')}
+                  </Text>
+                </View>
+              ) : null}
             </View>
           </View>
         </View>
@@ -258,4 +279,8 @@ function formatDate(value?: string | null) {
 function formatTemperature(value: string | number) {
   const text = String(value);
   return text.includes('°') ? text : `${text} °C`;
+}
+
+function getLatestQuotationStatus(order: OrderResponse) {
+  return order.quotations?.[0]?.status ?? null;
 }
