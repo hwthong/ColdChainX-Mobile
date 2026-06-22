@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Linking,
   Pressable,
@@ -8,10 +9,18 @@ import {
   Text,
   View,
 } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
+import * as WebBrowser from 'expo-web-browser';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
-import { API_BASE_URL, getApiErrorMessage } from '../../../services/apiClient';
+import { API_BASE_URL, ApiClientError, getApiErrorMessage } from '../../../services/apiClient';
+import {
+  ContractInfoResponse,
+  getContractByOrder,
+  SignedContractFile,
+  uploadSignedContract,
+} from '../../../services/contractApi';
 import { getCustomerIdFromToken } from '../../../services/jwt';
 import { getMockDeliveryFlow, MockDeliveryFlow } from '../../../services/mockDeliveryApi';
 import {
@@ -33,12 +42,49 @@ export default function OrderDetailScreen() {
 
   const [order, setOrder] = useState<OrderResponse | null>(null);
   const [quotations, setQuotations] = useState<QuotationResponse[]>([]);
+  const [contract, setContract] = useState<ContractInfoResponse | null>(null);
+  const [selectedSignedFile, setSelectedSignedFile] = useState<SignedContractFile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isContractLoading, setIsContractLoading] = useState(false);
+  const [isUploadingContract, setIsUploadingContract] = useState(false);
   const [isAcceptingQuoteId, setIsAcceptingQuoteId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [contractError, setContractError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const orderId = Array.isArray(id) ? id[0] : id;
+
+  const fetchContractDetail = useCallback(async () => {
+    if (!accessToken || !orderId) {
+      setContract(null);
+      setIsContractLoading(false);
+      return;
+    }
+
+    setIsContractLoading(true);
+    setContractError(null);
+
+    try {
+      const contractResponse = await getContractByOrder(accessToken, orderId);
+
+      if (contractResponse.success && contractResponse.data) {
+        setContract(contractResponse.data);
+      } else {
+        setContract(null);
+        setContractError(contractResponse.message || null);
+      }
+    } catch (err) {
+      setContract(null);
+
+      if (err instanceof ApiClientError && err.status === 404) {
+        setContractError(null);
+      } else {
+        setContractError(getApiErrorMessage(err));
+      }
+    } finally {
+      setIsContractLoading(false);
+    }
+  }, [accessToken, orderId]);
 
   const fetchOrderDetail = useCallback(async () => {
     if (!accessToken || !orderId) {
@@ -64,12 +110,14 @@ export default function OrderDetailScreen() {
       } catch {
         setQuotations(orderResponse.data?.quotations ?? []);
       }
+
+      await fetchContractDetail();
     } catch (err) {
       setError(getApiErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
-  }, [accessToken, orderId]);
+  }, [accessToken, fetchContractDetail, orderId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -83,9 +131,6 @@ export default function OrderDetailScreen() {
     [order?.quotations, quotations]
   );
 
-  const acceptedQuotation = displayedQuotations.find((quote) => isAcceptedQuote(quote.status));
-  const showContractPlaceholder =
-    Boolean(acceptedQuotation) || (order ? isContractReadyStatus(order.status) : false);
   const documentImage = getFullAssetUrl(getOrderImageUrl(order));
   const inboundTimeline = useMemo(() => buildInboundTimeline(order?.status ?? 'PENDING_REVIEW'), [order?.status]);
   const dispatchTimeline = useMemo(() => buildDispatchTimeline(order?.status ?? 'PENDING_REVIEW'), [order?.status]);
@@ -121,6 +166,63 @@ export default function OrderDetailScreen() {
       setError(getApiErrorMessage(err));
     } finally {
       setIsAcceptingQuoteId(null);
+    }
+  };
+
+  const handlePickSignedContract = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/*'],
+        copyToCacheDirectory: true,
+      });
+      const pickedFile = getPickedDocumentFile(result);
+
+      if (!pickedFile) {
+        return;
+      }
+
+      setSelectedSignedFile(pickedFile);
+      setContractError(null);
+    } catch (err) {
+      setContractError(getApiErrorMessage(err));
+    }
+  };
+
+  const handleUploadSignedContract = async () => {
+    if (!accessToken) {
+      setContractError('Your session has expired. Please log in again.');
+      return;
+    }
+
+    if (!contract) {
+      setContractError('Contract is not available yet.');
+      return;
+    }
+
+    if (!selectedSignedFile) {
+      setContractError('Please choose a signed contract file before submitting.');
+      return;
+    }
+
+    setIsUploadingContract(true);
+    setContractError(null);
+    setSuccessMessage(null);
+
+    try {
+      const response = await uploadSignedContract(contract.contractId, selectedSignedFile);
+
+      if (!response.success) {
+        throw new Error(response.message || 'Could not upload signed contract.');
+      }
+
+      setSelectedSignedFile(null);
+      setSuccessMessage('Signed contract uploaded. Waiting for Sales verification.');
+      Alert.alert('Upload complete', 'Signed contract uploaded. Waiting for Sales verification.');
+      await fetchOrderDetail();
+    } catch (err) {
+      setContractError(getApiErrorMessage(err));
+    } finally {
+      setIsUploadingContract(false);
     }
   };
 
@@ -249,18 +351,16 @@ export default function OrderDetailScreen() {
         )}
       </View>
 
-      {showContractPlaceholder ? (
-        <View className="mb-4 rounded-2xl border border-[#DAC2B6]/50 bg-white p-5 shadow-sm">
-          <View className="mb-3 flex-row items-center gap-2 border-b border-[#DAC2B6]/30 pb-3">
-            <Ionicons name="document-text-outline" size={18} color="#8B4513" />
-            <Text className="text-base font-bold text-[#8B4513]">Hợp đồng</Text>
-          </View>
-          {/* TODO: connect contract API when contractId is available from backend response */}
-          <Text className="text-sm leading-6 text-[#877369]">
-            Hợp đồng sẽ khả dụng sau khi báo giá được chấp nhận và Sales tạo hợp đồng.
-          </Text>
-        </View>
-      ) : null}
+      <ContractSection
+        contract={contract}
+        contractError={contractError}
+        isLoading={isContractLoading}
+        isUploading={isUploadingContract}
+        orderTrackingCode={order.trackingCode}
+        selectedFile={selectedSignedFile}
+        onPickFile={handlePickSignedContract}
+        onSubmit={handleUploadSignedContract}
+      />
 
       <InfoCard title="Hub Drop-off" icon="business-outline">
         {/* TODO: replace inbound timeline with real warehouse receipt status API when available */}
@@ -335,6 +435,148 @@ function QuotationCard({
           <Text className="text-sm font-semibold leading-5 text-green-700">
             Bạn đã chấp nhận báo giá. Hợp đồng sẽ được tạo trong bước tiếp theo.
           </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function ContractSection({
+  contract,
+  contractError,
+  isLoading,
+  isUploading,
+  orderTrackingCode,
+  selectedFile,
+  onPickFile,
+  onSubmit,
+}: {
+  contract: ContractInfoResponse | null;
+  contractError: string | null;
+  isLoading: boolean;
+  isUploading: boolean;
+  orderTrackingCode?: string | null;
+  selectedFile: SignedContractFile | null;
+  onPickFile: () => void;
+  onSubmit: () => void;
+}) {
+  const status = contract?.status.toUpperCase() ?? '';
+  const contractFileUrl = getFullAssetUrl(contract?.fileUrl);
+  const signedFileUrl = getFullAssetUrl(contract?.signedFileUrl);
+  const canUpload = status === 'PENDING_CUSTOMER_SIGNATURE';
+
+  return (
+    <View className="mb-4 rounded-2xl border border-[#DAC2B6]/50 bg-white p-5 shadow-sm">
+      <View className="mb-3 flex-row items-center gap-2 border-b border-[#DAC2B6]/30 pb-3">
+        <Ionicons name="document-text-outline" size={18} color="#8B4513" />
+        <Text className="text-base font-bold text-[#8B4513]">Contract</Text>
+      </View>
+
+      {isLoading ? (
+        <View className="flex-row items-center gap-3 rounded-xl bg-[#F8F9FA] p-3">
+          <ActivityIndicator size="small" color="#8B4513" />
+          <Text className="text-sm font-semibold text-[#877369]">Loading contract...</Text>
+        </View>
+      ) : null}
+
+      {contractError ? (
+        <View className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3">
+          <Text className="text-sm font-semibold leading-5 text-red-700">{contractError}</Text>
+        </View>
+      ) : null}
+
+      {!isLoading && !contract ? (
+        <Text className="text-sm leading-6 text-[#877369]">Contract is not available yet.</Text>
+      ) : null}
+
+      {!isLoading && contract ? (
+        <View className="gap-3">
+          <View className="flex-row items-start justify-between gap-3">
+            <View className="flex-1">
+              <Text className="text-sm font-bold text-[#3A1F04]">{contract.contractNumber}</Text>
+              <Text className="mt-1 text-xs text-[#877369]">Sent: {formatDate(contract.sentAt)}</Text>
+            </View>
+            <StatusBadge status={contract.status} />
+          </View>
+
+          {contractFileUrl ? (
+            <Pressable onPress={() => openContractFile(contractFileUrl)} className="flex-row items-center gap-2">
+              <Ionicons name="document-attach-outline" size={16} color="#8B4513" />
+              <Text className="text-sm font-semibold text-[#8B4513]">Open contract file</Text>
+            </Pressable>
+          ) : null}
+
+          {status === 'DRAFT' || status === 'PENDING_SIGNATURE' ? (
+            <Text className="text-sm leading-6 text-[#877369]">Contract is being prepared by Sales.</Text>
+          ) : null}
+
+          {canUpload ? (
+            <View className="gap-3 rounded-2xl border border-[#DAC2B6]/60 bg-[#F8F9FA] p-4">
+              <Text className="text-sm leading-6 text-[#877369]">
+                Please upload the signed PDF or image contract for Sales verification.
+              </Text>
+
+              <Pressable
+                onPress={onPickFile}
+                disabled={isUploading}
+                className="h-12 flex-row items-center justify-center gap-2 rounded-xl border border-[#8B4513] bg-white"
+              >
+                <Ionicons name="cloud-upload-outline" size={18} color="#8B4513" />
+                <Text className="font-bold text-[#8B4513]">Upload Signed Contract</Text>
+              </Pressable>
+
+              {selectedFile ? (
+                <View className="rounded-xl border border-green-200 bg-green-50 p-3">
+                  <Text className="text-xs font-semibold uppercase text-green-700">Selected file</Text>
+                  <Text className="mt-1 text-sm font-bold text-green-800">
+                    {selectedFile.name || 'signed-contract.pdf'}
+                  </Text>
+                </View>
+              ) : null}
+
+              <Pressable
+                onPress={onSubmit}
+                disabled={!selectedFile || isUploading}
+                className={[
+                  'h-12 items-center justify-center rounded-xl bg-[#8B4513]',
+                  !selectedFile || isUploading ? 'opacity-60' : '',
+                ].join(' ')}
+              >
+                <Text className="font-bold text-white">
+                  {isUploading ? 'SUBMITTING...' : 'Submit Signed Contract'}
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
+
+          {status === 'PENDING_SALES_VERIFICATION' ? (
+            <View className="rounded-xl border border-blue-200 bg-blue-50 p-3">
+              <Text className="text-sm font-semibold leading-5 text-blue-700">
+                Signed contract uploaded. Waiting for Sales verification.
+              </Text>
+              {signedFileUrl ? (
+                <Pressable onPress={() => openContractFile(signedFileUrl)} className="mt-3 flex-row items-center gap-2">
+                  <Ionicons name="document-attach-outline" size={16} color="#1d4ed8" />
+                  <Text className="text-sm font-semibold text-blue-700">Open signed contract</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
+
+          {status === 'ACTIVE' ? (
+            <View className="rounded-xl border border-green-200 bg-green-50 p-3">
+              <Text className="text-sm font-semibold leading-5 text-green-700">Contract verified.</Text>
+              {orderTrackingCode ? (
+                <Text className="mt-2 text-sm font-bold text-green-800">Tracking code: {orderTrackingCode}</Text>
+              ) : null}
+              {signedFileUrl ? (
+                <Pressable onPress={() => openContractFile(signedFileUrl)} className="mt-3 flex-row items-center gap-2">
+                  <Ionicons name="document-attach-outline" size={16} color="#15803d" />
+                  <Text className="text-sm font-semibold text-green-700">Open signed contract</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
         </View>
       ) : null}
     </View>
@@ -494,11 +736,17 @@ function getStatusColor(status: string) {
       return { container: 'bg-orange-100 border-orange-200', text: 'text-orange-800' };
     case 'CONTRACT_PENDING':
       return { container: 'bg-amber-100 border-amber-200', text: 'text-amber-800' };
+    case 'PENDING_CUSTOMER_SIGNATURE':
+      return { container: 'bg-orange-100 border-orange-200', text: 'text-orange-800' };
+    case 'PENDING_SALES_VERIFICATION':
+      return { container: 'bg-blue-100 border-blue-200', text: 'text-blue-800' };
     case 'ASSIGNED':
       return { container: 'bg-blue-100 border-blue-200', text: 'text-blue-800' };
     case 'IN_TRANSIT':
       return { container: 'bg-purple-100 border-purple-200', text: 'text-purple-800' };
     case 'ACCEPTED':
+    case 'ACTIVE':
+    case 'CONTRACT_SIGNED':
     case 'DELIVERED':
       return { container: 'bg-green-100 border-green-200', text: 'text-green-800' };
     case 'REJECTED':
@@ -520,6 +768,14 @@ function translateStatus(status: string) {
       return 'Đã gửi';
     case 'CONTRACT_PENDING':
       return 'Chờ hợp đồng';
+    case 'PENDING_CUSTOMER_SIGNATURE':
+      return 'Waiting signature';
+    case 'PENDING_SALES_VERIFICATION':
+      return 'Waiting Sales verify';
+    case 'ACTIVE':
+      return 'Verified';
+    case 'CONTRACT_SIGNED':
+      return 'Contract signed';
     case 'ASSIGNED':
       return 'Đã phân xe';
     case 'IN_TRANSIT':
@@ -546,10 +802,6 @@ function isAcceptedQuote(status: string) {
   return status.toUpperCase() === 'ACCEPTED';
 }
 
-function isContractReadyStatus(status: string) {
-  return ['CONTRACT_PENDING', 'ASSIGNED', 'IN_TRANSIT', 'DELIVERED'].includes(status.toUpperCase());
-}
-
 function getOrderImageUrl(order: OrderResponse | null) {
   if (!order) return null;
 
@@ -560,10 +812,69 @@ function getOrderImageUrl(order: OrderResponse | null) {
   );
 }
 
+function getPickedDocumentFile(result: DocumentPicker.DocumentPickerResult): SignedContractFile | null {
+  const resultAny = result as any;
+
+  if (resultAny.canceled || resultAny.type === 'cancel') {
+    return null;
+  }
+
+  const asset = Array.isArray(resultAny.assets) ? resultAny.assets[0] : resultAny;
+  if (!asset?.uri) {
+    return null;
+  }
+
+  const mimeType = getPickerMimeType(asset);
+  const name =
+    typeof asset.name === 'string' && asset.name.trim()
+      ? asset.name
+      : typeof asset.fileName === 'string' && asset.fileName.trim()
+        ? asset.fileName
+        : `signed-contract.${mimeType === 'application/pdf' ? 'pdf' : 'jpg'}`;
+
+  return {
+    uri: String(asset.uri),
+    name,
+    type: mimeType,
+  };
+}
+
+function getPickerMimeType(asset: Record<string, unknown>) {
+  if (typeof asset.mimeType === 'string' && asset.mimeType.includes('/')) {
+    return asset.mimeType;
+  }
+
+  if (typeof asset.type === 'string' && asset.type.includes('/')) {
+    return asset.type;
+  }
+
+  const name = typeof asset.name === 'string' ? asset.name.toLowerCase() : '';
+  if (name.endsWith('.png')) return 'image/png';
+  if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'image/jpeg';
+  return 'application/pdf';
+}
+
+async function openContractFile(url?: string | null) {
+  if (!url) {
+    Alert.alert('No contract file', 'Contract file is not available yet.');
+    return;
+  }
+
+  try {
+    await WebBrowser.openBrowserAsync(encodeURI(url));
+  } catch (error) {
+    Alert.alert(
+      'Cannot open file',
+      error instanceof Error ? error.message : 'Unable to open contract file.'
+    );
+  }
+}
+
 function getFullAssetUrl(url?: string | null) {
   if (!url) return null;
   if (url.startsWith('http')) return url;
-  return `${API_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+  const assetBaseUrl = API_BASE_URL.replace(/\/api$/i, '');
+  return `${assetBaseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
 }
 
 function formatDate(value?: string | null) {

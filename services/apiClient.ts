@@ -95,7 +95,13 @@ export function getApiErrorMessage(error: unknown): string {
 }
 
 function normalizePath(path: string) {
-  return path.startsWith('/') ? path : `/${path}`;
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+
+  if (API_BASE_URL.toLowerCase().endsWith('/api') && normalizedPath.toLowerCase().startsWith('/api/')) {
+    return normalizedPath.slice(4);
+  }
+
+  return normalizedPath;
 }
 
 async function parseResponseBody(response: Response): Promise<unknown> {
