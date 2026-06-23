@@ -18,20 +18,15 @@ import {
   login as loginApi,
   logout as logoutApi,
 } from '../../services/authApi';
-import { useAuthStore, type UserRole } from '../../store/useAuthStore';
+import { getRoleFromToken } from '../../services/jwt';
+import { useAuthStore } from '../../store/useAuthStore';
 
 const LOGIN_CREDENTIALS_ERROR = 'Email hoặc mật khẩu sai.';
-const LOGIN_ROLE_MISMATCH_ERROR = 'Vai trò đã chọn không khớp với tài khoản.';
 const UNSUPPORTED_MOBILE_ROLE_ERROR = 'Tài khoản này không hỗ trợ đăng nhập trên mobile.';
-const LOGIN_ROLE_OPTIONS: { label: string; value: UserRole }[] = [
-  { label: 'User', value: 'CUSTOMER' },
-  { label: 'Driver', value: 'DRIVER' },
-];
 
 export default function LoginScreen() {
   const router = useRouter();
   const saveAuth = useAuthStore((state) => state.login);
-  const [selectedRole, setSelectedRole] = useState<UserRole>('CUSTOMER');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -61,15 +56,11 @@ export default function LoginScreen() {
         throw new Error('Phản hồi đăng nhập thiếu accessToken.');
       }
 
-      const appRole = getMobileRoleFromBackend(authData.role);
+      const backendRole = authData.role ?? getRoleFromToken(authData.accessToken);
+      const appRole = getMobileRoleFromBackend(backendRole);
       if (!appRole) {
         await revokeIssuedToken(authData.accessToken);
         throw new Error(UNSUPPORTED_MOBILE_ROLE_ERROR);
-      }
-
-      if (appRole !== selectedRole) {
-        await revokeIssuedToken(authData.accessToken);
-        throw new Error(LOGIN_ROLE_MISMATCH_ERROR);
       }
 
       saveAuth({
@@ -82,7 +73,7 @@ export default function LoginScreen() {
           customerId: authData.customerId,
           fullName: authData.fullName,
           email: authData.email ?? email.trim(),
-          backendRole: authData.role ?? appRole,
+          backendRole: backendRole ?? appRole,
         },
       });
     } catch (error) {
@@ -146,34 +137,6 @@ export default function LoginScreen() {
               ) : (
                 <View className="h-5" />
               )}
-
-              <View className="h-11 w-full flex-row rounded-xl border border-white/20 bg-white/10 p-1">
-                {LOGIN_ROLE_OPTIONS.map((option) => {
-                  const isSelected = selectedRole === option.value;
-
-                  return (
-                    <Pressable
-                      key={option.value}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected: isSelected }}
-                      onPress={() => setSelectedRole(option.value)}
-                      className={[
-                        'h-full flex-1 items-center justify-center rounded-lg',
-                        isSelected ? 'bg-[#75FF68]' : '',
-                      ].join(' ')}
-                    >
-                      <Text
-                        className={[
-                          'text-sm font-semibold',
-                          isSelected ? 'text-[#002201]' : 'text-white/75',
-                        ].join(' ')}
-                      >
-                        {option.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
 
               <View className="w-full h-14 flex-row items-center bg-[#F8F9FA] rounded-xl px-4 shadow-sm">
                 <Ionicons name="mail-outline" size={22} color="#877369" />

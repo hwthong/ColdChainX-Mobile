@@ -24,7 +24,7 @@ export class ApiClientError extends Error {
 
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const normalizedPath = normalizePath(path);
-  const finalRequestUrl = `${API_BASE_URL}${normalizedPath}`;
+  const finalRequestUrl = buildApiUrl(normalizedPath);
   const method = options.method ?? 'GET';
 
   const isFormData = options.body instanceof FormData;
@@ -80,6 +80,10 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   }
 
   return data as T;
+}
+
+export function buildApiUrl(path: string) {
+  return `${API_BASE_URL}${normalizePath(path)}`;
 }
 
 export function getApiErrorMessage(error: unknown): string {

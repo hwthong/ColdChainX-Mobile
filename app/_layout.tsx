@@ -9,6 +9,7 @@ import { useAuthStore } from '../store/useAuthStore';
 const loginRoute = '/(auth)/login';
 const driverHomeRoute = '/(driver)/home';
 const customerHomeRoute = '/(customer)/home';
+const warehouseHomeRoute = '/(warehouse)/home';
 const subscribeToAuthHydration = (onStoreChange: () => void) =>
   useAuthStore.persist.onFinishHydration(onStoreChange);
 const getAuthHydrationSnapshot = () => useAuthStore.persist.hasHydrated();
@@ -17,7 +18,7 @@ export default function RootLayout() {
   const router = useRouter();
   const rootNavigationState = useRootNavigationState();
   const segments = useSegments();
-  const currentGroup = segments[0];
+  const currentGroup = segments[0] as string | undefined;
   const token = useAuthStore((state) => state.token);
   const role = useAuthStore((state) => state.role);
   const hasHydrated = useSyncExternalStore(
@@ -53,6 +54,15 @@ export default function RootLayout() {
       if (currentGroup !== '(customer)') {
         setTimeout(() => {
           router.replace(customerHomeRoute);
+        }, 0);
+      }
+      return;
+    }
+
+    if (role === 'WAREHOUSE') {
+      if (currentGroup !== '(warehouse)') {
+        setTimeout(() => {
+          router.replace(warehouseHomeRoute as never);
         }, 0);
       }
       return;

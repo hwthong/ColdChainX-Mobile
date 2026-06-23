@@ -8,9 +8,9 @@ import {
   refreshTokens as refreshTokensApi,
 } from '../services/authApi';
 import { getApiErrorMessage } from '../services/apiClient';
-import { getCustomerIdFromToken, getUserIdFromToken } from '../services/jwt';
+import { getCustomerIdFromToken, getRoleFromToken, getUserIdFromToken } from '../services/jwt';
 
-export type UserRole = 'DRIVER' | 'CUSTOMER';
+export type UserRole = 'DRIVER' | 'CUSTOMER' | 'WAREHOUSE';
 
 export type AuthUser = {
   userId: string;
@@ -129,7 +129,11 @@ export const useAuthStore = create<AuthState>()(
             throw new Error('Refresh response is missing accessToken.');
           }
 
-          const appRole = mapBackendRoleToAppRole(authData.role);
+          const backendRole = authData.role ?? getRoleFromToken(authData.accessToken);
+          const appRole = mapBackendRoleToAppRole(backendRole);
+          if (!appRole) {
+            throw new Error('This account role is not supported on mobile.');
+          }
           const currentUser = get().user;
           const customerId =
             authData.customerId ?? currentUser?.customerId ?? getCustomerIdFromToken(authData.accessToken);
@@ -149,7 +153,7 @@ export const useAuthStore = create<AuthState>()(
               customerId,
               fullName: authData.fullName,
               email: authData.email ?? currentUser?.email ?? '',
-              backendRole: authData.role ?? appRole,
+              backendRole: backendRole ?? appRole,
             },
           });
 

@@ -15,6 +15,23 @@ export function getUserIdFromToken(token: string): string | null {
   );
 }
 
+export function getWarehouseIdFromToken(token: string): string | null {
+  const payload = decodeJwtPayload(token);
+
+  return getStringClaim(payload, 'WarehouseId');
+}
+
+export function getRoleFromToken(token: string): string | null {
+  const payload = decodeJwtPayload(token);
+
+  return (
+    getStringClaim(payload, 'role') ??
+    getStringClaim(payload, 'roles') ??
+    getStringClaim(payload, 'http://schemas.microsoft.com/ws/2008/06/identity/claims/role') ??
+    getStringClaim(payload, 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/role')
+  );
+}
+
 function decodeJwtPayload(token: string): unknown {
   try {
     const [, payload] = token.split('.');
@@ -50,5 +67,10 @@ function getStringClaim(payload: unknown, claimName: string) {
   }
 
   const value = (payload as Record<string, unknown>)[claimName];
+  if (Array.isArray(value)) {
+    const firstString = value.find((item): item is string => typeof item === 'string' && item.trim().length > 0);
+    return firstString ?? null;
+  }
+
   return typeof value === 'string' && value.trim() ? value : null;
 }

@@ -134,8 +134,8 @@ export function deleteUser(accessToken: string, userId: string) {
   });
 }
 
-export function mapBackendRoleToAppRole(role: AuthUserDto['role']): UserRole {
-  return getMobileRoleFromBackend(role) ?? 'CUSTOMER';
+export function mapBackendRoleToAppRole(role: AuthUserDto['role']): UserRole | null {
+  return getMobileRoleFromBackend(role);
 }
 
 export function getMobileRoleFromBackend(role: AuthUserDto['role']): UserRole | null {
@@ -147,6 +147,16 @@ export function getMobileRoleFromBackend(role: AuthUserDto['role']): UserRole | 
 
   if (normalizedRole === 'CUSTOMER' || normalizedRole === String(BackendRole.Customer)) {
     return 'CUSTOMER';
+  }
+
+  if (
+    normalizedRole === 'WAREHOUSE' ||
+    normalizedRole === 'WAREHOUSEWORKER' ||
+    normalizedRole === 'WAREHOUSESTAFF' ||
+    normalizedRole === 'WAREHOUSEMONITOR' ||
+    normalizedRole === 'WAREHOUSEMANAGER'
+  ) {
+    return 'WAREHOUSE';
   }
 
   return null;
