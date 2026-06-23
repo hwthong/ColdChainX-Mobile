@@ -1,11 +1,12 @@
 import React, { useCallback, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 
 import { getApiErrorMessage } from '../../services/apiClient';
-import { getUserIdFromToken } from '../../services/jwt';
+import { getCustomerIdFromToken, getUserIdFromToken } from '../../services/jwt';
 import { getUserNotifications } from '../../services/notificationApi';
+import { getCustomerAsns } from '../../services/asnApi';
 import { useAuthStore } from '../../store/useAuthStore';
 
 export default function CustomerHomeScreen() {
@@ -14,8 +15,11 @@ export default function CustomerHomeScreen() {
   const accessToken = useAuthStore((state) => state.token);
   const fullName = useAuthStore((state) => state.fullName ?? state.user?.fullName ?? null);
   const storedUserId = useAuthStore((state) => state.userId ?? state.user?.userId ?? null);
+  const storedCustomerId = useAuthStore((state) => state.customerId ?? state.user?.customerId ?? null);
   const userId = storedUserId ?? (accessToken ? getUserIdFromToken(accessToken) : null);
+  const customerId = storedCustomerId ?? (accessToken ? getCustomerIdFromToken(accessToken) : null);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [scheduleCount, setScheduleCount] = useState(0);
 
   const fetchUnreadCount = useCallback(async () => {
     if (!accessToken || !userId) {
@@ -39,14 +43,37 @@ export default function CustomerHomeScreen() {
     }
   }, [accessToken, userId]);
 
+  const fetchScheduleCount = useCallback(async () => {
+    if (!accessToken || !customerId) {
+      setScheduleCount(0);
+      return;
+    }
+
+    try {
+      const response = await getCustomerAsns(accessToken, customerId);
+      if (response.success && response.data) {
+        setScheduleCount(response.data.length);
+      }
+    } catch (error) {
+      console.error('[CustomerHome] Failed to load ASN schedules', {
+        message: getApiErrorMessage(error),
+      });
+    }
+  }, [accessToken, customerId]);
+
   useFocusEffect(
     useCallback(() => {
       fetchUnreadCount();
-    }, [fetchUnreadCount])
+      fetchScheduleCount();
+    }, [fetchScheduleCount, fetchUnreadCount])
   );
 
   return (
-    <View className="flex-1 bg-[#F5F2F0] px-5 py-6">
+    <ScrollView
+      className="flex-1 bg-[#F5F2F0]"
+      contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 110 }}
+      contentInsetAdjustmentBehavior="automatic"
+    >
       <View className="mb-6 flex-row items-center justify-between">
         <View className="flex-1 pr-4">
           <Text className="text-xs font-bold uppercase tracking-widest text-[#877369]">Customer</Text>
@@ -93,8 +120,14 @@ export default function CustomerHomeScreen() {
           badge={unreadCount}
           onPress={() => router.push('/(customer)/notifications' as never)}
         />
+        <QuickAction
+          icon="calendar-outline"
+          title="Schedules"
+          subtitle={scheduleCount > 0 ? `${scheduleCount} lịch giao kho` : 'Lịch giao kho'}
+          onPress={() => router.push('/(customer)/delivery-schedules' as never)}
+        />
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -114,7 +147,7 @@ function QuickAction({
   return (
     <Pressable
       onPress={onPress}
-      className="min-h-[132px] flex-1 basis-[47%] rounded-2xl border border-[#DAC2B6]/50 bg-white p-4 shadow-sm"
+      className="min-h-[132px] basis-[47%] rounded-2xl border border-[#DAC2B6]/50 bg-white p-4 shadow-sm"
     >
       <View className="flex-row items-start justify-between">
         <View className="h-11 w-11 items-center justify-center rounded-full bg-[#8B4513]/10">

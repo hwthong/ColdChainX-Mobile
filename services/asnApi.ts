@@ -40,6 +40,14 @@ export interface AsnResponse {
   createdAt?: string | null;
 }
 
+export interface CreateAsnRequest {
+  orderId: string;
+  requestedDropoffTime: string;
+  phone?: string | null;
+  warehouseId?: string | null;
+  customerId?: string | null;
+}
+
 type ScheduleParams = {
   date?: string;
   status?: string;
@@ -60,6 +68,20 @@ export function getAsnSchedule(accessToken?: string | null, params: SchedulePara
 export function getCustomerAsns(accessToken: string, customerId: string) {
   return apiRequest<ApiResponse<AsnResponse[]>>(`/api/v1/asns/customer/${customerId}`, {
     headers: getAuthHeaders(accessToken),
+  });
+}
+
+export function createAsn(accessToken: string, request: CreateAsnRequest) {
+  return apiRequest<ApiResponse<AsnResponse>>('/api/v1/asns', {
+    method: 'POST',
+    headers: getAuthHeaders(accessToken),
+    body: {
+      orderId: request.orderId,
+      requestedDropoffTime: request.requestedDropoffTime,
+      phone: request.phone || null,
+      warehouseId: request.warehouseId || null,
+      customerId: request.customerId || null,
+    },
   });
 }
 
