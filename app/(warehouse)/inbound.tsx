@@ -13,11 +13,12 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import type { TextInputProps } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getAsnSchedule, type AsnScheduleResponse } from '../../services/asnApi';
 import { getApiErrorMessage } from '../../services/apiClient';
-import { getDiscrepancyPdf, resolveDiscrepancy, type ResolveDiscrepancyResponse } from '../../services/discrepancyApi';
+import { getDiscrepancyPdf } from '../../services/discrepancyApi';
 import {
   generateInboundReceipt,
   getInboundReceiptPdf,
@@ -29,6 +30,7 @@ import {
   type InboundQcResponse,
   type PutawayResponse,
 } from '../../services/inboundApi';
+import { getInventoryLpnById } from '../../services/inventoryApi';
 import { useAuthStore } from '../../store/useAuthStore';
 
 type StepKey = 'qc' | 'measurements' | 'discrepancy' | 'receipt' | 'putaway';
@@ -74,11 +76,7 @@ export default function WarehouseInboundScreen() {
   const [recheckTemperature, setRecheckTemperature] = useState('');
   const [recheckEvidence, setRecheckEvidence] = useState<EvidenceImage[]>([]);
   const [recheckResult, setRecheckResult] = useState<InboundQcResponse | null>(null);
-
-  const [acceptDiscrepancy, setAcceptDiscrepancy] = useState(true);
-  const [penaltyAmount, setPenaltyAmount] = useState('0');
-  const [penaltyReason, setPenaltyReason] = useState('');
-  const [resolveResult, setResolveResult] = useState<ResolveDiscrepancyResponse | null>(null);
+  const [lpnStatus, setLpnStatus] = useState<string | null>(null);
 
   const [delivererName, setDelivererName] = useState('');
   const [vehiclePlate, setVehiclePlate] = useState('');
@@ -90,6 +88,10 @@ export default function WarehouseInboundScreen() {
 
   const activeAsnId = useMemo(() => selectedAsn?.asnId ?? manualAsnId.trim(), [manualAsnId, selectedAsn]);
   const latestInboundResult = recheckResult ?? qcResult;
+  const latestResultForCurrentLpn =
+    latestInboundResult?.lpnId && latestInboundResult.lpnId === lpnId.trim() ? latestInboundResult : null;
+  const currentLpnState = lpnStatus ?? latestResultForCurrentLpn?.state ?? null;
+  const canPutaway = currentLpnState === 'RECEIVING';
 
   const loadSchedule = useCallback(async () => {
     setIsLoadingSchedule(true);
@@ -122,8 +124,14 @@ export default function WarehouseInboundScreen() {
   const selectAsn = (asn: AsnScheduleResponse) => {
     setSelectedAsn(asn);
     setManualAsnId(asn.asnId);
+    setLpnStatus(null);
     setActiveStep('qc');
     setActionMessage(`Selected ${asn.asnCode}.`);
+  };
+
+  const updateLpnId = (value: string) => {
+    setLpnId(value);
+    setLpnStatus(null);
   };
 
   const handleSubmitQc = async () => {
@@ -146,6 +154,7 @@ export default function WarehouseInboundScreen() {
       setQcResult(response);
       if (response.lpnId) setLpnId(response.lpnId);
       if (response.receiptId) setReceiptId(response.receiptId);
+      setLpnStatus(response.state ?? null);
       setActionMessage(response.message);
       setActiveStep(response.state === 'DISCREPANCY_HOLD' ? 'measurements' : 'receipt');
     } catch (error) {
@@ -174,6 +183,7 @@ export default function WarehouseInboundScreen() {
 
       setRecheckResult(response);
       if (response.lpnId) setLpnId(response.lpnId);
+      setLpnStatus(response.state ?? null);
       setActionMessage(response.message);
       setActiveStep(response.state === 'DISCREPANCY_HOLD' ? 'discrepancy' : 'receipt');
     } catch (error) {
@@ -183,24 +193,21 @@ export default function WarehouseInboundScreen() {
     }
   };
 
-  const handleResolveDiscrepancy = async () => {
+  const refreshLpnStatus = async () => {
     try {
       requireToken(token);
       requireGuid(lpnId.trim(), 'LPN ID');
       setIsSubmitting(true);
       setActionMessage(null);
 
-      const response = await resolveDiscrepancy(token, {
-        lpnId: lpnId.trim(),
-        accept: acceptDiscrepancy,
-        penaltyAmount: parseOptionalDecimal(penaltyAmount, 'Penalty amount') ?? 0,
-        penaltyReason: penaltyReason.trim(),
-      });
+      const lpn = await getInventoryLpnById(token, lpnId.trim());
+      setLpnStatus(lpn.state || null);
 
-      setResolveResult(response);
-      setActionMessage(response.message);
-      if (response.success && acceptDiscrepancy) {
-        setActiveStep('receipt');
+      if (lpn.state === 'RECEIVING') {
+        setActionMessage('Latest LPN state: RECEIVING. Putaway is now available.');
+        setActiveStep('putaway');
+      } else {
+        setActionMessage(`Latest LPN state: ${lpn.state || 'N/A'}. Sales/Admin must resolve this discrepancy before putaway.`);
       }
     } catch (error) {
       setActionMessage(getApiErrorMessage(error));
@@ -229,7 +236,7 @@ export default function WarehouseInboundScreen() {
       setReceiptResult(response);
       if (response.receiptId) setReceiptId(response.receiptId);
       setActionMessage(response.message);
-      if (response.success) {
+      if (response.success && canPutaway) {
         setActiveStep('putaway');
       }
     } catch (error) {
@@ -245,6 +252,11 @@ export default function WarehouseInboundScreen() {
       requireGuid(lpnId.trim(), 'LPN ID');
       if (!storageLocation.trim()) {
         throw new Error('Storage location is required.');
+      }
+      if (!canPutaway) {
+        throw new Error(
+          `Putaway is only available when LPN state is RECEIVING. Current state: ${currentLpnState || 'unknown'}. Refresh status after Sales/Admin resolves the discrepancy.`
+        );
       }
       setIsSubmitting(true);
       setActionMessage(null);
@@ -352,6 +364,7 @@ export default function WarehouseInboundScreen() {
                   label="Use manual ASN"
                   onPress={() => {
                     setSelectedAsn(null);
+                    setLpnStatus(null);
                     setActiveStep('qc');
                     setActionMessage('Manual ASN ID selected.');
                   }}
@@ -404,7 +417,7 @@ export default function WarehouseInboundScreen() {
 
             {activeStep === 'measurements' ? (
               <View className="gap-3">
-                <Field label="LPN ID" value={lpnId} onChangeText={setLpnId} placeholder="LpnId" />
+                <Field label="LPN ID" value={lpnId} onChangeText={updateLpnId} placeholder="LpnId" />
                 <MeasurementFields
                   weight={recheckWeight}
                   setWeight={setRecheckWeight}
@@ -426,24 +439,17 @@ export default function WarehouseInboundScreen() {
             {activeStep === 'discrepancy' ? (
               <View className="gap-3">
                 <Message
-                  tone={latestInboundResult?.state === 'DISCREPANCY_HOLD' ? 'warning' : 'neutral'}
-                  text={`Current state: ${latestInboundResult?.state || 'N/A'} | Difference: ${latestInboundResult?.diffPercent ?? 0}%`}
+                  tone={currentLpnState === 'DISCREPANCY_HOLD' ? 'warning' : 'neutral'}
+                  text={`Current state: ${currentLpnState || 'N/A'} | Difference: ${latestInboundResult?.diffPercent ?? 0}%`}
                 />
-                <Field label="LPN ID" value={lpnId} onChangeText={setLpnId} placeholder="LpnId" />
-                <View className="flex-row gap-2">
-                  <ToggleButton label="Accept" active={acceptDiscrepancy} onPress={() => setAcceptDiscrepancy(true)} />
-                  <ToggleButton label="Reject" active={!acceptDiscrepancy} onPress={() => setAcceptDiscrepancy(false)} />
-                </View>
-                <Field label="Penalty amount" value={penaltyAmount} onChangeText={setPenaltyAmount} placeholder="0" keyboardType="numeric" />
-                <Field label="Penalty reason" value={penaltyReason} onChangeText={setPenaltyReason} placeholder="Reason for penalty bill" multiline />
-                <ActionButton icon="git-compare-outline" label="Resolve discrepancy" onPress={handleResolveDiscrepancy} loading={isSubmitting} />
+                <Message
+                  tone="warning"
+                  text="This LPN is on discrepancy hold. Sales/Admin must resolve this discrepancy before putaway."
+                />
+                <Field label="LPN ID" value={lpnId} onChangeText={updateLpnId} placeholder="LpnId" />
+                <ActionButton icon="calculator-outline" label="Re-check measurements" onPress={() => setActiveStep('measurements')} />
                 <ActionButton icon="document-attach-outline" label="Open discrepancy PDF" onPress={openDiscrepancyPdf} variant="secondary" />
-                {resolveResult ? (
-                  <Message
-                    tone={resolveResult.success ? 'success' : 'error'}
-                    text={`${resolveResult.message}${resolveResult.penaltyBillId ? ` | Penalty bill: ${resolveResult.penaltyBillId}` : ''}`}
-                  />
-                ) : null}
+                <ActionButton icon="refresh-outline" label="Refresh LPN status" onPress={refreshLpnStatus} loading={isSubmitting} variant="secondary" />
               </View>
             ) : null}
 
@@ -461,9 +467,15 @@ export default function WarehouseInboundScreen() {
 
             {activeStep === 'putaway' ? (
               <View className="gap-3">
-                <Field label="LPN ID" value={lpnId} onChangeText={setLpnId} placeholder="LpnId" />
+                {!canPutaway ? (
+                  <Message
+                    tone="warning"
+                    text={`Putaway is locked until LPN state is RECEIVING. Current state: ${currentLpnState || 'unknown'}.`}
+                  />
+                ) : null}
+                <Field label="LPN ID" value={lpnId} onChangeText={updateLpnId} placeholder="LpnId" />
                 <Field label="Storage location" value={storageLocation} onChangeText={setStorageLocation} placeholder="A-01-01" />
-                <ActionButton icon="archive-outline" label="Confirm putaway" onPress={handlePutaway} loading={isSubmitting} />
+                <ActionButton icon="archive-outline" label="Confirm putaway" onPress={handlePutaway} loading={isSubmitting} disabled={!canPutaway} />
                 {putawayResult ? <Message tone={putawayResult.success ? 'success' : 'error'} text={putawayResult.message} /> : null}
               </View>
             ) : null}
@@ -497,6 +509,8 @@ function MeasurementFields({
   temperature: string;
   setTemperature: (value: string) => void;
 }) {
+  const temperatureKeyboardType: TextInputProps['keyboardType'] = Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'numeric';
+
   return (
     <View className="gap-3">
       <Field label="Actual weight kg" value={weight} onChangeText={setWeight} placeholder="120" keyboardType="numeric" />
@@ -506,7 +520,7 @@ function MeasurementFields({
       </View>
       <View className="flex-row gap-2">
         <Field label="Height cm" value={height} onChangeText={setHeight} placeholder="50" keyboardType="numeric" />
-        <Field label="Temperature" value={temperature} onChangeText={setTemperature} placeholder="4" keyboardType="numeric" />
+        <Field label="Temperature °C" value={temperature} onChangeText={setTemperature} placeholder="-6" keyboardType={temperatureKeyboardType} />
       </View>
     </View>
   );
@@ -549,7 +563,7 @@ function Field({
   value: string;
   onChangeText: (value: string) => void;
   placeholder: string;
-  keyboardType?: 'default' | 'numeric';
+  keyboardType?: TextInputProps['keyboardType'];
   multiline?: boolean;
 }) {
   return (
@@ -576,6 +590,7 @@ function ActionButton({
   label,
   onPress,
   loading = false,
+  disabled = false,
   variant = 'primary',
   compact = false,
 }: {
@@ -583,35 +598,27 @@ function ActionButton({
   label: string;
   onPress: () => void;
   loading?: boolean;
+  disabled?: boolean;
   variant?: 'primary' | 'secondary';
   compact?: boolean;
 }) {
   const isSecondary = variant === 'secondary';
+  const isDisabled = loading || disabled;
 
   return (
     <Pressable
       onPress={onPress}
-      disabled={loading}
+      disabled={isDisabled}
       className={[
         'flex-row items-center justify-center gap-2 rounded-lg',
         compact ? 'flex-1 px-3 py-2' : 'px-4 py-3',
         isSecondary ? 'border border-[#0F766E]/20 bg-[#DDF5F0]' : 'bg-[#0F766E]',
-        loading ? 'opacity-70' : '',
+        isDisabled ? 'opacity-70' : '',
       ].join(' ')}
     >
       <Ionicons name={icon} size={18} color={isSecondary ? '#0F766E' : '#FFFFFF'} />
       <Text className={isSecondary ? 'text-sm font-bold text-[#0F766E]' : 'text-sm font-bold text-white'}>
         {loading ? 'Working...' : label}
-      </Text>
-    </Pressable>
-  );
-}
-
-function ToggleButton({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
-  return (
-    <Pressable onPress={onPress} className={['flex-1 rounded-lg px-4 py-3', active ? 'bg-[#0F766E]' : 'bg-[#DDF5F0]'].join(' ')}>
-      <Text className={active ? 'text-center text-sm font-bold text-white' : 'text-center text-sm font-bold text-[#0F766E]'}>
-        {label}
       </Text>
     </Pressable>
   );
@@ -693,7 +700,9 @@ function parseOptionalDecimal(value: string, label: string) {
 }
 
 function parseDecimal(value: string) {
-  const parsed = Number(value.trim().replace(',', '.'));
+  const normalized = value.trim().replace(',', '.');
+  if (!normalized) return null;
+  const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : null;
 }
 

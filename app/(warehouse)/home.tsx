@@ -32,7 +32,7 @@ export default function WarehouseHomeScreen() {
           <Text className="text-xs font-bold uppercase text-[#94E6DC]">Inbound control</Text>
           <Text className="mt-3 text-2xl font-bold text-white">Drop-off to in-stock</Text>
           <Text className="mt-2 text-sm leading-6 text-[#CBE7E3]">
-            Process ASN arrivals, QC cargo, resolve discrepancies, generate receipts, and confirm putaway.
+            Process ASN arrivals, QC cargo, track discrepancy holds, generate receipts, and confirm putaway.
           </Text>
           <View className="mt-4 rounded-lg bg-white/10 p-3">
             <Text className="text-xs font-semibold text-[#CBE7E3]">Mobile workspace</Text>
