@@ -1,10 +1,15 @@
+import React, { useCallback, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import { useFocusEffect } from 'expo-router';
-import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AppButton } from '../../components/AppButton';
+import { AppInfoRow } from '../../components/AppInfoRow';
+import { AppMessage } from '../../components/AppMessage';
+import { EmptyState } from '../../components/EmptyState';
+import { StatusBadge } from '../../components/StatusBadge';
+import { WH_COLORS, formatDateTimeVi } from '../../constants/warehouseTheme';
 import { getApiErrorMessage } from '../../services/apiClient';
 import {
   buildInventoryDocumentUrl,
@@ -17,12 +22,19 @@ import {
 import { useAuthStore } from '../../store/useAuthStore';
 
 const STATUS_FILTERS: { label: string; value: LpnState | '' }[] = [
-  { label: 'All', value: '' },
-  { label: 'Receiving', value: 'RECEIVING' },
-  { label: 'Hold', value: 'DISCREPANCY_HOLD' },
-  { label: 'In stock', value: 'IN_STOCK' },
-  { label: 'Return', value: 'RETURN_PENDING' },
+  { label: 'Tất cả', value: '' },
+  { label: 'Chờ nhập', value: 'RECEIVING' },
+  { label: 'Sai lệch', value: 'DISCREPANCY_HOLD' },
+  { label: 'Đã nhập', value: 'IN_STOCK' },
+  { label: 'Chờ trả', value: 'RETURN_PENDING' },
 ];
+
+/** Map for document type Vietnamese labels */
+const DOC_TYPE_LABELS: Record<string, string> = {
+  InboundReceipt: 'Phiếu nhập kho',
+  DiscrepancyReport: 'Biên bản bất thường',
+  QcEvidence: 'Hình ảnh bằng chứng QC',
+};
 
 export default function WarehouseInventoryScreen() {
   const token = useAuthStore((state) => state.token);
@@ -67,7 +79,7 @@ export default function WarehouseInventoryScreen() {
       if (response.success) {
         setDocuments(response.data ?? []);
       } else {
-        setMessage(response.message || 'Unable to load LPN documents.');
+        setMessage(response.message || 'Không thể tải chứng từ LPN.');
       }
     } catch (error) {
       setMessage(getApiErrorMessage(error));
@@ -79,121 +91,203 @@ export default function WarehouseInventoryScreen() {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-[#EEF7F4]" edges={['bottom']}>
-      <ScrollView className="flex-1" contentContainerStyle={{ padding: 16, paddingBottom: 36 }}>
-        <View className="mb-4">
-          <Text className="text-2xl font-bold text-[#102A2D]">Inventory LPNs</Text>
-          <Text className="mt-1 text-xs font-semibold text-[#64748B]">GET /api/Inventory/lpns</Text>
+    <View style={{ flex: 1, backgroundColor: WH_COLORS.background }}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 36 }}>
+        {/* Title */}
+        <View style={{ marginBottom: 16 }}>
+          <Text style={{ fontSize: 24, fontWeight: '700', color: WH_COLORS.textPrimary }}>Tồn kho</Text>
+          <Text style={{ marginTop: 4, fontSize: 12, fontWeight: '500', color: WH_COLORS.textSecondary }}>
+            Quản lý LPN trong kho
+          </Text>
         </View>
 
-        <View className="rounded-xl bg-white p-4 shadow-sm">
-          <Text className="text-xs font-bold text-[#36514D]">Search</Text>
+        {/* Search & filter */}
+        <View
+          style={{
+            borderRadius: 16,
+            backgroundColor: WH_COLORS.cardBg,
+            padding: 16,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.04,
+            shadowRadius: 8,
+            elevation: 2,
+          }}
+        >
+          <Text style={{ fontSize: 12, fontWeight: '700', color: WH_COLORS.labelText }}>Tìm kiếm</Text>
           <TextInput
             value={keyword}
             onChangeText={setKeyword}
-            placeholder="LPN code or item name"
-            placeholderTextColor="#94A3B8"
-            className="mt-1 rounded-lg border border-[#D7E5E4] px-3 py-2 text-sm text-[#102A2D]"
+            placeholder="Mã LPN hoặc tên hàng"
+            placeholderTextColor={WH_COLORS.placeholder}
+            style={{
+              marginTop: 6,
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: WH_COLORS.inputBorder,
+              paddingHorizontal: 14,
+              paddingVertical: 10,
+              fontSize: 14,
+              color: WH_COLORS.textPrimary,
+            }}
           />
-          <View className="mt-3 flex-row flex-wrap gap-2">
-            {STATUS_FILTERS.map((item) => (
-              <Pressable
-                key={item.label}
-                onPress={() => setStatus(item.value)}
-                className={['rounded-lg px-3 py-2', status === item.value ? 'bg-[#0F766E]' : 'bg-[#DDF5F0]'].join(' ')}
-              >
-                <Text className={status === item.value ? 'text-xs font-bold text-white' : 'text-xs font-bold text-[#0F766E]'}>
-                  {item.label}
-                </Text>
-              </Pressable>
-            ))}
+          <View style={{ marginTop: 12, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {STATUS_FILTERS.map((item) => {
+              const isActive = status === item.value;
+              return (
+                <Pressable
+                  key={item.label}
+                  onPress={() => setStatus(item.value)}
+                  style={{
+                    borderRadius: 10,
+                    paddingHorizontal: 14,
+                    paddingVertical: 8,
+                    backgroundColor: isActive ? WH_COLORS.primary : WH_COLORS.primaryLight,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontWeight: '700',
+                      color: isActive ? '#FFFFFF' : WH_COLORS.primary,
+                    }}
+                  >
+                    {item.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
-          <Pressable onPress={loadLpns} className="mt-4 flex-row items-center justify-center gap-2 rounded-lg bg-[#0F766E] px-4 py-3">
-            <Ionicons name="refresh-outline" size={18} color="#FFFFFF" />
-            <Text className="font-bold text-white">Refresh inventory</Text>
-          </Pressable>
+          <View style={{ marginTop: 16 }}>
+            <Pressable
+              onPress={loadLpns}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                borderRadius: 12,
+                backgroundColor: WH_COLORS.primary,
+                paddingHorizontal: 16,
+                paddingVertical: 14,
+              }}
+            >
+              <Ionicons name="refresh-outline" size={18} color="#FFFFFF" />
+              <Text style={{ fontWeight: '700', color: '#FFFFFF' }}>Làm mới</Text>
+            </Pressable>
+          </View>
         </View>
 
-        {isLoading ? <ActivityIndicator className="my-4" color="#0F766E" /> : null}
-        {message ? <Message text={message} /> : null}
-        {!isLoading && lpns.length === 0 ? <Message text="No LPNs returned by backend for this filter." /> : null}
+        {isLoading ? <ActivityIndicator style={{ marginVertical: 16 }} color={WH_COLORS.primary} /> : null}
+        {message ? <View style={{ marginTop: 12 }}><AppMessage text={message} tone="error" /></View> : null}
+        {!isLoading && lpns.length === 0 ? (
+          <EmptyState icon="layers-outline" message="Không tìm thấy LPN nào." />
+        ) : null}
 
-        <View className="mt-4 gap-3">
+        {/* LPN list */}
+        <View style={{ marginTop: 16, gap: 12 }}>
           {lpns.map((lpn) => (
-            <Pressable key={lpn.lpnId} onPress={() => openLpn(lpn)} className="rounded-xl bg-white p-4 shadow-sm">
-              <View className="flex-row items-start justify-between gap-3">
-                <View className="flex-1">
-                  <Text className="text-base font-bold text-[#102A2D]">{lpn.lpnCode}</Text>
-                  <Text className="mt-1 text-xs text-[#64748B]">{lpn.itemName}</Text>
+            <Pressable
+              key={lpn.lpnId}
+              onPress={() => openLpn(lpn)}
+              style={{
+                borderRadius: 16,
+                backgroundColor: WH_COLORS.cardBg,
+                padding: 16,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.04,
+                shadowRadius: 8,
+                elevation: 2,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: WH_COLORS.textPrimary }}>{lpn.lpnCode}</Text>
+                  <Text style={{ marginTop: 4, fontSize: 12, color: WH_COLORS.textSecondary }}>{lpn.itemName}</Text>
                 </View>
-                <View className="rounded-full bg-[#DDF5F0] px-3 py-1">
-                  <Text className="text-[11px] font-bold text-[#0F766E]">{lpn.state}</Text>
-                </View>
+                <StatusBadge status={lpn.state} showVietnameseLabel />
               </View>
-              <InfoRow label="Qty" value={String(lpn.quantity)} />
-              <InfoRow label="Weight" value={`${lpn.actualWeightKg} / ${lpn.expectedWeightKg} kg`} />
-              <InfoRow label="Location" value={lpn.storageLocation || 'N/A'} />
-              <InfoRow label="Inbound" value={formatDateTime(lpn.inboundTime)} />
-              {lpn.condition ? <InfoRow label="Condition" value={lpn.condition} /> : null}
+              <AppInfoRow label="Số lượng" value={String(lpn.quantity)} />
+              <AppInfoRow label="Cân nặng" value={`${lpn.actualWeightKg} / ${lpn.expectedWeightKg} kg`} />
+              <AppInfoRow label="Vị trí" value={lpn.storageLocation || 'N/A'} />
+              <AppInfoRow label="Thời gian nhập" value={formatDateTimeVi(lpn.inboundTime)} />
+              {lpn.condition ? <AppInfoRow label="Tình trạng" value={lpn.condition} /> : null}
             </Pressable>
           ))}
         </View>
 
+        {/* LPN detail panel */}
         {selectedLpn ? (
-          <View className="mt-5 rounded-xl bg-white p-4 shadow-sm">
-            <Text className="text-lg font-bold text-[#102A2D]">{selectedLpn.lpnCode}</Text>
-            <InfoRow label="State" value={selectedLpn.state} />
-            <InfoRow label="Location" value={selectedLpn.storageLocation || 'N/A'} />
-            <InfoRow label="SLA" value={formatDateTime(selectedLpn.slaDeadline)} />
-            <Text className="mt-4 text-sm font-bold text-[#102A2D]">Documents</Text>
+          <View
+            style={{
+              marginTop: 20,
+              borderRadius: 16,
+              backgroundColor: WH_COLORS.cardBg,
+              padding: 16,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.04,
+              shadowRadius: 8,
+              elevation: 2,
+            }}
+          >
+            <Text style={{ fontSize: 18, fontWeight: '700', color: WH_COLORS.textPrimary }}>
+              {selectedLpn.lpnCode}
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 8 }}>
+              <Text style={{ width: 90, fontSize: 12, fontWeight: '700', color: WH_COLORS.textSecondary }}>Trạng thái</Text>
+              <StatusBadge status={selectedLpn.state} showVietnameseLabel />
+            </View>
+            <AppInfoRow label="Vị trí" value={selectedLpn.storageLocation || 'N/A'} />
+            <AppInfoRow label="Hạn SLA" value={formatDateTimeVi(selectedLpn.slaDeadline)} />
+
+            <Text style={{ marginTop: 16, fontSize: 14, fontWeight: '700', color: WH_COLORS.textPrimary }}>
+              Chứng từ
+            </Text>
             {documents.length === 0 ? (
-              <Text className="mt-2 text-xs text-[#64748B]">No documents returned for this LPN.</Text>
+              <Text style={{ marginTop: 8, fontSize: 12, color: WH_COLORS.textSecondary }}>
+                Chưa có chứng từ cho LPN này.
+              </Text>
             ) : (
               documents.map((doc) => (
                 <Pressable
                   key={`${doc.documentType}-${doc.url}`}
                   onPress={() => openDocument(doc.url)}
-                  className="mt-3 flex-row items-center gap-3 rounded-lg border border-[#D7E5E4] p-3"
+                  style={{
+                    marginTop: 12,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 12,
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    borderColor: WH_COLORS.cardBorder,
+                    padding: 12,
+                  }}
                 >
-                  <Ionicons name="document-attach-outline" size={20} color="#0F766E" />
-                  <View className="flex-1">
-                    <Text className="font-bold text-[#102A2D]">{doc.documentName}</Text>
-                    <Text className="mt-1 text-xs text-[#64748B]">{doc.documentType}</Text>
+                  <Ionicons name="document-attach-outline" size={20} color={WH_COLORS.primary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontWeight: '700', color: WH_COLORS.textPrimary }}>{doc.documentName}</Text>
+                    <Text style={{ marginTop: 4, fontSize: 12, color: WH_COLORS.textSecondary }}>
+                      {DOC_TYPE_LABELS[doc.documentType] || doc.documentType}
+                    </Text>
                   </View>
-                  <Ionicons name="open-outline" size={18} color="#0F766E" />
+                  <Ionicons name="open-outline" size={18} color={WH_COLORS.primary} />
                 </Pressable>
               ))
             )}
-            <Pressable onPress={() => setSelectedLpn(null)} className="mt-4 flex-row items-center justify-center gap-2 rounded-lg bg-[#DDF5F0] px-4 py-3">
-              <Ionicons name="close-outline" size={18} color="#0F766E" />
-              <Text className="font-bold text-[#0F766E]">Close detail</Text>
-            </Pressable>
+
+            <View style={{ marginTop: 16 }}>
+              <AppButton
+                icon="close-outline"
+                label="Đóng"
+                onPress={() => setSelectedLpn(null)}
+                variant="secondary"
+              />
+            </View>
           </View>
         ) : null}
       </ScrollView>
-    </SafeAreaView>
-  );
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View className="mt-2 flex-row gap-2">
-      <Text className="w-20 text-xs font-bold text-[#64748B]">{label}</Text>
-      <Text className="flex-1 text-xs text-[#102A2D]">{value}</Text>
     </View>
   );
-}
-
-function Message({ text }: { text: string }) {
-  return (
-    <View className="mt-3 rounded-lg border border-[#C7D2FE] bg-[#EEF2FF] px-3 py-2">
-      <Text className="text-xs font-semibold text-[#3730A3]">{text}</Text>
-    </View>
-  );
-}
-
-function formatDateTime(value?: string | null) {
-  if (!value) return 'N/A';
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
 }

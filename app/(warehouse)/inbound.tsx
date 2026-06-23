@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as WebBrowser from 'expo-web-browser';
 import { useFocusEffect } from 'expo-router';
@@ -10,12 +9,15 @@ import {
   Pressable,
   ScrollView,
   Text,
-  TextInput,
   View,
 } from 'react-native';
-import type { TextInputProps } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AppButton } from '../../components/AppButton';
+import { AppInfoRow } from '../../components/AppInfoRow';
+import { AppInput } from '../../components/AppInput';
+import { AppMessage } from '../../components/AppMessage';
+import { StatusBadge } from '../../components/StatusBadge';
+import { WH_COLORS, getStatusStyle, formatDateTimeVi, type MessageTone } from '../../constants/warehouseTheme';
 import { getAsnSchedule, type AsnScheduleResponse } from '../../services/asnApi';
 import { getApiErrorMessage } from '../../services/apiClient';
 import { getDiscrepancyPdf } from '../../services/discrepancyApi';
@@ -37,10 +39,10 @@ type StepKey = 'qc' | 'measurements' | 'discrepancy' | 'receipt' | 'putaway';
 
 const STEPS: { key: StepKey; label: string }[] = [
   { key: 'qc', label: 'QC' },
-  { key: 'measurements', label: 'Re-check' },
-  { key: 'discrepancy', label: 'Discrepancy' },
-  { key: 'receipt', label: 'Receipt' },
-  { key: 'putaway', label: 'Putaway' },
+  { key: 'measurements', label: 'Kiểm tra lại' },
+  { key: 'discrepancy', label: 'Sai lệch' },
+  { key: 'receipt', label: 'Phiếu nhập' },
+  { key: 'putaway', label: 'Nhập kho' },
 ];
 
 const todayInput = formatDateInput(new Date());
@@ -104,7 +106,7 @@ export default function WarehouseInboundScreen() {
       });
 
       if (!response.success) {
-        throw new Error(response.message || 'Unable to load ASN schedule.');
+        throw new Error(response.message || 'Không thể tải lịch ASN.');
       }
 
       setSchedule(response.data ?? []);
@@ -126,7 +128,7 @@ export default function WarehouseInboundScreen() {
     setManualAsnId(asn.asnId);
     setLpnStatus(null);
     setActiveStep('qc');
-    setActionMessage(`Selected ${asn.asnCode}.`);
+    setActionMessage(`Đã chọn ${asn.asnCode}.`);
   };
 
   const updateLpnId = (value: string) => {
@@ -137,17 +139,17 @@ export default function WarehouseInboundScreen() {
   const handleSubmitQc = async () => {
     try {
       requireToken(token);
-      requireGuid(activeAsnId, 'ASN ID');
+      requireGuid(activeAsnId, 'Mã ASN');
       setIsSubmitting(true);
       setActionMessage(null);
 
       const response = await submitInboundQc(token, {
         asnId: activeAsnId,
-        actualWeightKg: parseRequiredDecimal(qcWeight, 'Actual weight'),
-        lengthCm: parseRequiredDecimal(qcLength, 'Length'),
-        widthCm: parseRequiredDecimal(qcWidth, 'Width'),
-        heightCm: parseRequiredDecimal(qcHeight, 'Height'),
-        temperature: parseOptionalDecimal(qcTemperature, 'Temperature'),
+        actualWeightKg: parseRequiredDecimal(qcWeight, 'Cân nặng thực tế'),
+        lengthCm: parseRequiredDecimal(qcLength, 'Chiều dài'),
+        widthCm: parseRequiredDecimal(qcWidth, 'Chiều rộng'),
+        heightCm: parseRequiredDecimal(qcHeight, 'Chiều cao'),
+        temperature: parseOptionalDecimal(qcTemperature, 'Nhiệt độ'),
         evidenceImages: qcEvidence,
       });
 
@@ -167,17 +169,17 @@ export default function WarehouseInboundScreen() {
   const handleReEvaluate = async () => {
     try {
       requireToken(token);
-      requireGuid(lpnId.trim(), 'LPN ID');
+      requireGuid(lpnId.trim(), 'Mã LPN');
       setIsSubmitting(true);
       setActionMessage(null);
 
       const response = await reEvaluateInboundQc(token, {
         lpnId: lpnId.trim(),
-        actualWeightKg: parseRequiredDecimal(recheckWeight, 'Actual weight'),
-        lengthCm: parseRequiredDecimal(recheckLength, 'Length'),
-        widthCm: parseRequiredDecimal(recheckWidth, 'Width'),
-        heightCm: parseRequiredDecimal(recheckHeight, 'Height'),
-        temperature: parseOptionalDecimal(recheckTemperature, 'Temperature'),
+        actualWeightKg: parseRequiredDecimal(recheckWeight, 'Cân nặng thực tế'),
+        lengthCm: parseRequiredDecimal(recheckLength, 'Chiều dài'),
+        widthCm: parseRequiredDecimal(recheckWidth, 'Chiều rộng'),
+        heightCm: parseRequiredDecimal(recheckHeight, 'Chiều cao'),
+        temperature: parseOptionalDecimal(recheckTemperature, 'Nhiệt độ'),
         evidenceImages: recheckEvidence,
       });
 
@@ -196,7 +198,7 @@ export default function WarehouseInboundScreen() {
   const refreshLpnStatus = async () => {
     try {
       requireToken(token);
-      requireGuid(lpnId.trim(), 'LPN ID');
+      requireGuid(lpnId.trim(), 'Mã LPN');
       setIsSubmitting(true);
       setActionMessage(null);
 
@@ -204,10 +206,11 @@ export default function WarehouseInboundScreen() {
       setLpnStatus(lpn.state || null);
 
       if (lpn.state === 'RECEIVING') {
-        setActionMessage('Latest LPN state: RECEIVING. Putaway is now available.');
+        setActionMessage('Trạng thái LPN: RECEIVING. Có thể nhập kho.');
         setActiveStep('putaway');
       } else {
-        setActionMessage(`Latest LPN state: ${lpn.state || 'N/A'}. Sales/Admin must resolve this discrepancy before putaway.`);
+        const stateLabel = getStatusStyle(lpn.state || '').label;
+        setActionMessage(`Trạng thái LPN: ${stateLabel}. Sales/Admin cần xử lý sai lệch trước khi nhập kho.`);
       }
     } catch (error) {
       setActionMessage(getApiErrorMessage(error));
@@ -219,9 +222,9 @@ export default function WarehouseInboundScreen() {
   const handleGenerateReceipt = async () => {
     try {
       requireToken(token);
-      requireGuid(activeAsnId, 'ASN ID');
+      requireGuid(activeAsnId, 'Mã ASN');
       if (!delivererName.trim()) {
-        throw new Error('Deliverer name is required.');
+        throw new Error('Vui lòng nhập tên người giao hàng.');
       }
       setIsSubmitting(true);
       setActionMessage(null);
@@ -249,13 +252,14 @@ export default function WarehouseInboundScreen() {
   const handlePutaway = async () => {
     try {
       requireToken(token);
-      requireGuid(lpnId.trim(), 'LPN ID');
+      requireGuid(lpnId.trim(), 'Mã LPN');
       if (!storageLocation.trim()) {
-        throw new Error('Storage location is required.');
+        throw new Error('Vui lòng nhập vị trí lưu kho.');
       }
       if (!canPutaway) {
+        const stateLabel = currentLpnState ? getStatusStyle(currentLpnState).label : 'không xác định';
         throw new Error(
-          `Putaway is only available when LPN state is RECEIVING. Current state: ${currentLpnState || 'unknown'}. Refresh status after Sales/Admin resolves the discrepancy.`
+          `Chỉ có thể nhập kho khi trạng thái LPN là RECEIVING. Trạng thái hiện tại: ${stateLabel}. Hãy làm mới trạng thái sau khi Sales/Admin xử lý sai lệch.`
         );
       }
       setIsSubmitting(true);
@@ -278,7 +282,7 @@ export default function WarehouseInboundScreen() {
   const pickEvidenceImages = async (target: 'qc' | 'recheck') => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      setActionMessage('Photo library permission is required.');
+      setActionMessage('Cần cấp quyền truy cập thư viện ảnh.');
       return;
     }
 
@@ -308,7 +312,7 @@ export default function WarehouseInboundScreen() {
   const openReceiptPdf = async () => {
     const url = receiptResult?.pdfUrl || recheckResult?.pdfUrl || qcResult?.pdfUrl || (receiptId ? getInboundReceiptPdf(receiptId) : null);
     if (!url) {
-      setActionMessage('Receipt PDF is not available yet.');
+      setActionMessage('Chưa có phiếu nhập PDF.');
       return;
     }
     await WebBrowser.openBrowserAsync(encodeURI(url));
@@ -316,211 +320,246 @@ export default function WarehouseInboundScreen() {
 
   const openDiscrepancyPdf = async () => {
     if (!receiptId) {
-      setActionMessage('Receipt ID is required for discrepancy PDF.');
+      setActionMessage('Cần mã phiếu nhập để mở biên bản bất thường.');
       return;
     }
     await WebBrowser.openBrowserAsync(encodeURI(getDiscrepancyPdf(receiptId)));
   };
 
+  const messageTone: MessageTone = actionMessage?.toLowerCase().includes('failed') || actionMessage?.toLowerCase().includes('error')
+    ? 'error'
+    : 'neutral';
+
   return (
-    <SafeAreaView className="flex-1 bg-[#EEF7F4]" edges={['bottom']}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1">
-        <ScrollView className="flex-1" contentContainerStyle={{ padding: 16, paddingBottom: 36 }}>
-          <Section title="Inbound Schedule" subtitle="GET /api/v1/asns/schedule">
-            <View className="gap-3">
-              <View className="flex-row gap-2">
-                <Field label="Date" value={scheduleDate} onChangeText={setScheduleDate} placeholder="YYYY-MM-DD" />
-                <Field label="Status" value={statusFilter} onChangeText={setStatusFilter} placeholder="SCHEDULED" />
+    <View style={{ flex: 1, backgroundColor: WH_COLORS.background }}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 36 }}>
+          {/* ── Section: Lịch hàng đến ── */}
+          <Section title="Lịch hàng đến">
+            <View style={{ gap: 12 }}>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <AppInput label="Ngày" value={scheduleDate} onChangeText={setScheduleDate} placeholder="YYYY-MM-DD" />
+                <AppInput label="Trạng thái" value={statusFilter} onChangeText={setStatusFilter} placeholder="SCHEDULED" />
               </View>
-              <ActionButton icon="refresh-outline" label="Refresh schedule" onPress={loadSchedule} loading={isLoadingSchedule} />
-              {scheduleError ? <Message tone="error" text={scheduleError} /> : null}
+              <AppButton icon="refresh-outline" label="Làm mới lịch" onPress={loadSchedule} loading={isLoadingSchedule} />
+              {scheduleError ? <AppMessage tone="error" text={scheduleError} /> : null}
               {!isLoadingSchedule && schedule.length === 0 ? (
-                <Message
+                <AppMessage
                   tone="neutral"
-                  text="ASN module is not ready yet or no ASN is scheduled for this filter. You can enter an ASN ID manually for inbound testing."
+                  text="Chưa có ASN nào cho ngày/trạng thái này. Bạn có thể nhập mã ASN thủ công bên dưới."
                 />
               ) : null}
               {schedule.map((asn) => (
-                <Pressable key={asn.asnId} onPress={() => selectAsn(asn)} className="rounded-xl border border-[#D7E5E4] bg-white p-4">
-                  <View className="flex-row items-start justify-between gap-3">
-                    <View className="flex-1">
-                      <Text className="text-base font-bold text-[#102A2D]">{asn.asnCode}</Text>
-                      <Text className="mt-1 text-xs text-[#64748B]">{asn.customerName || asn.customerEmail || 'Unknown customer'}</Text>
+                <Pressable
+                  key={asn.asnId}
+                  onPress={() => selectAsn(asn)}
+                  style={{
+                    borderRadius: 14,
+                    borderWidth: 1,
+                    borderColor: WH_COLORS.cardBorder,
+                    backgroundColor: WH_COLORS.cardBg,
+                    padding: 16,
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 16, fontWeight: '700', color: WH_COLORS.textPrimary }}>{asn.asnCode}</Text>
+                      <Text style={{ marginTop: 4, fontSize: 12, color: WH_COLORS.textSecondary }}>
+                        {asn.customerName || asn.customerEmail || 'Khách hàng chưa rõ'}
+                      </Text>
                     </View>
-                    <StatusPill label={asn.status} />
+                    <StatusBadge status={asn.status} showVietnameseLabel />
                   </View>
-                  <InfoRow label="Tracking" value={asn.trackingCode || 'N/A'} />
-                  <InfoRow label="Order" value={asn.orderId} />
-                  <InfoRow label="Route" value={asn.routeCode || asn.routeId || 'N/A'} />
-                  <InfoRow label="Drop-off" value={formatDateTime(asn.requestedDropoffTime)} />
-                  <InfoRow label="Cut-off" value={asn.cutOffTime || 'N/A'} />
-                  <InfoRow label="QR" value={asn.qrCodeValue || 'N/A'} />
+                  <AppInfoRow label="Tracking" value={asn.trackingCode || 'N/A'} />
+                  <AppInfoRow label="Đơn hàng" value={asn.orderId} />
+                  <AppInfoRow label="Tuyến" value={asn.routeCode || asn.routeId || 'N/A'} />
+                  <AppInfoRow label="Giờ giao kho" value={formatDateTimeVi(asn.requestedDropoffTime)} />
+                  <AppInfoRow label="Cut-off" value={asn.cutOffTime || 'N/A'} />
+                  <AppInfoRow label="QR" value={asn.qrCodeValue || 'N/A'} />
                 </Pressable>
               ))}
-              <View className="rounded-xl border border-dashed border-[#89B8B1] bg-white p-4">
-                <Field label="Manual ASN ID" value={manualAsnId} onChangeText={setManualAsnId} placeholder="Enter backend ASN GUID" />
-                <ActionButton
-                  icon="keypad-outline"
-                  label="Use manual ASN"
-                  onPress={() => {
-                    setSelectedAsn(null);
-                    setLpnStatus(null);
-                    setActiveStep('qc');
-                    setActionMessage('Manual ASN ID selected.');
-                  }}
-                />
+              <View
+                style={{
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  borderStyle: 'dashed',
+                  borderColor: WH_COLORS.inputBorder,
+                  backgroundColor: WH_COLORS.cardBg,
+                  padding: 16,
+                }}
+              >
+                <AppInput label="Mã ASN thủ công" value={manualAsnId} onChangeText={setManualAsnId} placeholder="Nhập mã ASN (GUID)" />
+                <View style={{ marginTop: 12 }}>
+                  <AppButton
+                    icon="keypad-outline"
+                    label="Sử dụng ASN thủ công"
+                    variant="secondary"
+                    onPress={() => {
+                      setSelectedAsn(null);
+                      setLpnStatus(null);
+                      setActiveStep('qc');
+                      setActionMessage('Đã chọn ASN thủ công.');
+                    }}
+                  />
+                </View>
               </View>
             </View>
           </Section>
 
-          <Section title="Inbound Processing" subtitle={activeAsnId ? `ASN ${activeAsnId}` : 'Select ASN or enter manual ASN ID'}>
-            <View className="mb-4 flex-row flex-wrap gap-2">
-              {STEPS.map((step) => (
-                <Pressable
-                  key={step.key}
-                  onPress={() => setActiveStep(step.key)}
-                  className={[
-                    'rounded-lg px-3 py-2',
-                    activeStep === step.key ? 'bg-[#0F766E]' : 'bg-[#DDF5F0]',
-                  ].join(' ')}
-                >
-                  <Text className={activeStep === step.key ? 'text-xs font-bold text-white' : 'text-xs font-bold text-[#0F766E]'}>
-                    {step.label}
-                  </Text>
-                </Pressable>
-              ))}
+          {/* ── Section: Xử lý nhập kho ── */}
+          <Section title="Xử lý nhập kho" subtitle={activeAsnId ? `ASN: ${activeAsnId}` : 'Chọn ASN hoặc nhập mã ASN thủ công'}>
+            {/* Step tabs */}
+            <View style={{ marginBottom: 16, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {STEPS.map((step) => {
+                const isActive = activeStep === step.key;
+                return (
+                  <Pressable
+                    key={step.key}
+                    onPress={() => setActiveStep(step.key)}
+                    style={{
+                      borderRadius: 10,
+                      paddingHorizontal: 14,
+                      paddingVertical: 8,
+                      backgroundColor: isActive ? WH_COLORS.primary : WH_COLORS.primaryLight,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontWeight: '700',
+                        color: isActive ? '#FFFFFF' : WH_COLORS.primary,
+                      }}
+                    >
+                      {step.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
 
-            {actionMessage ? <Message tone={actionMessage.toLowerCase().includes('failed') ? 'error' : 'neutral'} text={actionMessage} /> : null}
-            {isSubmitting ? <ActivityIndicator className="my-3" color="#0F766E" /> : null}
+            {actionMessage ? <AppMessage tone={messageTone} text={actionMessage} /> : null}
+            {isSubmitting ? <ActivityIndicator style={{ marginVertical: 12 }} color={WH_COLORS.primary} /> : null}
 
+            {/* ── QC tab ── */}
             {activeStep === 'qc' ? (
-              <View className="gap-3">
-                <Field label="ASN ID" value={manualAsnId} onChangeText={setManualAsnId} placeholder="AsnId" />
+              <View style={{ gap: 12 }}>
+                <AppInput label="Mã ASN" value={manualAsnId} onChangeText={setManualAsnId} placeholder="Mã ASN" />
                 <MeasurementFields
-                  weight={qcWeight}
-                  setWeight={setQcWeight}
-                  length={qcLength}
-                  setLength={setQcLength}
-                  width={qcWidth}
-                  setWidth={setQcWidth}
-                  height={qcHeight}
-                  setHeight={setQcHeight}
-                  temperature={qcTemperature}
-                  setTemperature={setQcTemperature}
+                  weight={qcWeight} setWeight={setQcWeight}
+                  length={qcLength} setLength={setQcLength}
+                  width={qcWidth} setWidth={setQcWidth}
+                  height={qcHeight} setHeight={setQcHeight}
+                  temperature={qcTemperature} setTemperature={setQcTemperature}
                 />
                 <EvidencePicker images={qcEvidence} onPick={() => pickEvidenceImages('qc')} onClear={() => setQcEvidence([])} />
-                <ActionButton icon="checkmark-circle-outline" label="Submit QC" onPress={handleSubmitQc} loading={isSubmitting} />
-                {qcResult ? <ResultBox title="QC result" result={qcResult} /> : null}
+                <AppButton icon="checkmark-circle-outline" label="Gửi kết quả QC" onPress={handleSubmitQc} loading={isSubmitting} />
+                {qcResult ? <ResultBox title="Kết quả QC" result={qcResult} /> : null}
               </View>
             ) : null}
 
+            {/* ── Re-check tab ── */}
             {activeStep === 'measurements' ? (
-              <View className="gap-3">
-                <Field label="LPN ID" value={lpnId} onChangeText={updateLpnId} placeholder="LpnId" />
+              <View style={{ gap: 12 }}>
+                <AppInput label="Mã LPN" value={lpnId} onChangeText={updateLpnId} placeholder="Mã LPN" />
                 <MeasurementFields
-                  weight={recheckWeight}
-                  setWeight={setRecheckWeight}
-                  length={recheckLength}
-                  setLength={setRecheckLength}
-                  width={recheckWidth}
-                  setWidth={setRecheckWidth}
-                  height={recheckHeight}
-                  setHeight={setRecheckHeight}
-                  temperature={recheckTemperature}
-                  setTemperature={setRecheckTemperature}
+                  weight={recheckWeight} setWeight={setRecheckWeight}
+                  length={recheckLength} setLength={setRecheckLength}
+                  width={recheckWidth} setWidth={setRecheckWidth}
+                  height={recheckHeight} setHeight={setRecheckHeight}
+                  temperature={recheckTemperature} setTemperature={setRecheckTemperature}
                 />
                 <EvidencePicker images={recheckEvidence} onPick={() => pickEvidenceImages('recheck')} onClear={() => setRecheckEvidence([])} />
-                <ActionButton icon="calculator-outline" label="Re-evaluate measurements" onPress={handleReEvaluate} loading={isSubmitting} />
-                {recheckResult ? <ResultBox title="Re-evaluate result" result={recheckResult} /> : null}
+                <AppButton icon="calculator-outline" label="Gửi kết quả kiểm tra lại" onPress={handleReEvaluate} loading={isSubmitting} />
+                {recheckResult ? <ResultBox title="Kết quả kiểm tra lại" result={recheckResult} /> : null}
               </View>
             ) : null}
 
+            {/* ── Discrepancy tab ── */}
             {activeStep === 'discrepancy' ? (
-              <View className="gap-3">
-                <Message
+              <View style={{ gap: 12 }}>
+                <AppMessage
                   tone={currentLpnState === 'DISCREPANCY_HOLD' ? 'warning' : 'neutral'}
-                  text={`Current state: ${currentLpnState || 'N/A'} | Difference: ${latestInboundResult?.diffPercent ?? 0}%`}
+                  text={`Trạng thái hiện tại: ${currentLpnState ? getStatusStyle(currentLpnState).label : 'N/A'} | Chênh lệch: ${latestInboundResult?.diffPercent ?? 0}%`}
                 />
-                <Message
+                <AppMessage
                   tone="warning"
-                  text="This LPN is on discrepancy hold. Sales/Admin must resolve this discrepancy before putaway."
+                  text="Lô hàng đang bị giữ do sai lệch. Sales/Admin cần xử lý sai lệch trước khi nhập kho."
                 />
-                <Field label="LPN ID" value={lpnId} onChangeText={updateLpnId} placeholder="LpnId" />
-                <ActionButton icon="calculator-outline" label="Re-check measurements" onPress={() => setActiveStep('measurements')} />
-                <ActionButton icon="document-attach-outline" label="Open discrepancy PDF" onPress={openDiscrepancyPdf} variant="secondary" />
-                <ActionButton icon="refresh-outline" label="Refresh LPN status" onPress={refreshLpnStatus} loading={isSubmitting} variant="secondary" />
+                <AppInput label="Mã LPN" value={lpnId} onChangeText={updateLpnId} placeholder="Mã LPN" />
+                <AppButton icon="calculator-outline" label="Kiểm tra lại số đo" onPress={() => setActiveStep('measurements')} variant="secondary" />
+                <AppButton icon="document-attach-outline" label="Mở biên bản bất thường" onPress={openDiscrepancyPdf} variant="secondary" />
+                <AppButton icon="refresh-outline" label="Làm mới trạng thái LPN" onPress={refreshLpnStatus} loading={isSubmitting} variant="secondary" />
               </View>
             ) : null}
 
+            {/* ── Receipt tab ── */}
             {activeStep === 'receipt' ? (
-              <View className="gap-3">
-                <Field label="ASN ID" value={manualAsnId} onChangeText={setManualAsnId} placeholder="AsnId" />
-                <Field label="Deliverer name" value={delivererName} onChangeText={setDelivererName} placeholder="Driver or customer name" />
-                <Field label="Vehicle plate" value={vehiclePlate} onChangeText={setVehiclePlate} placeholder="Optional" />
-                <Field label="Note" value={receiptNote} onChangeText={setReceiptNote} placeholder="Optional" multiline />
-                <ActionButton icon="document-text-outline" label="Generate receipt" onPress={handleGenerateReceipt} loading={isSubmitting} />
-                <ActionButton icon="open-outline" label="Open receipt PDF" onPress={openReceiptPdf} variant="secondary" />
-                {receiptResult ? <Message tone={receiptResult.success ? 'success' : 'error'} text={receiptResult.message} /> : null}
+              <View style={{ gap: 12 }}>
+                <AppInput label="Mã ASN" value={manualAsnId} onChangeText={setManualAsnId} placeholder="Mã ASN" />
+                <AppInput label="Người giao hàng" value={delivererName} onChangeText={setDelivererName} placeholder="Tên tài xế hoặc khách hàng" />
+                <AppInput label="Biển số xe" value={vehiclePlate} onChangeText={setVehiclePlate} placeholder="Không bắt buộc" />
+                <AppInput label="Ghi chú" value={receiptNote} onChangeText={setReceiptNote} placeholder="Không bắt buộc" multiline />
+                <AppButton icon="document-text-outline" label="Tạo phiếu nhập kho" onPress={handleGenerateReceipt} loading={isSubmitting} />
+                <AppButton icon="open-outline" label="Mở phiếu nhập PDF" onPress={openReceiptPdf} variant="secondary" />
+                {receiptResult ? <AppMessage tone={receiptResult.success ? 'success' : 'error'} text={receiptResult.message} /> : null}
               </View>
             ) : null}
 
+            {/* ── Putaway tab ── */}
             {activeStep === 'putaway' ? (
-              <View className="gap-3">
+              <View style={{ gap: 12 }}>
                 {!canPutaway ? (
-                  <Message
+                  <AppMessage
                     tone="warning"
-                    text={`Putaway is locked until LPN state is RECEIVING. Current state: ${currentLpnState || 'unknown'}.`}
+                    text={`Chưa thể nhập kho. Trạng thái LPN hiện tại: ${currentLpnState ? getStatusStyle(currentLpnState).label : 'không xác định'}. Cần chờ Sales/Admin xử lý.`}
                   />
                 ) : null}
-                <Field label="LPN ID" value={lpnId} onChangeText={updateLpnId} placeholder="LpnId" />
-                <Field label="Storage location" value={storageLocation} onChangeText={setStorageLocation} placeholder="A-01-01" />
-                <ActionButton icon="archive-outline" label="Confirm putaway" onPress={handlePutaway} loading={isSubmitting} disabled={!canPutaway} />
-                {putawayResult ? <Message tone={putawayResult.success ? 'success' : 'error'} text={putawayResult.message} /> : null}
+                {putawayResult?.success && currentLpnState === 'IN_STOCK' ? (
+                  <AppMessage
+                    tone="success"
+                    text={`Lô hàng đã được nhập kho an toàn. Vị trí: ${storageLocation}`}
+                  />
+                ) : null}
+                <AppInput label="Mã LPN" value={lpnId} onChangeText={updateLpnId} placeholder="Mã LPN" />
+                <AppInput label="Vị trí lưu kho" value={storageLocation} onChangeText={setStorageLocation} placeholder="A-01-01" />
+                <AppButton icon="archive-outline" label="Xác nhận nhập kho" onPress={handlePutaway} loading={isSubmitting} disabled={!canPutaway} />
+                {putawayResult && !putawayResult.success ? <AppMessage tone="error" text={putawayResult.message} /> : null}
               </View>
             ) : null}
           </Section>
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 
+/* ── Inline sub-components (only used in this screen) ── */
+
 function MeasurementFields({
-  weight,
-  setWeight,
-  length,
-  setLength,
-  width,
-  setWidth,
-  height,
-  setHeight,
-  temperature,
-  setTemperature,
+  weight, setWeight,
+  length, setLength,
+  width, setWidth,
+  height, setHeight,
+  temperature, setTemperature,
 }: {
-  weight: string;
-  setWeight: (value: string) => void;
-  length: string;
-  setLength: (value: string) => void;
-  width: string;
-  setWidth: (value: string) => void;
-  height: string;
-  setHeight: (value: string) => void;
-  temperature: string;
-  setTemperature: (value: string) => void;
+  weight: string; setWeight: (v: string) => void;
+  length: string; setLength: (v: string) => void;
+  width: string; setWidth: (v: string) => void;
+  height: string; setHeight: (v: string) => void;
+  temperature: string; setTemperature: (v: string) => void;
 }) {
-  const temperatureKeyboardType: TextInputProps['keyboardType'] = Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'numeric';
+  const temperatureKeyboardType = Platform.OS === 'ios' ? 'numbers-and-punctuation' as const : 'numeric' as const;
 
   return (
-    <View className="gap-3">
-      <Field label="Actual weight kg" value={weight} onChangeText={setWeight} placeholder="120" keyboardType="numeric" />
-      <View className="flex-row gap-2">
-        <Field label="Length cm" value={length} onChangeText={setLength} placeholder="80" keyboardType="numeric" />
-        <Field label="Width cm" value={width} onChangeText={setWidth} placeholder="60" keyboardType="numeric" />
+    <View style={{ gap: 12 }}>
+      <AppInput label="Cân nặng thực tế (kg)" value={weight} onChangeText={setWeight} placeholder="120" keyboardType="numeric" />
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <AppInput label="Dài (cm)" value={length} onChangeText={setLength} placeholder="80" keyboardType="numeric" />
+        <AppInput label="Rộng (cm)" value={width} onChangeText={setWidth} placeholder="60" keyboardType="numeric" />
       </View>
-      <View className="flex-row gap-2">
-        <Field label="Height cm" value={height} onChangeText={setHeight} placeholder="50" keyboardType="numeric" />
-        <Field label="Temperature °C" value={temperature} onChangeText={setTemperature} placeholder="-6" keyboardType={temperatureKeyboardType} />
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <AppInput label="Cao (cm)" value={height} onChangeText={setHeight} placeholder="50" keyboardType="numeric" />
+        <AppInput label="Nhiệt độ (°C)" value={temperature} onChangeText={setTemperature} placeholder="-6" keyboardType={temperatureKeyboardType} />
       </View>
     </View>
   );
@@ -528,14 +567,24 @@ function MeasurementFields({
 
 function EvidencePicker({ images, onPick, onClear }: { images: EvidenceImage[]; onPick: () => void; onClear: () => void }) {
   return (
-    <View className="rounded-xl border border-[#D7E5E4] bg-white p-3">
-      <View className="flex-row items-center justify-between">
-        <Text className="text-sm font-bold text-[#102A2D]">Evidence photos</Text>
-        <Text className="text-xs font-semibold text-[#64748B]">{images.length} selected</Text>
+    <View
+      style={{
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: WH_COLORS.cardBorder,
+        backgroundColor: WH_COLORS.cardBg,
+        padding: 14,
+      }}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Text style={{ fontSize: 14, fontWeight: '700', color: WH_COLORS.textPrimary }}>Ảnh bằng chứng</Text>
+        <Text style={{ fontSize: 12, fontWeight: '600', color: WH_COLORS.textSecondary }}>
+          {images.length} đã chọn
+        </Text>
       </View>
-      <View className="mt-3 flex-row gap-2">
-        <ActionButton icon="image-outline" label="Add photos" onPress={onPick} compact />
-        <ActionButton icon="trash-outline" label="Clear" onPress={onClear} compact variant="secondary" />
+      <View style={{ marginTop: 12, flexDirection: 'row', gap: 8 }}>
+        <AppButton icon="image-outline" label="Thêm ảnh" onPress={onPick} compact variant="secondary" />
+        <AppButton icon="trash-outline" label="Xoá" onPress={onClear} compact variant="secondary" />
       </View>
     </View>
   );
@@ -543,149 +592,71 @@ function EvidencePicker({ images, onPick, onClear }: { images: EvidenceImage[]; 
 
 function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
-    <View className="mb-4 rounded-xl bg-white p-4 shadow-sm">
-      <Text className="text-lg font-bold text-[#102A2D]">{title}</Text>
-      {subtitle ? <Text className="mt-1 text-xs font-medium text-[#64748B]">{subtitle}</Text> : null}
-      <View className="mt-4">{children}</View>
-    </View>
-  );
-}
-
-function Field({
-  label,
-  value,
-  onChangeText,
-  placeholder,
-  keyboardType = 'default',
-  multiline = false,
-}: {
-  label: string;
-  value: string;
-  onChangeText: (value: string) => void;
-  placeholder: string;
-  keyboardType?: TextInputProps['keyboardType'];
-  multiline?: boolean;
-}) {
-  return (
-    <View className="flex-1 gap-1">
-      <Text className="text-xs font-bold text-[#36514D]">{label}</Text>
-      <TextInput
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor="#94A3B8"
-        keyboardType={keyboardType}
-        multiline={multiline}
-        className={[
-          'rounded-lg border border-[#D7E5E4] bg-white px-3 py-2 text-sm text-[#102A2D]',
-          multiline ? 'min-h-[86px]' : 'min-h-[42px]',
-        ].join(' ')}
-      />
-    </View>
-  );
-}
-
-function ActionButton({
-  icon,
-  label,
-  onPress,
-  loading = false,
-  disabled = false,
-  variant = 'primary',
-  compact = false,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  onPress: () => void;
-  loading?: boolean;
-  disabled?: boolean;
-  variant?: 'primary' | 'secondary';
-  compact?: boolean;
-}) {
-  const isSecondary = variant === 'secondary';
-  const isDisabled = loading || disabled;
-
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={isDisabled}
-      className={[
-        'flex-row items-center justify-center gap-2 rounded-lg',
-        compact ? 'flex-1 px-3 py-2' : 'px-4 py-3',
-        isSecondary ? 'border border-[#0F766E]/20 bg-[#DDF5F0]' : 'bg-[#0F766E]',
-        isDisabled ? 'opacity-70' : '',
-      ].join(' ')}
+    <View
+      style={{
+        marginBottom: 16,
+        borderRadius: 16,
+        backgroundColor: WH_COLORS.cardBg,
+        padding: 16,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.04,
+        shadowRadius: 8,
+        elevation: 2,
+      }}
     >
-      <Ionicons name={icon} size={18} color={isSecondary ? '#0F766E' : '#FFFFFF'} />
-      <Text className={isSecondary ? 'text-sm font-bold text-[#0F766E]' : 'text-sm font-bold text-white'}>
-        {loading ? 'Working...' : label}
-      </Text>
-    </Pressable>
-  );
-}
-
-function Message({ text, tone }: { text: string; tone: 'neutral' | 'success' | 'warning' | 'error' }) {
-  const colors = {
-    neutral: 'border-[#C7D2FE] bg-[#EEF2FF] text-[#3730A3]',
-    success: 'border-[#BBF7D0] bg-[#F0FDF4] text-[#166534]',
-    warning: 'border-[#FDE68A] bg-[#FFFBEB] text-[#92400E]',
-    error: 'border-[#FECACA] bg-[#FEF2F2] text-[#991B1B]',
-  }[tone];
-
-  return (
-    <View className={`rounded-lg border px-3 py-2 ${colors}`}>
-      <Text className={`text-xs font-semibold ${colors}`}>{text}</Text>
+      <Text style={{ fontSize: 18, fontWeight: '700', color: WH_COLORS.textPrimary }}>{title}</Text>
+      {subtitle ? (
+        <Text style={{ marginTop: 4, fontSize: 12, fontWeight: '500', color: WH_COLORS.textSecondary }}>{subtitle}</Text>
+      ) : null}
+      <View style={{ marginTop: 16 }}>{children}</View>
     </View>
   );
 }
 
 function ResultBox({ title, result }: { title: string; result: InboundQcResponse }) {
   return (
-    <View className="rounded-xl border border-[#D7E5E4] bg-[#F8FAFC] p-3">
-      <Text className="text-sm font-bold text-[#102A2D]">{title}</Text>
-      <InfoRow label="Message" value={result.message} />
-      <InfoRow label="LPN" value={result.lpnCode || result.lpnId || 'N/A'} />
-      <InfoRow label="Receipt" value={result.receiptId || 'N/A'} />
-      <InfoRow label="State" value={result.state || 'N/A'} />
-      <InfoRow label="Diff percent" value={`${result.diffPercent}%`} />
-      <InfoRow label="PDF" value={result.pdfUrl || 'N/A'} />
+    <View
+      style={{
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: WH_COLORS.cardBorder,
+        backgroundColor: WH_COLORS.primaryLight,
+        padding: 14,
+      }}
+    >
+      <Text style={{ fontSize: 14, fontWeight: '700', color: WH_COLORS.textPrimary }}>{title}</Text>
+      <AppInfoRow label="Thông báo" value={result.message} />
+      <AppInfoRow label="Mã LPN" value={result.lpnCode || result.lpnId || 'N/A'} />
+      <AppInfoRow label="Phiếu nhập" value={result.receiptId || 'N/A'} />
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 8 }}>
+        <Text style={{ width: 90, fontSize: 12, fontWeight: '700', color: WH_COLORS.textSecondary }}>Trạng thái</Text>
+        {result.state ? <StatusBadge status={result.state} showVietnameseLabel /> : <Text style={{ fontSize: 12, color: WH_COLORS.textPrimary }}>N/A</Text>}
+      </View>
+      <AppInfoRow label="Chênh lệch" value={`${result.diffPercent}%`} />
+      <AppInfoRow label="PDF" value={result.pdfUrl || 'N/A'} />
     </View>
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View className="mt-2 flex-row gap-2">
-      <Text className="w-24 text-xs font-bold text-[#64748B]">{label}</Text>
-      <Text className="flex-1 text-xs text-[#102A2D]">{value}</Text>
-    </View>
-  );
-}
-
-function StatusPill({ label }: { label: string }) {
-  return (
-    <View className="rounded-full bg-[#DDF5F0] px-3 py-1">
-      <Text className="text-[11px] font-bold text-[#0F766E]">{label}</Text>
-    </View>
-  );
-}
+/* ── Utility functions (business logic unchanged) ── */
 
 function requireToken(token: string | null): asserts token is string {
   if (!token) {
-    throw new Error('Missing authentication token. Please login again.');
+    throw new Error('Thiếu token xác thực. Vui lòng đăng nhập lại.');
   }
 }
 
 function requireGuid(value: string, label: string) {
   if (!value.trim()) {
-    throw new Error(`${label} is required.`);
+    throw new Error(`${label} là bắt buộc.`);
   }
 }
 
 function parseRequiredDecimal(value: string, label: string) {
   const parsed = parseDecimal(value);
   if (parsed === null || parsed <= 0) {
-    throw new Error(`${label} must be greater than 0.`);
+    throw new Error(`${label} phải lớn hơn 0.`);
   }
   return parsed;
 }
@@ -694,7 +665,7 @@ function parseOptionalDecimal(value: string, label: string) {
   if (!value.trim()) return null;
   const parsed = parseDecimal(value);
   if (parsed === null) {
-    throw new Error(`${label} must be a valid number.`);
+    throw new Error(`${label} phải là một số hợp lệ.`);
   }
   return parsed;
 }
@@ -709,10 +680,4 @@ function parseDecimal(value: string) {
 function formatDateInput(date: Date) {
   const offset = date.getTimezoneOffset() * 60_000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 10);
-}
-
-function formatDateTime(value?: string | null) {
-  if (!value) return 'N/A';
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
 }
