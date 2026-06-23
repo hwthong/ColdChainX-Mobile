@@ -12,6 +12,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 import { API_BASE_URL, getApiErrorMessage } from '../../services/apiClient';
+import { getCustomerAsns, type AsnResponse } from '../../services/asnApi';
 import { getCustomerIdFromToken } from '../../services/jwt';
 import { getCustomerOrders, OrderResponse } from '../../services/orderApi';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -25,6 +26,7 @@ export default function StatusScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [asnsByOrderId, setAsnsByOrderId] = useState<Record<string, AsnResponse>>({});
 
   const fetchOrders = useCallback(async () => {
     const fallbackCustomerId = accessToken ? getCustomerIdFromToken(accessToken) : null;
@@ -37,6 +39,7 @@ export default function StatusScreen() {
     if (!accessToken) {
       setError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
       setOrders([]);
+      setAsnsByOrderId({});
       setIsLoading(false);
       setIsRefreshing(false);
       return;
@@ -45,6 +48,7 @@ export default function StatusScreen() {
     if (!resolvedCustomerId) {
       setError('Không tìm thấy mã khách hàng. Vui lòng đăng xuất và đăng nhập lại.');
       setOrders([]);
+      setAsnsByOrderId({});
       setIsLoading(false);
       setIsRefreshing(false);
       return;
@@ -56,12 +60,26 @@ export default function StatusScreen() {
 
       if (response.success) {
         setOrders(response.data ?? []);
+
+        try {
+          const asnResponse = await getCustomerAsns(accessToken, resolvedCustomerId);
+          const nextAsnsByOrderId = Object.fromEntries(
+            (asnResponse.data ?? []).map((asn) => [asn.orderId, asn])
+          );
+
+          setAsnsByOrderId(nextAsnsByOrderId);
+        } catch (asnError) {
+          console.warn('[Status] Could not load customer ASNs', asnError);
+          setAsnsByOrderId({});
+        }
       } else {
         setError(response.message || 'Không thể lấy danh sách đơn hàng.');
+        setAsnsByOrderId({});
       }
     } catch (err) {
       setError(getApiErrorMessage(err));
       setOrders([]);
+      setAsnsByOrderId({});
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -82,6 +100,8 @@ export default function StatusScreen() {
 
   const renderOrder = ({ item }: { item: OrderResponse }) => {
     const imageUrl = getOrderImageUrl(item);
+    const existingAsn = asnsByOrderId[item.orderId];
+    const canScheduleDelivery = isContractSigned(item.status);
 
     return (
       <Pressable
@@ -145,6 +165,28 @@ export default function StatusScreen() {
                     Báo giá: {translateStatus(getLatestQuotationStatus(item) ?? '')}
                   </Text>
                 </View>
+              ) : null}
+
+              {canScheduleDelivery ? (
+                <Pressable
+                  onPress={() =>
+                    router.push({
+                      pathname: '/(customer)/schedule-delivery',
+                      params: {
+                        orderId: item.orderId,
+                        asnId: existingAsn?.asnId ?? '',
+                      },
+                    } as never)
+                  }
+                  className={`mt-2 flex-row items-center justify-center gap-2 rounded-xl px-4 py-3 ${
+                    existingAsn ? 'bg-green-700' : 'bg-[#8B4513]'
+                  }`}
+                >
+                  <Ionicons name={existingAsn ? 'qr-code-outline' : 'calendar-outline'} size={18} color="#FFFFFF" />
+                  <Text className="font-bold text-white">
+                    {existingAsn ? 'Xem lịch đã đặt' : 'Đặt lịch giao'}
+                  </Text>
+                </Pressable>
               ) : null}
             </View>
           </View>
@@ -217,6 +259,8 @@ function getStatusColor(status: string) {
       return { container: 'bg-orange-100 border-orange-200', text: 'text-orange-800' };
     case 'CONTRACT_PENDING':
       return { container: 'bg-amber-100 border-amber-200', text: 'text-amber-800' };
+    case 'CONTRACT_SIGNED':
+      return { container: 'bg-emerald-100 border-emerald-200', text: 'text-emerald-800' };
     case 'ASSIGNED':
       return { container: 'bg-blue-100 border-blue-200', text: 'text-blue-800' };
     case 'IN_TRANSIT':
@@ -240,6 +284,8 @@ function translateStatus(status: string) {
       return 'Đang báo giá';
     case 'CONTRACT_PENDING':
       return 'Chờ hợp đồng';
+    case 'CONTRACT_SIGNED':
+      return 'Đã ký HĐ';
     case 'ASSIGNED':
       return 'Đã phân xe';
     case 'IN_TRANSIT':
@@ -283,4 +329,8 @@ function formatTemperature(value: string | number) {
 
 function getLatestQuotationStatus(order: OrderResponse) {
   return order.quotations?.[0]?.status ?? null;
+}
+
+function isContractSigned(status: string) {
+  return status.toUpperCase() === 'CONTRACT_SIGNED';
 }
