@@ -3,6 +3,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { useFocusEffect } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
+  Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
@@ -33,6 +34,7 @@ import {
   type PutawayResponse,
 } from '../../services/inboundApi';
 import { getInventoryLpnById } from '../../services/inventoryApi';
+import { getWarehouseIdFromToken } from '../../services/jwt';
 import { useAuthStore } from '../../store/useAuthStore';
 
 type StepKey = 'qc' | 'measurements' | 'discrepancy' | 'receipt' | 'putaway';
@@ -49,6 +51,7 @@ const todayInput = formatDateInput(new Date());
 
 export default function WarehouseInboundScreen() {
   const token = useAuthStore((state) => state.token);
+  const storedWarehouseId = useAuthStore((state) => state.warehouseId ?? state.user?.warehouseId ?? null);
   const [scheduleDate, setScheduleDate] = useState(todayInput);
   const [statusFilter, setStatusFilter] = useState('');
   const [schedule, setSchedule] = useState<AsnScheduleResponse[]>([]);
@@ -79,6 +82,7 @@ export default function WarehouseInboundScreen() {
   const [recheckEvidence, setRecheckEvidence] = useState<EvidenceImage[]>([]);
   const [recheckResult, setRecheckResult] = useState<InboundQcResponse | null>(null);
   const [lpnStatus, setLpnStatus] = useState<string | null>(null);
+  const [lpnWarehouseId, setLpnWarehouseId] = useState<string | null>(null);
 
   const [delivererName, setDelivererName] = useState('');
   const [vehiclePlate, setVehiclePlate] = useState('');
@@ -94,6 +98,8 @@ export default function WarehouseInboundScreen() {
     latestInboundResult?.lpnId && latestInboundResult.lpnId === lpnId.trim() ? latestInboundResult : null;
   const currentLpnState = lpnStatus ?? latestResultForCurrentLpn?.state ?? null;
   const canPutaway = currentLpnState === 'RECEIVING';
+  const warehouseIdFromToken = useMemo(() => (token ? getWarehouseIdFromToken(token) : null), [token]);
+  const warehouseIdForPutaway = storedWarehouseId ?? warehouseIdFromToken ?? lpnWarehouseId;
 
   const loadSchedule = useCallback(async () => {
     setIsLoadingSchedule(true);
@@ -127,6 +133,7 @@ export default function WarehouseInboundScreen() {
     setSelectedAsn(asn);
     setManualAsnId(asn.asnId);
     setLpnStatus(null);
+    setLpnWarehouseId(null);
     setActiveStep('qc');
     setActionMessage(`Đã chọn ${asn.asnCode}.`);
   };
@@ -134,6 +141,7 @@ export default function WarehouseInboundScreen() {
   const updateLpnId = (value: string) => {
     setLpnId(value);
     setLpnStatus(null);
+    setLpnWarehouseId(null);
   };
 
   const handleSubmitQc = async () => {
@@ -204,9 +212,19 @@ export default function WarehouseInboundScreen() {
 
       const lpn = await getInventoryLpnById(token, lpnId.trim());
       setLpnStatus(lpn.state || null);
+      setLpnWarehouseId(lpn.warehouseId ?? null);
+      if (lpn.storageLocation) {
+        setStorageLocation(lpn.storageLocation);
+      }
 
       if (lpn.state === 'RECEIVING') {
         setActionMessage('Trạng thái LPN: RECEIVING. Có thể nhập kho.');
+        setActiveStep('putaway');
+      } else if (lpn.state === 'RETURN_PENDING') {
+        setActionMessage('Lô hàng đang chờ trả hàng, không thể nhập kho.');
+        setActiveStep('putaway');
+      } else if (lpn.state === 'IN_STOCK') {
+        setActionMessage('Lô hàng đã được nhập kho.');
         setActiveStep('putaway');
       } else {
         const stateLabel = getStatusStyle(lpn.state || '').label;
@@ -252,7 +270,8 @@ export default function WarehouseInboundScreen() {
   const handlePutaway = async () => {
     try {
       requireToken(token);
-      requireGuid(lpnId.trim(), 'Mã LPN');
+      const currentLpnId = lpnId.trim();
+      requireGuid(currentLpnId, 'Mã LPN');
       if (!storageLocation.trim()) {
         throw new Error('Vui lòng nhập vị trí lưu kho.');
       }
@@ -265,13 +284,49 @@ export default function WarehouseInboundScreen() {
       setIsSubmitting(true);
       setActionMessage(null);
 
+      let warehouseId = warehouseIdForPutaway?.trim() ?? '';
+      if (!warehouseId) {
+        const lpn = await getInventoryLpnById(token, currentLpnId);
+        setLpnStatus(lpn.state || null);
+        setLpnWarehouseId(lpn.warehouseId ?? null);
+        if (lpn.storageLocation) {
+          setStorageLocation(lpn.storageLocation);
+        }
+        warehouseId = lpn.warehouseId?.trim() ?? '';
+      }
+
+      if (!warehouseId) {
+        throw new Error('Không xác định được kho của tài khoản hiện tại. Vui lòng đăng nhập lại bằng tài khoản Warehouse.');
+      }
+
       const response = await putaway(token, {
-        lpnId: lpnId.trim(),
+        lpnId: currentLpnId,
+        warehouseId,
         storageLocation: storageLocation.trim(),
       });
 
       setPutawayResult(response);
-      setActionMessage(response.message);
+      if (response.success) {
+        setLpnStatus('IN_STOCK');
+        setLpnWarehouseId(warehouseId);
+        setActionMessage('Nhập kho thành công.');
+        Alert.alert('Thành công', 'Nhập kho thành công.');
+
+        try {
+          const refreshedLpn = await getInventoryLpnById(token, currentLpnId);
+          setLpnStatus(refreshedLpn.state || 'IN_STOCK');
+          setLpnWarehouseId(refreshedLpn.warehouseId ?? warehouseId);
+          if (refreshedLpn.storageLocation) {
+            setStorageLocation(refreshedLpn.storageLocation);
+          }
+        } catch (refreshError) {
+          console.warn('[WarehouseInbound] Putaway succeeded but LPN refresh failed', {
+            message: getApiErrorMessage(refreshError),
+          });
+        }
+      } else {
+        setActionMessage(response.message);
+      }
     } catch (error) {
       setActionMessage(getApiErrorMessage(error));
     } finally {
@@ -397,6 +452,7 @@ export default function WarehouseInboundScreen() {
                     onPress={() => {
                       setSelectedAsn(null);
                       setLpnStatus(null);
+                      setLpnWarehouseId(null);
                       setActiveStep('qc');
                       setActionMessage('Đã chọn ASN thủ công.');
                     }}
@@ -508,21 +564,51 @@ export default function WarehouseInboundScreen() {
             {/* ── Putaway tab ── */}
             {activeStep === 'putaway' ? (
               <View style={{ gap: 12 }}>
-                {!canPutaway ? (
+                <AppInput label="Mã LPN" value={lpnId} onChangeText={updateLpnId} placeholder="Mã LPN" />
+                <AppButton icon="refresh-outline" label="Làm mới trạng thái" onPress={refreshLpnStatus} loading={isSubmitting} variant="secondary" />
+                {currentLpnState === 'DISCREPANCY_HOLD' ? (
                   <AppMessage
                     tone="warning"
-                    text={`Chưa thể nhập kho. Trạng thái LPN hiện tại: ${currentLpnState ? getStatusStyle(currentLpnState).label : 'không xác định'}. Cần chờ Sales/Admin xử lý.`}
+                    text="Lô hàng đang chờ xử lý sai lệch. Sales/Admin cần hoàn tất phụ lục trước khi nhập kho."
                   />
                 ) : null}
-                {putawayResult?.success && currentLpnState === 'IN_STOCK' ? (
+                {currentLpnState === 'RETURN_PENDING' ? (
+                  <AppMessage
+                    tone="warning"
+                    text="Lô hàng đang chờ trả hàng, không thể nhập kho."
+                  />
+                ) : null}
+                {currentLpnState === 'IN_STOCK' ? (
                   <AppMessage
                     tone="success"
-                    text={`Lô hàng đã được nhập kho an toàn. Vị trí: ${storageLocation}`}
+                    text={`Lô hàng đã được nhập kho.\nVị trí: ${storageLocation || 'N/A'}`}
                   />
                 ) : null}
-                <AppInput label="Mã LPN" value={lpnId} onChangeText={updateLpnId} placeholder="Mã LPN" />
-                <AppInput label="Vị trí lưu kho" value={storageLocation} onChangeText={setStorageLocation} placeholder="A-01-01" />
-                <AppButton icon="archive-outline" label="Xác nhận nhập kho" onPress={handlePutaway} loading={isSubmitting} disabled={!canPutaway} />
+                {!currentLpnState ? (
+                  <AppMessage
+                    tone="warning"
+                    text="Chưa xác định trạng thái LPN. Vui lòng làm mới trạng thái trước khi nhập kho."
+                  />
+                ) : null}
+                {currentLpnState && !canPutaway && !['DISCREPANCY_HOLD', 'RETURN_PENDING', 'IN_STOCK'].includes(currentLpnState) ? (
+                  <AppMessage
+                    tone="warning"
+                    text={`Chưa thể nhập kho. Trạng thái LPN hiện tại: ${getStatusStyle(currentLpnState).label}.`}
+                  />
+                ) : null}
+                {canPutaway ? (
+                  <View style={{ gap: 12 }}>
+                    <Text style={{ fontSize: 16, fontWeight: '700', color: WH_COLORS.textPrimary }}>Nhập vị trí kho</Text>
+                    <AppInput label="Vị trí lưu kho" value={storageLocation} onChangeText={setStorageLocation} placeholder="A-01-01" />
+                    <AppButton icon="archive-outline" label="Xác nhận nhập kho" onPress={handlePutaway} loading={isSubmitting} />
+                  </View>
+                ) : null}
+                {currentLpnState === 'DISCREPANCY_HOLD' ? (
+                  <View style={{ gap: 12 }}>
+                    <AppButton icon="document-attach-outline" label="Mở biên bản bất thường" onPress={openDiscrepancyPdf} variant="secondary" />
+                    <AppButton icon="calculator-outline" label="Kiểm tra lại số đo" onPress={() => setActiveStep('measurements')} variant="secondary" />
+                  </View>
+                ) : null}
                 {putawayResult && !putawayResult.success ? <AppMessage tone="error" text={putawayResult.message} /> : null}
               </View>
             ) : null}

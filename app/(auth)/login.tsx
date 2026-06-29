@@ -71,6 +71,7 @@ export default function LoginScreen() {
         user: {
           userId: authData.userId,
           customerId: authData.customerId,
+          warehouseId: authData.warehouseId,
           fullName: authData.fullName,
           email: authData.email ?? email.trim(),
           backendRole: backendRole ?? appRole,

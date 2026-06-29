@@ -16,7 +16,9 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 
+import { AppToast, ToastType } from '../../components/AppToast';
 import { GoodsType, GoodsTypeSelector } from '../../components/GoodsTypeSelector';
+import { PackagingTypeSelector } from '../../components/PackagingTypeSelector';
 import { TemperatureSelector } from '../../components/TemperatureSelector';
 import { ApiClientError, getApiErrorMessage } from '../../services/apiClient';
 import { createOrder } from '../../services/orderApi';
@@ -63,7 +65,7 @@ export default function CreateOrderScreen() {
   const [itemName, setItemName] = useState('');
   const [expectedWeightKg, setExpectedWeightKg] = useState('');
   const [quantity, setQuantity] = useState('1');
-  const [packagingType, setPackagingType] = useState('');
+  const [packagingType, setPackagingType] = useState<string[]>([]);
   const [lengthCm, setLengthCm] = useState('');
   const [widthCm, setWidthCm] = useState('');
   const [heightCm, setHeightCm] = useState('');
@@ -74,8 +76,13 @@ export default function CreateOrderScreen() {
   const [isLoadingRoutes, setIsLoadingRoutes] = useState(true);
   const [routeError, setRouteError] = useState<string | null>(null);
   const [errors, setErrors] = useState<ValidationErrors>({});
-  const [formError, setFormError] = useState<string | null>(null);
-  const [backendError, setBackendError] = useState<string | null>(null);
+  
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastConfig, setToastConfig] = useState<{type: ToastType, title?: string, message: string}>({
+    type: 'info',
+    message: ''
+  });
+
   const [isLoading, setIsLoading] = useState(false);
   const [successData, setSuccessData] = useState<SuccessData | null>(null);
   const selectedRoute = routeOptions.find((route) => route.routeId === selectedRouteId) ?? null;
@@ -101,6 +108,11 @@ export default function CreateOrderScreen() {
     }
   }, []);
 
+  const showToast = (type: ToastType, message: string, title?: string) => {
+    setToastConfig({ type, message, title });
+    setToastVisible(true);
+  };
+
   useEffect(() => {
     fetchRoutes();
   }, [fetchRoutes]);
@@ -113,7 +125,7 @@ export default function CreateOrderScreen() {
     if (!Number.isFinite(tempCondition)) nextErrors.tempCondition = 'Vui lòng chọn nhiệt độ yêu cầu.';
     if (!isPositiveNumber(expectedWeightKg)) nextErrors.expectedWeightKg = 'Khối lượng phải lớn hơn 0.';
     if (!isPositiveInteger(quantity)) nextErrors.quantity = 'Số lượng kiện phải từ 1 trở lên.';
-    if (!packagingType.trim()) nextErrors.packagingType = REQUIRED_ERROR;
+    if (packagingType.length === 0) nextErrors.packagingType = 'Vui lòng chọn ít nhất một loại bao bì đóng gói.';
     if (!isPositiveNumber(lengthCm)) nextErrors.lengthCm = 'Chiều dài phải lớn hơn 0.';
     if (!isPositiveNumber(widthCm)) nextErrors.widthCm = 'Chiều rộng phải lớn hơn 0.';
     if (!isPositiveNumber(heightCm)) nextErrors.heightCm = 'Chiều cao phải lớn hơn 0.';
@@ -149,24 +161,22 @@ export default function CreateOrderScreen() {
     console.log('[CreateOrder] validation errors:', nextErrors);
 
     setErrors(nextErrors);
-    setBackendError(null);
 
     if (Object.keys(nextErrors).length > 0) {
-      setFormError('Vui lòng kiểm tra lại thông tin bắt buộc.');
+      showToast('error', 'Vui lòng kiểm tra lại thông tin bắt buộc.', 'Lỗi nhập liệu');
       return;
     }
 
     if (!accessToken) {
-      setFormError('Bạn cần đăng nhập lại trước khi tạo đơn.');
+      showToast('error', 'Bạn cần đăng nhập lại trước khi tạo đơn.', 'Lỗi xác thực');
       return;
     }
 
     if (!documentImage) {
-      setFormError('Vui lòng chọn ảnh lô hàng.');
+      showToast('error', 'Vui lòng chọn ảnh lô hàng.', 'Thiếu ảnh');
       return;
     }
 
-    setFormError(null);
     setIsLoading(true);
 
     try {
@@ -176,7 +186,7 @@ export default function CreateOrderScreen() {
         tempCondition,
         expectedWeightKg: parseDecimal(expectedWeightKg),
         quantity: parseInt(quantity, 10),
-        packagingType: packagingType.trim(),
+        packagingType: packagingType.join(', '),
         lengthCm: parseDecimal(lengthCm),
         widthCm: parseDecimal(widthCm),
         heightCm: parseDecimal(heightCm),
@@ -218,7 +228,7 @@ export default function CreateOrderScreen() {
         errorMessage = error.message;
       }
 
-      setBackendError(errorMessage);
+      showToast('error', errorMessage, 'Lỗi tạo đơn');
     } finally {
       setIsLoading(false);
     }
@@ -235,7 +245,7 @@ export default function CreateOrderScreen() {
   const selectImageFromLibrary = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      setBackendError('Vui lòng cấp quyền truy cập thư viện ảnh để tải ảnh kiện hàng.');
+      showToast('warning', 'Vui lòng cấp quyền truy cập thư viện ảnh để tải ảnh kiện hàng.');
       return;
     }
 
@@ -251,7 +261,7 @@ export default function CreateOrderScreen() {
   const captureImage = async () => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
-      setBackendError('Vui lòng cấp quyền camera để chụp ảnh kiện hàng.');
+      showToast('warning', 'Vui lòng cấp quyền camera để chụp ảnh kiện hàng.');
       return;
     }
 
@@ -273,7 +283,7 @@ export default function CreateOrderScreen() {
         ...current,
         documentImage: 'Vui lòng chọn ảnh lô hàng, không chọn video.',
       }));
-      setFormError('Vui lòng kiểm tra lại thông tin bắt buộc.');
+      showToast('warning', 'Vui lòng chọn ảnh lô hàng, không chọn video.');
       return;
     }
 
@@ -283,8 +293,6 @@ export default function CreateOrderScreen() {
       fileName: asset.fileName || 'cargo.jpg',
     });
     setErrors((current) => ({ ...current, documentImage: undefined }));
-    setFormError(null);
-    setBackendError(null);
   };
 
   const resetForm = () => {
@@ -294,15 +302,13 @@ export default function CreateOrderScreen() {
     setItemName('');
     setExpectedWeightKg('');
     setQuantity('1');
-    setPackagingType('');
+    setPackagingType([]);
     setLengthCm('');
     setWidthCm('');
     setHeightCm('');
     setSelectedRouteId('');
     setDocumentImage(null);
     setErrors({});
-    setFormError(null);
-    setBackendError(null);
     setSuccessData(null);
   };
 
@@ -345,16 +351,13 @@ export default function CreateOrderScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ padding: 20, paddingBottom: 128, gap: 18 }}
       >
-        {(formError || backendError) && (
-          <View className="rounded-2xl border border-red-200 bg-red-50 p-4">
-            <View className="flex-row items-start gap-2">
-              <Ionicons name="alert-circle-outline" size={20} color="#dc2626" />
-              <Text className="flex-1 text-sm font-semibold leading-5 text-red-700">
-                {formError || backendError}
-              </Text>
-            </View>
-          </View>
-        )}
+        <AppToast 
+          visible={toastVisible}
+          type={toastConfig.type}
+          title={toastConfig.title}
+          message={toastConfig.message}
+          onClose={() => setToastVisible(false)}
+        />
 
         <View className="rounded-2xl border border-[#DAC2B6]/50 bg-white p-5 shadow-sm gap-4">
           <View className="flex-row items-center justify-between">
@@ -454,13 +457,18 @@ export default function CreateOrderScreen() {
             </View>
           </View>
 
-          {renderField(
-            'packagingType',
-            'Quy cách đóng gói',
-            'Ví dụ: Thùng carton, Bao, Khay xốp...',
-            packagingType,
-            setPackagingType
-          )}
+          <View className="gap-2">
+            <Text className="text-[#3A1F04] text-[13px] font-bold">Loại bao bì đóng gói</Text>
+            <Text className="text-xs text-[#877369]">Chọn một hoặc nhiều loại bao bì phù hợp với lô hàng.</Text>
+            <PackagingTypeSelector 
+              selectedTypes={packagingType} 
+              onChange={(selected) => {
+                setPackagingType(selected);
+                if (errors.packagingType) setErrors((current) => ({ ...current, packagingType: undefined }));
+              }} 
+            />
+            {errors.packagingType ? <Text className="text-xs font-medium text-red-600">{errors.packagingType}</Text> : null}
+          </View>
 
           <View className="gap-2">
             <Text className="text-[#3A1F04] text-[13px] font-bold">Kích thước kiện hàng</Text>
@@ -749,12 +757,29 @@ function getCapacityWarning(weightValue: string, lengthValue: string, widthValue
   return null;
 }
 
+function formatCityName(city: string) {
+  switch (city.trim().toUpperCase()) {
+    case 'HCM':
+      return 'TP.HCM';
+    case 'CAN THO':
+      return 'Cần Thơ';
+    case 'DA NANG':
+      return 'Đà Nẵng';
+    case 'HA NOI':
+      return 'Hà Nội';
+    case 'DAK LAK':
+      return 'Đắk Lắk';
+    default:
+      return city;
+  }
+}
+
 function getRouteLabel(route: RouteOptionResponse) {
-  return `${route.routeCode} - ${route.originCity} -> ${route.destCity}`;
+  return `${formatCityName(route.originCity)} → ${formatCityName(route.destCity)}`;
 }
 
 function getRouteMeta(route: RouteOptionResponse) {
-  return `ETA ${route.transitTime} | Cut-off ${formatCutOffTime(route.cutOffTime)}`;
+  return `${route.routeCode} · Dự kiến ${route.transitTime} · Đóng hàng ${formatCutOffTime(route.cutOffTime)}`;
 }
 
 function formatCutOffTime(value: string) {

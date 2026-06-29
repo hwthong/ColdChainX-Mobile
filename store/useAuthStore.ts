@@ -8,13 +8,14 @@ import {
   refreshTokens as refreshTokensApi,
 } from '../services/authApi';
 import { getApiErrorMessage } from '../services/apiClient';
-import { getCustomerIdFromToken, getRoleFromToken, getUserIdFromToken } from '../services/jwt';
+import { getCustomerIdFromToken, getRoleFromToken, getUserIdFromToken, getWarehouseIdFromToken } from '../services/jwt';
 
 export type UserRole = 'DRIVER' | 'CUSTOMER' | 'WAREHOUSE';
 
 export type AuthUser = {
   userId: string;
   customerId?: string | null;
+  warehouseId?: string | null;
   fullName: string;
   email: string;
   backendRole: number | string;
@@ -34,6 +35,7 @@ type AuthState = {
   accessTokenExpiresAt: string | null;
   userId: string | null;
   customerId: string | null;
+  warehouseId: string | null;
   fullName: string | null;
   email: string | null;
   role: UserRole | null;
@@ -49,6 +51,7 @@ const emptyAuthState = {
   accessTokenExpiresAt: null,
   userId: null,
   customerId: null,
+  warehouseId: null,
   fullName: null,
   email: null,
   role: null,
@@ -60,6 +63,7 @@ const emptyAuthState = {
   | 'accessTokenExpiresAt'
   | 'userId'
   | 'customerId'
+  | 'warehouseId'
   | 'fullName'
   | 'email'
   | 'role'
@@ -74,6 +78,7 @@ export const useAuthStore = create<AuthState>()(
       accessTokenExpiresAt: null,
       userId: null,
       customerId: null,
+      warehouseId: null,
       fullName: null,
       email: null,
       role: null,
@@ -81,15 +86,17 @@ export const useAuthStore = create<AuthState>()(
       login: ({ token, role, refreshToken = null, accessTokenExpiresAt = null, user = null }) => {
         const customerId = user?.customerId ?? getCustomerIdFromToken(token);
         const userId = user?.userId ?? getUserIdFromToken(token);
+        const warehouseId = user?.warehouseId ?? getWarehouseIdFromToken(token);
 
         set({
           token,
           role,
           refreshToken,
           accessTokenExpiresAt,
-          user: user && userId ? { ...user, userId, customerId } : user,
+          user: user && userId ? { ...user, userId, customerId, warehouseId } : user,
           userId,
           customerId,
+          warehouseId,
           fullName: user?.fullName ?? null,
           email: user?.email ?? null,
         });
@@ -138,6 +145,8 @@ export const useAuthStore = create<AuthState>()(
           const customerId =
             authData.customerId ?? currentUser?.customerId ?? getCustomerIdFromToken(authData.accessToken);
           const userId = authData.userId ?? currentUser?.userId ?? getUserIdFromToken(authData.accessToken);
+          const warehouseId =
+            authData.warehouseId ?? currentUser?.warehouseId ?? getWarehouseIdFromToken(authData.accessToken);
 
           set({
             token: authData.accessToken,
@@ -146,11 +155,13 @@ export const useAuthStore = create<AuthState>()(
             role: appRole,
             userId,
             customerId,
+            warehouseId,
             fullName: authData.fullName,
             email: authData.email ?? currentUser?.email ?? '',
             user: {
               userId: userId ?? authData.userId,
               customerId,
+              warehouseId,
               fullName: authData.fullName,
               email: authData.email ?? currentUser?.email ?? '',
               backendRole: backendRole ?? appRole,

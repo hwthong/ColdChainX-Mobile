@@ -54,6 +54,7 @@ export interface GenerateInboundReceiptResponse {
 
 export interface PutawayPayload {
   lpnId: string;
+  warehouseId: string;
   storageLocation: string;
 }
 
@@ -144,6 +145,7 @@ export function putaway(accessToken: string, payload: PutawayPayload) {
     headers: getAuthHeaders(accessToken),
     body: {
       LpnId: payload.lpnId,
+      WarehouseId: payload.warehouseId,
       StorageLocation: payload.storageLocation,
     },
   });

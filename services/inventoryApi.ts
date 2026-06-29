@@ -15,6 +15,7 @@ export interface LpnDto {
   lpnCode: string;
   itemName: string;
   batchNumber?: string | null;
+  warehouseId?: string | null;
   storageLocation?: string | null;
   quantity: number;
   expectedWeightKg: number;

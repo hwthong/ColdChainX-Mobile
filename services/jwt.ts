@@ -18,7 +18,7 @@ export function getUserIdFromToken(token: string): string | null {
 export function getWarehouseIdFromToken(token: string): string | null {
   const payload = decodeJwtPayload(token);
 
-  return getStringClaim(payload, 'WarehouseId');
+  return getStringClaim(payload, 'WarehouseId') ?? getStringClaim(payload, 'warehouseId');
 }
 
 export function getRoleFromToken(token: string): string | null {

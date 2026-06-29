@@ -39,6 +39,7 @@ export type LoginPayload = {
 export type AuthUserDto = {
   userId: string;
   customerId?: string | null;
+  warehouseId?: string | null;
   username?: string | null;
   fullName: string;
   email?: string | null;

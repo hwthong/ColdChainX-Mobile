@@ -137,9 +137,15 @@ function getErrorMessage(data: unknown, status: number): string {
   }
 
   if (isRecord(data)) {
-    const message = getString(data.message);
-    if (message) {
-      return message;
+    const rawMessage = getString(data.message) || getString(data.Message) || getString(data.error) || getString(data.Error);
+    if (rawMessage) {
+      if (rawMessage.includes('ContractAppendixTemplate.html was not found')) {
+        return 'Không thể tạo phụ lục điều chỉnh do thiếu mẫu hợp đồng trên server. Vui lòng báo kỹ thuật kiểm tra ContractAppendixTemplate.html.';
+      }
+      if (rawMessage.toLowerCase().includes('discrepancy')) {
+        return 'Lô hàng có sai lệch so với khai báo ban đầu. Hệ thống đã chuyển sang trạng thái chờ xử lý sai lệch.';
+      }
+      return rawMessage;
     }
 
     const title = getString(data.title);
@@ -151,6 +157,10 @@ function getErrorMessage(data: unknown, status: number): string {
     if (title) {
       return title;
     }
+  }
+
+  if (status === 500) {
+    return 'Hệ thống đang gặp lỗi khi xử lý yêu cầu. Vui lòng thử lại hoặc báo kỹ thuật.';
   }
 
   return `Yêu cầu thất bại (${status}). Vui lòng thử lại.`;
