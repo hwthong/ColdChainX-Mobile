@@ -55,6 +55,8 @@ type SuccessData = {
 };
 
 const REQUIRED_ERROR = 'Vui lòng nhập thông tin này.';
+const PACKAGING_TYPE_ERROR =
+  'Loại bao bì không hợp lệ. Vui lòng chọn một trong các loại bao bì được hỗ trợ.';
 export default function CreateOrderScreen() {
   const router = useRouter();
   const accessToken = useAuthStore((state) => state.token);
@@ -152,6 +154,7 @@ export default function CreateOrderScreen() {
       expectedWeightKg,
       quantity,
       packagingType,
+      packagingTypePayload: packagingType.join(', '),
       lengthCm,
       widthCm,
       heightCm,
@@ -210,6 +213,7 @@ export default function CreateOrderScreen() {
         documentUrl: response.data?.documentUrl,
       });
     } catch (error) {
+      console.error('[CreateOrder] create order failed', error);
       let errorMessage = 'Không thể tạo đơn lúc này. Vui lòng thử lại sau.';
 
       if (error instanceof ApiClientError) {
@@ -226,6 +230,10 @@ export default function CreateOrderScreen() {
         }
       } else if (error instanceof Error) {
         errorMessage = error.message;
+      }
+
+      if (isPackagingTypeError(errorMessage)) {
+        errorMessage = PACKAGING_TYPE_ERROR;
       }
 
       showToast('error', errorMessage, 'Lỗi tạo đơn');
@@ -794,6 +802,11 @@ function isPositiveNumber(value: string) {
 function isPositiveInteger(value: string) {
   const parsed = Number(value.trim());
   return Number.isInteger(parsed) && parsed >= 1;
+}
+
+function isPackagingTypeError(message: string) {
+  const normalized = message.toLowerCase();
+  return normalized.includes('packaging_type') || normalized.includes('packaging type');
 }
 
 function translateStatus(status: string) {

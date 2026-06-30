@@ -1,24 +1,29 @@
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 
 import { AppButton } from '../../components/AppButton';
 import { AppInfoRow } from '../../components/AppInfoRow';
+import { AppInput } from '../../components/AppInput';
 import { AppMessage } from '../../components/AppMessage';
 import { EmptyState } from '../../components/EmptyState';
 import { StatusBadge } from '../../components/StatusBadge';
-import { WH_COLORS, formatDateTimeVi } from '../../constants/warehouseTheme';
+import { WH_COLORS, formatDateTimeVi, type MessageTone } from '../../constants/warehouseTheme';
 import { getApiErrorMessage } from '../../services/apiClient';
+import { putaway } from '../../services/inboundApi';
 import {
   buildInventoryDocumentUrl,
+  getInventoryLpnById,
   getInventoryLpns,
   getLpnDocuments,
+  hasGeneratedWarehouseReceipt,
   type LpnDocumentDto,
   type LpnDto,
   type LpnState,
 } from '../../services/inventoryApi';
+import { getWarehouseIdFromToken } from '../../services/jwt';
 import { useAuthStore } from '../../store/useAuthStore';
 
 const STATUS_FILTERS: { label: string; value: LpnState | '' }[] = [
@@ -31,20 +36,28 @@ const STATUS_FILTERS: { label: string; value: LpnState | '' }[] = [
 
 /** Map for document type Vietnamese labels */
 const DOC_TYPE_LABELS: Record<string, string> = {
+  WarehouseReceipt: 'Phiếu nhập kho',
   InboundReceipt: 'Phiếu nhập kho',
+  DiscrepancyNote: 'Biên bản bất thường',
   DiscrepancyReport: 'Biên bản bất thường',
+  EvidenceImage: 'Hình ảnh bằng chứng QC',
   QcEvidence: 'Hình ảnh bằng chứng QC',
 };
 
 export default function WarehouseInventoryScreen() {
+  const router = useRouter();
   const token = useAuthStore((state) => state.token);
+  const storedWarehouseId = useAuthStore((state) => state.warehouseId ?? state.user?.warehouseId ?? null);
   const [lpns, setLpns] = useState<LpnDto[]>([]);
   const [status, setStatus] = useState<LpnState | ''>('IN_STOCK');
   const [keyword, setKeyword] = useState('');
   const [selectedLpn, setSelectedLpn] = useState<LpnDto | null>(null);
   const [documents, setDocuments] = useState<LpnDocumentDto[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isPuttingAway, setIsPuttingAway] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [putawayLocation, setPutawayLocation] = useState('');
+  const [putawayMessage, setPutawayMessage] = useState<{ text: string; tone: MessageTone } | null>(null);
 
   const loadLpns = useCallback(async () => {
     setIsLoading(true);
@@ -69,13 +82,42 @@ export default function WarehouseInventoryScreen() {
     }, [loadLpns])
   );
 
+  const updateLpnInList = useCallback((updatedLpn: LpnDto) => {
+    setLpns((current) => current.map((lpn) => (lpn.lpnId === updatedLpn.lpnId ? updatedLpn : lpn)));
+  }, []);
+
+  const refreshSelectedLpn = async (
+    lpnId: string,
+    options: { preservePutawayLocation?: boolean } = {}
+  ) => {
+    const refreshedLpn = await getInventoryLpnById(token, lpnId);
+    setSelectedLpn(refreshedLpn);
+    updateLpnInList(refreshedLpn);
+
+    if (!options.preservePutawayLocation) {
+      setPutawayLocation(refreshedLpn.storageLocation ?? '');
+    }
+
+    return refreshedLpn;
+  };
+
   const openLpn = async (lpn: LpnDto) => {
     setSelectedLpn(lpn);
     setDocuments([]);
+    setPutawayLocation(lpn.storageLocation ?? '');
+    setPutawayMessage(null);
     setMessage(null);
 
     try {
-      const response = await getLpnDocuments(token, lpn.lpnId);
+      const [freshLpn, response] = await Promise.all([
+        getInventoryLpnById(token, lpn.lpnId),
+        getLpnDocuments(token, lpn.lpnId),
+      ]);
+
+      setSelectedLpn(freshLpn);
+      setPutawayLocation(freshLpn.storageLocation ?? '');
+      updateLpnInList(freshLpn);
+
       if (response.success) {
         setDocuments(response.data ?? []);
       } else {
@@ -89,6 +131,80 @@ export default function WarehouseInventoryScreen() {
   const openDocument = async (url: string) => {
     await WebBrowser.openBrowserAsync(encodeURI(buildInventoryDocumentUrl(url)));
   };
+
+  const handlePutaway = async () => {
+    if (!selectedLpn) return;
+
+    const currentLpnId = selectedLpn.lpnId?.trim();
+    const storageLocation = putawayLocation.trim();
+
+    try {
+      if (!token) {
+        throw new Error('Thiếu token xác thực. Vui lòng đăng nhập lại.');
+      }
+      if (!currentLpnId) {
+        throw new Error('Không xác định được mã LPN.');
+      }
+      if (!storageLocation) {
+        throw new Error('Vui lòng nhập vị trí lưu kho.');
+      }
+
+      setIsPuttingAway(true);
+      setPutawayMessage(null);
+
+      const latestLpn = await refreshSelectedLpn(currentLpnId, { preservePutawayLocation: true });
+      if (normalizeLpnState(latestLpn.state) !== 'RECEIVING') {
+        throw new Error('Chỉ có thể nhập kho khi LPN đang ở trạng thái RECEIVING.');
+      }
+      if (!hasGeneratedWarehouseReceipt(latestLpn) && !hasWarehouseReceiptDocument(documents)) {
+        throw new Error('LPN đang chờ tạo phiếu nhập kho. Vui lòng tạo phiếu nhập trước khi nhập vị trí kho.');
+      }
+
+      const warehouseId = resolveWarehouseIdForPutaway({
+        token,
+        storedWarehouseId,
+        lpn: latestLpn,
+      });
+
+      if (!warehouseId) {
+        throw new Error('Không xác định được warehouseId. Vui lòng đăng nhập lại bằng tài khoản Warehouse.');
+      }
+
+      const response = await putaway(token, {
+        lpnId: currentLpnId,
+        warehouseId,
+        storageLocation,
+      });
+
+      if (!response.success) {
+        throw new Error(response.message || 'Không thể nhập kho LPN.');
+      }
+
+      const refreshedLpn = await getInventoryLpnById(token, currentLpnId);
+      const updatedLpn: LpnDto = {
+        ...refreshedLpn,
+        state: refreshedLpn.state || 'IN_STOCK',
+        warehouseId: refreshedLpn.warehouseId ?? warehouseId,
+        storageLocation: refreshedLpn.storageLocation || storageLocation,
+      };
+
+      setSelectedLpn(updatedLpn);
+      setPutawayLocation(updatedLpn.storageLocation ?? storageLocation);
+      updateLpnInList(updatedLpn);
+      setPutawayMessage({ text: 'Nhập kho thành công', tone: 'success' });
+      Alert.alert('Thành công', 'Nhập kho thành công');
+      await loadLpns();
+    } catch (error) {
+      setPutawayMessage({ text: getApiErrorMessage(error), tone: 'error' });
+    } finally {
+      setIsPuttingAway(false);
+    }
+  };
+
+  const selectedLpnState = normalizeLpnState(selectedLpn?.state);
+  const selectedLpnHasWarehouseReceipt = selectedLpn
+    ? hasGeneratedWarehouseReceipt(selectedLpn) || hasWarehouseReceiptDocument(documents)
+    : false;
 
   return (
     <View style={{ flex: 1, backgroundColor: WH_COLORS.background }}>
@@ -242,6 +358,81 @@ export default function WarehouseInventoryScreen() {
             <AppInfoRow label="Vị trí" value={selectedLpn.storageLocation || 'N/A'} />
             <AppInfoRow label="Hạn SLA" value={formatDateTimeVi(selectedLpn.slaDeadline)} />
 
+            {putawayMessage ? (
+              <View style={{ marginTop: 12 }}>
+                <AppMessage tone={putawayMessage.tone} text={putawayMessage.text} />
+              </View>
+            ) : null}
+
+            {selectedLpnState === 'RECEIVING' && !selectedLpnHasWarehouseReceipt ? (
+              <View style={{ marginTop: 12, gap: 12 }}>
+                <AppMessage
+                  tone="warning"
+                  text="LPN đang chờ tạo phiếu nhập kho. Vui lòng tạo phiếu nhập trước khi nhập vị trí kho."
+                />
+                <AppButton
+                  icon="document-text-outline"
+                  label="Sang tab Phiếu nhập / Nhập kho để tạo phiếu nhập"
+                  onPress={() => router.push('/(warehouse)/inbound' as never)}
+                  variant="secondary"
+                />
+              </View>
+            ) : null}
+
+            {selectedLpnState === 'RECEIVING' && selectedLpnHasWarehouseReceipt ? (
+              <View
+                style={{
+                  marginTop: 16,
+                  gap: 12,
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  borderColor: WH_COLORS.cardBorder,
+                  backgroundColor: WH_COLORS.primaryLight,
+                  padding: 14,
+                }}
+              >
+                <Text style={{ fontSize: 16, fontWeight: '700', color: WH_COLORS.textPrimary }}>
+                  Nhập vị trí kho
+                </Text>
+                <AppInput
+                  label="Vị trí lưu kho"
+                  value={putawayLocation}
+                  onChangeText={setPutawayLocation}
+                  placeholder="Ví dụ: A-01-01"
+                />
+                <AppButton
+                  icon="archive-outline"
+                  label="Xác nhận nhập kho"
+                  onPress={handlePutaway}
+                  loading={isPuttingAway}
+                />
+              </View>
+            ) : null}
+
+            {selectedLpnState === 'DISCREPANCY_HOLD' ? (
+              <View style={{ marginTop: 12 }}>
+                <AppMessage
+                  tone="warning"
+                  text="Lô hàng đang chờ xử lý sai lệch."
+                />
+              </View>
+            ) : null}
+
+            {selectedLpnState === 'RETURN_PENDING' ? (
+              <View style={{ marginTop: 12 }}>
+                <AppMessage tone="warning" text="Lô hàng đang chờ trả hàng." />
+              </View>
+            ) : null}
+
+            {selectedLpnState === 'IN_STOCK' ? (
+              <View style={{ marginTop: 12 }}>
+                <AppMessage
+                  tone="success"
+                  text={`Lô hàng đã được nhập kho.\nVị trí: ${selectedLpn.storageLocation || 'N/A'}`}
+                />
+              </View>
+            ) : null}
+
             <Text style={{ marginTop: 16, fontSize: 14, fontWeight: '700', color: WH_COLORS.textPrimary }}>
               Chứng từ
             </Text>
@@ -289,5 +480,34 @@ export default function WarehouseInventoryScreen() {
         ) : null}
       </ScrollView>
     </View>
+  );
+}
+
+function normalizeLpnState(state?: string | null) {
+  return state?.trim().toUpperCase() ?? '';
+}
+
+function hasWarehouseReceiptDocument(documents: LpnDocumentDto[]) {
+  return documents.some((doc) => normalizeDocumentType(doc.documentType) === 'WAREHOUSERECEIPT');
+}
+
+function normalizeDocumentType(documentType?: string | null) {
+  return documentType?.replace(/[_\s-]/g, '').trim().toUpperCase() ?? '';
+}
+
+function resolveWarehouseIdForPutaway({
+  token,
+  storedWarehouseId,
+  lpn,
+}: {
+  token: string;
+  storedWarehouseId?: string | null;
+  lpn: LpnDto;
+}) {
+  return (
+    storedWarehouseId?.trim() ||
+    getWarehouseIdFromToken(token)?.trim() ||
+    lpn.warehouseId?.trim() ||
+    ''
   );
 }

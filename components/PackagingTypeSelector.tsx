@@ -2,14 +2,12 @@ import React from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 const PACKAGING_OPTIONS = [
-  'Thùng carton',
-  'Thùng xốp giữ nhiệt',
-  'Thùng nhựa',
-  'Túi giữ nhiệt',
-  'Pallet',
-  'Bao bì hút chân không',
-  'Khay nhựa',
-  'Khác',
+  { label: 'Thùng carton', value: 'Carton Box' },
+  { label: 'Thùng xốp giữ nhiệt', value: 'Foam Box' },
+  { label: 'Thùng nhựa', value: 'Plastic Box' },
+  { label: 'Pallet', value: 'Pallet' },
+  { label: 'Thùng', value: 'Thùng' },
+  { label: 'Bao', value: 'Bao' },
 ];
 
 interface PackagingTypeSelectorProps {
@@ -18,22 +16,22 @@ interface PackagingTypeSelectorProps {
 }
 
 export function PackagingTypeSelector({ selectedTypes, onChange }: PackagingTypeSelectorProps) {
-  const toggleOption = (option: string) => {
-    if (selectedTypes.includes(option)) {
-      onChange(selectedTypes.filter((t) => t !== option));
+  const toggleOption = (value: string) => {
+    if (selectedTypes.includes(value)) {
+      onChange(selectedTypes.filter((type) => type !== value));
     } else {
-      onChange([...selectedTypes, option]);
+      onChange([...selectedTypes, value]);
     }
   };
 
   return (
     <View className="flex-row flex-wrap gap-2 mt-2">
       {PACKAGING_OPTIONS.map((option) => {
-        const isSelected = selectedTypes.includes(option);
+        const isSelected = selectedTypes.includes(option.value);
         return (
           <Pressable
-            key={option}
-            onPress={() => toggleOption(option)}
+            key={option.value}
+            onPress={() => toggleOption(option.value)}
             className={[
               'px-4 py-2.5 rounded-full border',
               isSelected
@@ -47,7 +45,7 @@ export function PackagingTypeSelector({ selectedTypes, onChange }: PackagingType
                 isSelected ? 'text-white' : 'text-[#3A1F04]',
               ].join(' ')}
             >
-              {option}
+              {option.label}
             </Text>
           </Pressable>
         );

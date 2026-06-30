@@ -144,9 +144,9 @@ export function putaway(accessToken: string, payload: PutawayPayload) {
     method: 'POST',
     headers: getAuthHeaders(accessToken),
     body: {
-      LpnId: payload.lpnId,
-      WarehouseId: payload.warehouseId,
-      StorageLocation: payload.storageLocation,
+      lpnId: payload.lpnId,
+      warehouseId: payload.warehouseId,
+      storageLocation: payload.storageLocation,
     },
   });
 }

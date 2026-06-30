@@ -33,7 +33,7 @@ import {
   type InboundQcResponse,
   type PutawayResponse,
 } from '../../services/inboundApi';
-import { getInventoryLpnById } from '../../services/inventoryApi';
+import { getInventoryLpnById, hasGeneratedWarehouseReceipt, type LpnDto } from '../../services/inventoryApi';
 import { getWarehouseIdFromToken } from '../../services/jwt';
 import { useAuthStore } from '../../store/useAuthStore';
 
@@ -83,6 +83,8 @@ export default function WarehouseInboundScreen() {
   const [recheckResult, setRecheckResult] = useState<InboundQcResponse | null>(null);
   const [lpnStatus, setLpnStatus] = useState<string | null>(null);
   const [lpnWarehouseId, setLpnWarehouseId] = useState<string | null>(null);
+  const [lpnHasWarehouseReceipt, setLpnHasWarehouseReceipt] = useState(false);
+  const [lpnReceiptPdfUrl, setLpnReceiptPdfUrl] = useState<string | null>(null);
 
   const [delivererName, setDelivererName] = useState('');
   const [vehiclePlate, setVehiclePlate] = useState('');
@@ -97,7 +99,10 @@ export default function WarehouseInboundScreen() {
   const latestResultForCurrentLpn =
     latestInboundResult?.lpnId && latestInboundResult.lpnId === lpnId.trim() ? latestInboundResult : null;
   const currentLpnState = lpnStatus ?? latestResultForCurrentLpn?.state ?? null;
-  const canPutaway = currentLpnState === 'RECEIVING';
+  const hasReceiptForCurrentLpn =
+    lpnHasWarehouseReceipt || Boolean(lpnReceiptPdfUrl?.trim() || receiptResult?.success || receiptResult?.pdfUrl);
+  const canPutaway = currentLpnState === 'RECEIVING' && hasReceiptForCurrentLpn;
+  const canGenerateReceipt = (!currentLpnState || currentLpnState === 'RECEIVING') && !hasReceiptForCurrentLpn;
   const warehouseIdFromToken = useMemo(() => (token ? getWarehouseIdFromToken(token) : null), [token]);
   const warehouseIdForPutaway = storedWarehouseId ?? warehouseIdFromToken ?? lpnWarehouseId;
 
@@ -129,11 +134,25 @@ export default function WarehouseInboundScreen() {
     }, [loadSchedule])
   );
 
+  const applyLpnSnapshot = (lpn: LpnDto) => {
+    setLpnStatus(lpn.state || null);
+    setLpnWarehouseId(lpn.warehouseId ?? null);
+    setLpnHasWarehouseReceipt(hasGeneratedWarehouseReceipt(lpn));
+    setLpnReceiptPdfUrl(lpn.warehouseReceiptPdfUrl ?? null);
+    if (lpn.storageLocation) {
+      setStorageLocation(lpn.storageLocation);
+    }
+  };
+
   const selectAsn = (asn: AsnScheduleResponse) => {
     setSelectedAsn(asn);
     setManualAsnId(asn.asnId);
     setLpnStatus(null);
     setLpnWarehouseId(null);
+    setLpnHasWarehouseReceipt(false);
+    setLpnReceiptPdfUrl(null);
+    setReceiptResult(null);
+    setPutawayResult(null);
     setActiveStep('qc');
     setActionMessage(`Đã chọn ${asn.asnCode}.`);
   };
@@ -142,6 +161,10 @@ export default function WarehouseInboundScreen() {
     setLpnId(value);
     setLpnStatus(null);
     setLpnWarehouseId(null);
+    setLpnHasWarehouseReceipt(false);
+    setLpnReceiptPdfUrl(null);
+    setReceiptResult(null);
+    setPutawayResult(null);
   };
 
   const handleSubmitQc = async () => {
@@ -165,6 +188,10 @@ export default function WarehouseInboundScreen() {
       if (response.lpnId) setLpnId(response.lpnId);
       if (response.receiptId) setReceiptId(response.receiptId);
       setLpnStatus(response.state ?? null);
+      setLpnHasWarehouseReceipt(false);
+      setLpnReceiptPdfUrl(null);
+      setReceiptResult(null);
+      setPutawayResult(null);
       setActionMessage(response.message);
       setActiveStep(response.state === 'DISCREPANCY_HOLD' ? 'measurements' : 'receipt');
     } catch (error) {
@@ -194,6 +221,10 @@ export default function WarehouseInboundScreen() {
       setRecheckResult(response);
       if (response.lpnId) setLpnId(response.lpnId);
       setLpnStatus(response.state ?? null);
+      setLpnHasWarehouseReceipt(response.state === 'RECEIVING' && Boolean(response.pdfUrl));
+      setLpnReceiptPdfUrl(response.state === 'RECEIVING' ? response.pdfUrl ?? null : null);
+      setReceiptResult(null);
+      setPutawayResult(null);
       setActionMessage(response.message);
       setActiveStep(response.state === 'DISCREPANCY_HOLD' ? 'discrepancy' : 'receipt');
     } catch (error) {
@@ -211,14 +242,14 @@ export default function WarehouseInboundScreen() {
       setActionMessage(null);
 
       const lpn = await getInventoryLpnById(token, lpnId.trim());
-      setLpnStatus(lpn.state || null);
-      setLpnWarehouseId(lpn.warehouseId ?? null);
-      if (lpn.storageLocation) {
-        setStorageLocation(lpn.storageLocation);
-      }
+      applyLpnSnapshot(lpn);
 
       if (lpn.state === 'RECEIVING') {
-        setActionMessage('Trạng thái LPN: RECEIVING. Có thể nhập kho.');
+        setActionMessage(
+          hasGeneratedWarehouseReceipt(lpn)
+            ? 'Trạng thái LPN: RECEIVING. Đã có phiếu nhập, có thể nhập vị trí kho.'
+            : 'LPN đang chờ tạo phiếu nhập kho. Vui lòng tạo phiếu nhập trước khi nhập vị trí kho.'
+        );
         setActiveStep('putaway');
       } else if (lpn.state === 'RETURN_PENDING') {
         setActionMessage('Lô hàng đang chờ trả hàng, không thể nhập kho.');
@@ -247,6 +278,26 @@ export default function WarehouseInboundScreen() {
       setIsSubmitting(true);
       setActionMessage(null);
 
+      const currentLpnId = lpnId.trim();
+      let latestStateForReceipt = currentLpnState;
+      if (currentLpnId) {
+        const latestLpn = await getInventoryLpnById(token, currentLpnId);
+        applyLpnSnapshot(latestLpn);
+        latestStateForReceipt = latestLpn.state;
+
+        if (latestLpn.state === 'IN_STOCK') {
+          throw new Error('LPN này đã nhập kho, không thể tạo phiếu nhập lại.');
+        }
+
+        if (hasGeneratedWarehouseReceipt(latestLpn)) {
+          throw new Error('LPN đã có phiếu nhập kho, không thể tạo lại.');
+        }
+
+        if (latestLpn.state && latestLpn.state !== 'RECEIVING') {
+          throw new Error(`Không thể tạo phiếu nhập khi LPN đang ở trạng thái ${getStatusStyle(latestLpn.state).label}.`);
+        }
+      }
+
       const response = await generateInboundReceipt(token, {
         asnId: activeAsnId,
         delivererName: delivererName.trim(),
@@ -256,8 +307,12 @@ export default function WarehouseInboundScreen() {
 
       setReceiptResult(response);
       if (response.receiptId) setReceiptId(response.receiptId);
+      if (response.success) {
+        setLpnHasWarehouseReceipt(true);
+        setLpnReceiptPdfUrl(response.pdfUrl ?? null);
+      }
       setActionMessage(response.message);
-      if (response.success && canPutaway) {
+      if (response.success && latestStateForReceipt === 'RECEIVING') {
         setActiveStep('putaway');
       }
     } catch (error) {
@@ -275,23 +330,27 @@ export default function WarehouseInboundScreen() {
       if (!storageLocation.trim()) {
         throw new Error('Vui lòng nhập vị trí lưu kho.');
       }
-      if (!canPutaway) {
-        const stateLabel = currentLpnState ? getStatusStyle(currentLpnState).label : 'không xác định';
-        throw new Error(
-          `Chỉ có thể nhập kho khi trạng thái LPN là RECEIVING. Trạng thái hiện tại: ${stateLabel}. Hãy làm mới trạng thái sau khi Sales/Admin xử lý sai lệch.`
-        );
-      }
       setIsSubmitting(true);
       setActionMessage(null);
+
+      const latestLpn = await getInventoryLpnById(token, currentLpnId);
+      applyLpnSnapshot(latestLpn);
+
+      if (latestLpn.state !== 'RECEIVING') {
+        const stateLabel = latestLpn.state ? getStatusStyle(latestLpn.state).label : 'không xác định';
+        throw new Error(
+          `Chỉ có thể nhập kho khi trạng thái LPN là RECEIVING. Trạng thái hiện tại: ${stateLabel}.`
+        );
+      }
+
+      if (!hasGeneratedWarehouseReceipt(latestLpn)) {
+        throw new Error('LPN đang chờ tạo phiếu nhập kho. Vui lòng tạo phiếu nhập trước khi nhập vị trí kho.');
+      }
 
       let warehouseId = warehouseIdForPutaway?.trim() ?? '';
       if (!warehouseId) {
         const lpn = await getInventoryLpnById(token, currentLpnId);
-        setLpnStatus(lpn.state || null);
-        setLpnWarehouseId(lpn.warehouseId ?? null);
-        if (lpn.storageLocation) {
-          setStorageLocation(lpn.storageLocation);
-        }
+        applyLpnSnapshot(lpn);
         warehouseId = lpn.warehouseId?.trim() ?? '';
       }
 
@@ -365,9 +424,14 @@ export default function WarehouseInboundScreen() {
   };
 
   const openReceiptPdf = async () => {
-    const url = receiptResult?.pdfUrl || recheckResult?.pdfUrl || qcResult?.pdfUrl || (receiptId ? getInboundReceiptPdf(receiptId) : null);
+    const url =
+      receiptResult?.pdfUrl ||
+      lpnReceiptPdfUrl ||
+      recheckResult?.pdfUrl ||
+      qcResult?.pdfUrl ||
+      (hasReceiptForCurrentLpn && receiptId ? getInboundReceiptPdf(receiptId) : null);
     if (!url) {
-      setActionMessage('Chưa có phiếu nhập PDF.');
+      setActionMessage('Chưa tạo phiếu nhập kho. Vui lòng tạo phiếu nhập trước khi mở PDF.');
       return;
     }
     await WebBrowser.openBrowserAsync(encodeURI(url));
@@ -453,6 +517,10 @@ export default function WarehouseInboundScreen() {
                       setSelectedAsn(null);
                       setLpnStatus(null);
                       setLpnWarehouseId(null);
+                      setLpnHasWarehouseReceipt(false);
+                      setLpnReceiptPdfUrl(null);
+                      setReceiptResult(null);
+                      setPutawayResult(null);
                       setActiveStep('qc');
                       setActionMessage('Đã chọn ASN thủ công.');
                     }}
@@ -551,12 +619,30 @@ export default function WarehouseInboundScreen() {
             {/* ── Receipt tab ── */}
             {activeStep === 'receipt' ? (
               <View style={{ gap: 12 }}>
+                {currentLpnState === 'IN_STOCK' ? (
+                  <AppMessage tone="success" text="LPN này đã nhập kho, không thể tạo phiếu nhập lại." />
+                ) : null}
+                {currentLpnState !== 'IN_STOCK' && hasReceiptForCurrentLpn ? (
+                  <AppMessage tone="success" text="LPN đã có phiếu nhập kho. Có thể chuyển sang bước nhập vị trí kho." />
+                ) : null}
                 <AppInput label="Mã ASN" value={manualAsnId} onChangeText={setManualAsnId} placeholder="Mã ASN" />
                 <AppInput label="Người giao hàng" value={delivererName} onChangeText={setDelivererName} placeholder="Tên tài xế hoặc khách hàng" />
                 <AppInput label="Biển số xe" value={vehiclePlate} onChangeText={setVehiclePlate} placeholder="Không bắt buộc" />
                 <AppInput label="Ghi chú" value={receiptNote} onChangeText={setReceiptNote} placeholder="Không bắt buộc" multiline />
-                <AppButton icon="document-text-outline" label="Tạo phiếu nhập kho" onPress={handleGenerateReceipt} loading={isSubmitting} />
-                <AppButton icon="open-outline" label="Mở phiếu nhập PDF" onPress={openReceiptPdf} variant="secondary" />
+                <AppButton
+                  icon="document-text-outline"
+                  label="Tạo phiếu nhập kho"
+                  onPress={handleGenerateReceipt}
+                  loading={isSubmitting}
+                  disabled={!canGenerateReceipt}
+                />
+                <AppButton
+                  icon="open-outline"
+                  label="Mở phiếu nhập PDF"
+                  onPress={openReceiptPdf}
+                  variant="secondary"
+                  disabled={!hasReceiptForCurrentLpn && !receiptResult?.pdfUrl}
+                />
                 {receiptResult ? <AppMessage tone={receiptResult.success ? 'success' : 'error'} text={receiptResult.message} /> : null}
               </View>
             ) : null}
@@ -584,13 +670,19 @@ export default function WarehouseInboundScreen() {
                     text={`Lô hàng đã được nhập kho.\nVị trí: ${storageLocation || 'N/A'}`}
                   />
                 ) : null}
+                {currentLpnState === 'RECEIVING' && !hasReceiptForCurrentLpn ? (
+                  <AppMessage
+                    tone="warning"
+                    text="LPN đang chờ tạo phiếu nhập kho. Vui lòng tạo phiếu nhập trước khi nhập vị trí kho."
+                  />
+                ) : null}
                 {!currentLpnState ? (
                   <AppMessage
                     tone="warning"
                     text="Chưa xác định trạng thái LPN. Vui lòng làm mới trạng thái trước khi nhập kho."
                   />
                 ) : null}
-                {currentLpnState && !canPutaway && !['DISCREPANCY_HOLD', 'RETURN_PENDING', 'IN_STOCK'].includes(currentLpnState) ? (
+                {currentLpnState && !canPutaway && currentLpnState !== 'RECEIVING' && !['DISCREPANCY_HOLD', 'RETURN_PENDING', 'IN_STOCK'].includes(currentLpnState) ? (
                   <AppMessage
                     tone="warning"
                     text={`Chưa thể nhập kho. Trạng thái LPN hiện tại: ${getStatusStyle(currentLpnState).label}.`}

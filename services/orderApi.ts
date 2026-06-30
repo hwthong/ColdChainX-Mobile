@@ -141,6 +141,15 @@ export function createOrder(accessToken: string, data: CreateOrderPayload) {
     type: data.image.mimeType || 'image/jpeg',
   } as any);
 
+  if (__DEV__) {
+    console.log('[orderApi] create order payload', {
+      Packaging_Type: data.packagingType,
+      Quantity: data.quantity,
+      Route_ID: data.routeId,
+      HasDocumentImage: Boolean(data.image.uri),
+    });
+  }
+
   return apiRequest<ApiResponse<CreateOrderResponse>>('/api/orders', {
     method: 'POST',
     headers: {

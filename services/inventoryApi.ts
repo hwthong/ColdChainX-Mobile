@@ -15,6 +15,9 @@ export interface LpnDto {
   lpnCode: string;
   itemName: string;
   batchNumber?: string | null;
+  receiptId?: string | null;
+  hasWarehouseReceipt?: boolean | null;
+  warehouseReceiptPdfUrl?: string | null;
   warehouseId?: string | null;
   storageLocation?: string | null;
   quantity: number;
@@ -68,6 +71,10 @@ export function getLpnDocuments(accessToken: string | null, id: string) {
 
 export function buildInventoryDocumentUrl(url: string) {
   return url.startsWith('http://') || url.startsWith('https://') ? url : buildApiUrl(url);
+}
+
+export function hasGeneratedWarehouseReceipt(lpn?: Pick<LpnDto, 'hasWarehouseReceipt' | 'warehouseReceiptPdfUrl'> | null) {
+  return Boolean(lpn?.hasWarehouseReceipt || lpn?.warehouseReceiptPdfUrl?.trim());
 }
 
 function getAuthHeaders(accessToken: string) {
