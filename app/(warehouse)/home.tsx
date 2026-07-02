@@ -51,10 +51,10 @@ export default function WarehouseHomeScreen() {
           Kho lạnh ColdChainX
         </Text>
         <Text style={{ marginTop: 12, fontSize: 24, fontWeight: '700', color: WH_COLORS.headerText }}>
-          Quản lý nhập kho
+          Quản lý kho
         </Text>
         <Text style={{ marginTop: 8, fontSize: 14, lineHeight: 22, color: 'rgba(255, 255, 255, 0.7)' }}>
-          Tiếp nhận hàng, kiểm tra chất lượng, xử lý sai lệch, tạo phiếu nhập và xác nhận vị trí lưu kho.
+          Tiếp nhận hàng, kiểm tra chất lượng, nhập vị trí, quản lý tồn kho và bốc hàng xuất kho.
         </Text>
         <View style={{ marginTop: 16, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.1)', padding: 14 }}>
           <Text style={{ fontSize: 11, fontWeight: '600', color: 'rgba(255, 194, 159, 0.8)' }}>Khu vực làm việc</Text>
@@ -77,6 +77,12 @@ export default function WarehouseHomeScreen() {
           title="Phiếu nhập"
           subtitle="Danh sách phiếu nhập"
           onPress={() => router.push('/(warehouse)/receipts' as never)}
+        />
+        <QuickAction
+          icon="exit-outline"
+          title="Xuất kho"
+          subtitle="Bốc hàng và kẹp chì"
+          onPress={() => router.push('/(warehouse)/outbound' as never)}
         />
         <QuickAction
           icon="layers-outline"

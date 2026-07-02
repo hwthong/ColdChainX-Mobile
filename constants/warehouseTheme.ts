@@ -85,6 +85,60 @@ export const STATUS_STYLES: Record<string, StatusStyle> = {
     border: '#F5D4B3',
     label: 'Đã đến kho',
   },
+  PLANNED: {
+    bg: '#EEF2FF',
+    text: '#3730A3',
+    border: '#C7D2FE',
+    label: 'Chờ bốc hàng',
+  },
+  ALLOCATED: {
+    bg: '#F8F3EF',
+    text: '#8B4513',
+    border: '#DAC2B6',
+    label: 'Đã phân chuyến',
+  },
+  PICKING: {
+    bg: '#ECFEFF',
+    text: '#0E7490',
+    border: '#A5F3FC',
+    label: 'Đang bốc hàng',
+  },
+  LOADING: {
+    bg: '#FFF8F0',
+    text: '#8B4513',
+    border: '#F5D4B3',
+    label: 'Chờ bốc lên xe',
+  },
+  LOADING_COMPLETED: {
+    bg: '#F0FDF4',
+    text: '#166534',
+    border: '#BBF7D0',
+    label: 'Đã bốc xong',
+  },
+  RELEASED: {
+    bg: '#ECFDF5',
+    text: '#047857',
+    border: '#A7F3D0',
+    label: 'Đã xuất kho',
+  },
+  SEALED: {
+    bg: '#F5F3FF',
+    text: '#6D28D9',
+    border: '#DDD6FE',
+    label: 'Đã kẹp chì',
+  },
+  DISPATCHED: {
+    bg: '#EFF6FF',
+    text: '#1D4ED8',
+    border: '#BFDBFE',
+    label: 'Đã điều phối',
+  },
+  SHIPPING: {
+    bg: '#EFF6FF',
+    text: '#1D4ED8',
+    border: '#BFDBFE',
+    label: 'Đang giao',
+  },
 } as const;
 
 /** Message tone colors used by AppMessage component */

@@ -8,6 +8,7 @@ import { WH_COLORS } from '../../constants/warehouseTheme';
 const TITLE_MAP: Record<string, string> = {
   home: 'ColdChainX',
   inbound: 'Nhập kho',
+  outbound: 'Xuất kho',
   receipts: 'Phiếu nhập',
   inventory: 'Tồn kho',
 };
@@ -46,6 +47,13 @@ export default function WarehouseLayout() {
         options={{
           title: 'Nhập kho',
           tabBarIcon: ({ color }) => <Ionicons name="cube-outline" size={24} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="outbound"
+        options={{
+          title: 'Xuất kho',
+          tabBarIcon: ({ color }) => <Ionicons name="exit-outline" size={24} color={color} />,
         }}
       />
       <Tabs.Screen
