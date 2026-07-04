@@ -7,7 +7,7 @@ import {
   mapBackendRoleToAppRole,
   refreshTokens as refreshTokensApi,
 } from '../services/authApi';
-import { getApiErrorMessage } from '../services/apiClient';
+import { ApiClientError, getApiErrorMessage } from '../services/apiClient';
 import { getCustomerIdFromToken, getRoleFromToken, getUserIdFromToken, getWarehouseIdFromToken } from '../services/jwt';
 
 export type UserRole = 'DRIVER' | 'CUSTOMER' | 'WAREHOUSE';
@@ -70,6 +70,8 @@ const emptyAuthState = {
   | 'user'
 >;
 
+const LOGOUT_REFRESH_SKEW_MS = 30 * 1000;
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
@@ -102,16 +104,20 @@ export const useAuthStore = create<AuthState>()(
         });
       },
       logout: async () => {
-        const { token } = get();
+        const { token, refreshToken, accessTokenExpiresAt } = get();
 
         try {
-          if (token) {
-            await logoutApi(token);
+          const logoutToken = await getLogoutToken({
+            token,
+            refreshToken,
+            accessTokenExpiresAt,
+          });
+
+          if (logoutToken) {
+            await logoutApi(logoutToken);
           }
         } catch (error) {
-          console.error('[authStore] Server logout failed', {
-            message: getApiErrorMessage(error),
-          });
+          logLogoutFailure(error);
         } finally {
           set(emptyAuthState);
         }
@@ -184,3 +190,58 @@ export const useAuthStore = create<AuthState>()(
     }
   )
 );
+
+async function getLogoutToken({
+  token,
+  refreshToken,
+  accessTokenExpiresAt,
+}: Pick<AuthState, 'token' | 'refreshToken' | 'accessTokenExpiresAt'>) {
+  if (!token) {
+    return null;
+  }
+
+  if (!refreshToken || !shouldRefreshBeforeLogout(accessTokenExpiresAt)) {
+    return token;
+  }
+
+  try {
+    const response = await refreshTokensApi(refreshToken);
+    return response.success && response.data?.accessToken ? response.data.accessToken : token;
+  } catch (error) {
+    if (__DEV__ && !isAuthRejection(error)) {
+      console.warn('[authStore] Refresh before logout failed', {
+        message: getApiErrorMessage(error),
+      });
+    }
+
+    return token;
+  }
+}
+
+function shouldRefreshBeforeLogout(accessTokenExpiresAt: string | null) {
+  if (!accessTokenExpiresAt) {
+    return false;
+  }
+
+  const expiresAt = Date.parse(accessTokenExpiresAt);
+  return Number.isFinite(expiresAt) && expiresAt <= Date.now() + LOGOUT_REFRESH_SKEW_MS;
+}
+
+function logLogoutFailure(error: unknown) {
+  if (isAuthRejection(error)) {
+    if (__DEV__) {
+      console.info('[authStore] Server session was already expired during logout', {
+        message: getApiErrorMessage(error),
+      });
+    }
+    return;
+  }
+
+  console.warn('[authStore] Server logout failed; local session was cleared', {
+    message: getApiErrorMessage(error),
+  });
+}
+
+function isAuthRejection(error: unknown) {
+  return error instanceof ApiClientError && (error.status === 401 || error.status === 403);
+}
