@@ -278,7 +278,7 @@ export default function NotificationsScreen() {
 }
 
 function getNotificationId(notification: NotificationResponse) {
-  return notification.notificationId ?? notification.id ?? null;
+  return notification.notificationId ?? notification.notiId ?? notification.id ?? null;
 }
 
 function getNotificationTitle(notification: NotificationResponse) {

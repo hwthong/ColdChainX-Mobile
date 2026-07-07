@@ -16,6 +16,13 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { API_BASE_URL, ApiClientError, getApiErrorMessage } from '../../../services/apiClient';
 import {
+  acceptAppendix,
+  ContractAppendixResponse,
+  getAppendixByOrder,
+  getAppendixHtml,
+  rejectAppendix,
+} from '../../../services/appendixApi';
+import {
   ContractInfoResponse,
   getContractByOrder,
   SignedContractFile,
@@ -43,13 +50,17 @@ export default function OrderDetailScreen() {
   const [order, setOrder] = useState<OrderResponse | null>(null);
   const [quotations, setQuotations] = useState<QuotationResponse[]>([]);
   const [contract, setContract] = useState<ContractInfoResponse | null>(null);
+  const [appendix, setAppendix] = useState<ContractAppendixResponse | null>(null);
   const [selectedSignedFile, setSelectedSignedFile] = useState<SignedContractFile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isContractLoading, setIsContractLoading] = useState(false);
+  const [isAppendixLoading, setIsAppendixLoading] = useState(false);
   const [isUploadingContract, setIsUploadingContract] = useState(false);
   const [isAcceptingQuoteId, setIsAcceptingQuoteId] = useState<string | null>(null);
+  const [appendixAction, setAppendixAction] = useState<'accept' | 'reject' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [contractError, setContractError] = useState<string | null>(null);
+  const [appendixError, setAppendixError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const orderId = Array.isArray(id) ? id[0] : id;
@@ -86,6 +97,38 @@ export default function OrderDetailScreen() {
     }
   }, [accessToken, orderId]);
 
+  const fetchAppendixDetail = useCallback(async () => {
+    if (!accessToken || !orderId) {
+      setAppendix(null);
+      setIsAppendixLoading(false);
+      return;
+    }
+
+    setIsAppendixLoading(true);
+    setAppendixError(null);
+
+    try {
+      const appendixResponse = await getAppendixByOrder(accessToken, orderId);
+
+      if (appendixResponse.success && appendixResponse.data) {
+        setAppendix(appendixResponse.data);
+      } else {
+        setAppendix(null);
+        setAppendixError(appendixResponse.message || null);
+      }
+    } catch (err) {
+      setAppendix(null);
+
+      if (err instanceof ApiClientError && err.status === 404) {
+        setAppendixError(null);
+      } else {
+        setAppendixError(getApiErrorMessage(err));
+      }
+    } finally {
+      setIsAppendixLoading(false);
+    }
+  }, [accessToken, orderId]);
+
   const fetchOrderDetail = useCallback(async () => {
     if (!accessToken || !orderId) {
       setError('Không tìm thấy phiên đăng nhập hoặc mã đơn hàng.');
@@ -111,13 +154,13 @@ export default function OrderDetailScreen() {
         setQuotations(orderResponse.data?.quotations ?? []);
       }
 
-      await fetchContractDetail();
+      await Promise.all([fetchContractDetail(), fetchAppendixDetail()]);
     } catch (err) {
       setError(getApiErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
-  }, [accessToken, fetchContractDetail, orderId]);
+  }, [accessToken, fetchAppendixDetail, fetchContractDetail, orderId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -132,8 +175,14 @@ export default function OrderDetailScreen() {
   );
 
   const documentImage = getFullAssetUrl(getOrderImageUrl(order));
-  const inboundTimeline = useMemo(() => buildInboundTimeline(order?.status ?? 'PENDING_REVIEW'), [order?.status]);
-  const dispatchTimeline = useMemo(() => buildDispatchTimeline(order?.status ?? 'PENDING_REVIEW'), [order?.status]);
+  const inboundTimeline = useMemo(
+    () => buildInboundTimeline(order?.status ?? 'PENDING_REVIEW', appendix?.status),
+    [order?.status, appendix?.status]
+  );
+  const dispatchTimeline = useMemo(
+    () => buildDispatchTimeline(order?.status ?? 'PENDING_REVIEW'),
+    [order?.status]
+  );
   const deliveryFlow = useMemo(
     () => getMockDeliveryFlow(order?.status ?? 'PENDING_REVIEW', order?.destination?.address),
     [order?.destination?.address, order?.status]
@@ -223,6 +272,110 @@ export default function OrderDetailScreen() {
       setContractError(getApiErrorMessage(err));
     } finally {
       setIsUploadingContract(false);
+    }
+  };
+
+  const handleViewAppendix = async () => {
+    if (!appendix) {
+      return;
+    }
+
+    setAppendixError(null);
+
+    try {
+      let htmlContent = appendix.draftHtmlContent;
+
+      if (!htmlContent && accessToken) {
+        const response = await getAppendixHtml(accessToken, appendix.appendixId);
+        htmlContent = typeof response === 'string' ? response : response.data ?? null;
+      }
+
+      if (!htmlContent) {
+        Alert.alert('Không có phụ lục', 'Nội dung HTML của phụ lục chưa sẵn sàng.');
+        return;
+      }
+
+      await WebBrowser.openBrowserAsync(`data:text/html;charset=utf-8,${encodeURIComponent(htmlContent)}`);
+    } catch (err) {
+      setAppendixError(getApiErrorMessage(err));
+    }
+  };
+
+  const handleOpenAppendixPdf = async () => {
+    if (!appendix?.pdfUrl) {
+      Alert.alert('Không có PDF', 'File PDF của phụ lục chưa sẵn sàng.');
+      return;
+    }
+
+    await openContractFile(getFullAssetUrl(appendix.pdfUrl));
+  };
+
+  const handleAcceptAppendix = async () => {
+    if (!accessToken || !appendix) {
+      setAppendixError('Phiên đăng nhập đã hết hạn hoặc phụ lục không khả dụng.');
+      return;
+    }
+
+    setAppendixAction('accept');
+    setAppendixError(null);
+    setSuccessMessage(null);
+
+    try {
+      const response = await acceptAppendix(accessToken, appendix.appendixId);
+      if (!response.success || !response.data) {
+        throw new Error(response.message || 'Không thể chấp nhận phụ lục.');
+      }
+
+      setAppendix(response.data);
+      setSuccessMessage('Đã chấp nhận phụ lục. Vui lòng chờ Sales xác nhận thực thi.');
+      Alert.alert('Đã chấp nhận', 'Đã chấp nhận phụ lục. Vui lòng chờ Sales xác nhận thực thi.');
+      await fetchOrderDetail();
+    } catch (err) {
+      setAppendixError(getApiErrorMessage(err));
+    } finally {
+      setAppendixAction(null);
+    }
+  };
+
+  const handleRejectAppendix = () => {
+    Alert.alert(
+      'Từ chối phụ lục?',
+      'Bạn có chắc muốn từ chối phụ lục? Đơn hàng sẽ chuyển sang quy trình hoàn trả.',
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Từ chối',
+          style: 'destructive',
+          onPress: runRejectAppendix,
+        },
+      ]
+    );
+  };
+
+  const runRejectAppendix = async () => {
+    if (!accessToken || !appendix) {
+      setAppendixError('Phiên đăng nhập đã hết hạn hoặc phụ lục không khả dụng.');
+      return;
+    }
+
+    setAppendixAction('reject');
+    setAppendixError(null);
+    setSuccessMessage(null);
+
+    try {
+      const response = await rejectAppendix(accessToken, appendix.appendixId);
+      if (!response.success || !response.data) {
+        throw new Error(response.message || 'Không thể từ chối phụ lục.');
+      }
+
+      setAppendix(response.data);
+      setSuccessMessage('Đã từ chối phụ lục. Đơn hàng đang chờ hoàn trả.');
+      Alert.alert('Đã từ chối', 'Đã từ chối phụ lục. Đơn hàng đang chờ hoàn trả.');
+      await fetchOrderDetail();
+    } catch (err) {
+      setAppendixError(getApiErrorMessage(err));
+    } finally {
+      setAppendixAction(null);
     }
   };
 
@@ -362,12 +515,24 @@ export default function OrderDetailScreen() {
         onSubmit={handleUploadSignedContract}
       />
 
-      <InfoCard title="Hub Drop-off" icon="business-outline">
+      <AppendixSection
+        appendix={appendix}
+        appendixError={appendixError}
+        action={appendixAction}
+        isLoading={isAppendixLoading}
+        orderStatus={order.status}
+        onAccept={handleAcceptAppendix}
+        onOpenPdf={handleOpenAppendixPdf}
+        onReject={handleRejectAppendix}
+        onView={handleViewAppendix}
+      />
+
+      <InfoCard title="Giao hàng tại Hub" icon="business-outline">
         {/* TODO: replace inbound timeline with real warehouse receipt status API when available */}
         <TimelineList steps={inboundTimeline} />
       </InfoCard>
 
-      <InfoCard title="Dispatch & Load Planning" icon="file-tray-stacked-outline">
+      <InfoCard title="Điều phối & xếp xe" icon="file-tray-stacked-outline">
         {/* TODO: connect real dispatch/trip status when customer tracking endpoint is available */}
         <TimelineList steps={dispatchTimeline} />
       </InfoCard>
@@ -583,6 +748,166 @@ function ContractSection({
   );
 }
 
+function AppendixSection({
+  appendix,
+  appendixError,
+  action,
+  isLoading,
+  orderStatus,
+  onAccept,
+  onOpenPdf,
+  onReject,
+  onView,
+}: {
+  appendix: ContractAppendixResponse | null;
+  appendixError: string | null;
+  action: 'accept' | 'reject' | null;
+  isLoading: boolean;
+  orderStatus: string;
+  onAccept: () => void;
+  onOpenPdf: () => void;
+  onReject: () => void;
+  onView: () => void;
+}) {
+  if (!isLoading && !appendix && !appendixError) {
+    return null;
+  }
+
+  const status = appendix?.status.toUpperCase() ?? '';
+  const canRespond = status === 'SENT';
+  const isAccepted = status === 'ACCEPTED';
+  const isRejected = status === 'REJECTED';
+  const isExecuted = status === 'EXECUTED';
+  const hasPdf = Boolean(appendix?.pdfUrl);
+  const orderIsReceiving = orderStatus.toUpperCase() === 'RECEIVING';
+
+  return (
+    <View className="mb-4 rounded-2xl border border-[#DAC2B6]/50 bg-white p-5 shadow-sm">
+      <View className="mb-3 flex-row items-center gap-2 border-b border-[#DAC2B6]/30 pb-3">
+        <Ionicons name="document-attach-outline" size={18} color="#8B4513" />
+        <Text className="text-base font-bold text-[#8B4513]">Phụ lục điều chỉnh cước</Text>
+      </View>
+
+      {isLoading ? (
+        <View className="flex-row items-center gap-3 rounded-xl bg-[#F8F9FA] p-3">
+          <ActivityIndicator size="small" color="#8B4513" />
+          <Text className="text-sm font-semibold text-[#877369]">Đang kiểm tra phụ lục...</Text>
+        </View>
+      ) : null}
+
+      {appendixError ? (
+        <View className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3">
+          <Text className="text-sm font-semibold leading-5 text-red-700">{appendixError}</Text>
+        </View>
+      ) : null}
+
+      {appendix ? (
+        <View className="gap-3">
+          <View className="flex-row items-start justify-between gap-3">
+            <View className="flex-1">
+              <Text className="text-sm font-bold text-[#3A1F04]">{appendix.appendixNumber}</Text>
+              <Text className="mt-1 text-xs text-[#877369]">Gửi lúc: {formatDate(appendix.sentAt)}</Text>
+            </View>
+            <StatusBadge status={appendix.status} />
+          </View>
+
+          <Text className="text-sm leading-6 text-[#877369]">
+            {appendix.reason || 'Phát hiện chênh lệch thực tế khi kiểm đếm QC tại Hub.'}
+          </Text>
+
+          <InfoRow label="Phí điều chỉnh" value={formatMoney(appendix.adjustedPrice)} strong />
+
+          {canRespond ? (
+            <View className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+              <Text className="text-sm font-semibold leading-5 text-amber-800">
+                Trạng thái: Chờ khách hàng xác nhận
+              </Text>
+            </View>
+          ) : null}
+
+          {isAccepted ? (
+            <View className="rounded-xl border border-green-200 bg-green-50 p-3">
+              <Text className="text-sm font-semibold leading-5 text-green-700">
+                Bạn đã chấp nhận phụ lục. Đang chờ Sales thực thi xử lý nhập kho.
+              </Text>
+            </View>
+          ) : null}
+
+          {isExecuted && orderIsReceiving ? (
+            <View className="rounded-xl border border-green-200 bg-green-50 p-3">
+              <Text className="text-sm font-semibold leading-5 text-green-700">
+                Phụ lục đã xử lý. Đơn hàng tiếp tục nhập kho.
+              </Text>
+            </View>
+          ) : null}
+
+          {isRejected ? (
+            <View className="rounded-xl border border-red-200 bg-red-50 p-3">
+              <Text className="text-sm font-semibold leading-5 text-red-700">
+                Phụ lục đã bị từ chối. Đơn hàng chuyển sang chờ hoàn trả.
+              </Text>
+            </View>
+          ) : null}
+
+          <View className="flex-row flex-wrap gap-3">
+            <Pressable
+              onPress={onView}
+              className="h-11 flex-row items-center justify-center gap-2 rounded-xl border border-[#8B4513] bg-white px-4"
+            >
+              <Ionicons name="eye-outline" size={16} color="#8B4513" />
+              <Text className="text-sm font-bold text-[#8B4513]">Xem phụ lục</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={onOpenPdf}
+              disabled={!hasPdf}
+              className={[
+                'h-11 flex-row items-center justify-center gap-2 rounded-xl border px-4',
+                hasPdf ? 'border-[#8B4513] bg-white' : 'border-[#DAC2B6] bg-[#F8F9FA]',
+              ].join(' ')}
+            >
+              <Ionicons name="open-outline" size={16} color={hasPdf ? '#8B4513' : '#877369'} />
+              <Text className={['text-sm font-bold', hasPdf ? 'text-[#8B4513]' : 'text-[#877369]'].join(' ')}>
+                Mở PDF
+              </Text>
+            </Pressable>
+          </View>
+
+          {canRespond ? (
+            <View className="flex-row gap-3">
+              <Pressable
+                onPress={onAccept}
+                disabled={Boolean(action)}
+                className={[
+                  'h-12 flex-1 items-center justify-center rounded-xl bg-[#006E0A]',
+                  action ? 'opacity-60' : '',
+                ].join(' ')}
+              >
+                <Text className="font-bold text-white">
+                  {action === 'accept' ? 'ĐANG XỬ LÝ...' : 'Chấp nhận'}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={onReject}
+                disabled={Boolean(action)}
+                className={[
+                  'h-12 flex-1 items-center justify-center rounded-xl bg-red-600',
+                  action ? 'opacity-60' : '',
+                ].join(' ')}
+              >
+                <Text className="font-bold text-white">
+                  {action === 'reject' ? 'ĐANG XỬ LÝ...' : 'Từ chối'}
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 function TimelineList({ steps }: { steps: TimelineStep[] }) {
   return (
     <View className="gap-3">
@@ -619,7 +944,7 @@ function DeliveryFlowCard({ flow }: { flow: MockDeliveryFlow }) {
   }));
 
   return (
-    <InfoCard title="Door Delivery & COD" icon="home-outline">
+    <InfoCard title="Giao hàng tận nơi & COD" icon="home-outline">
       {/* TODO: replace mock delivery flow when backend provides delivery/check-in/ePOD/COD APIs */}
       <TimelineList steps={deliverySteps} />
 
@@ -742,11 +1067,17 @@ function getStatusColor(status: string) {
       return { container: 'bg-blue-100 border-blue-200', text: 'text-blue-800' };
     case 'ASSIGNED':
       return { container: 'bg-blue-100 border-blue-200', text: 'text-blue-800' };
+    case 'DISCREPANCY_HOLD':
+      return { container: 'bg-amber-100 border-amber-200', text: 'text-amber-800' };
+    case 'RETURN_PENDING':
+      return { container: 'bg-red-100 border-red-200', text: 'text-red-800' };
     case 'IN_TRANSIT':
       return { container: 'bg-purple-100 border-purple-200', text: 'text-purple-800' };
     case 'ACCEPTED':
     case 'ACTIVE':
     case 'CONTRACT_SIGNED':
+    case 'EXECUTED':
+    case 'RECEIVING':
     case 'DELIVERED':
       return { container: 'bg-green-100 border-green-200', text: 'text-green-800' };
     case 'REJECTED':
@@ -768,6 +1099,10 @@ function translateStatus(status: string) {
       return 'Đã gửi';
     case 'CONTRACT_PENDING':
       return 'Chờ hợp đồng';
+    case 'DISCREPANCY_HOLD':
+      return 'Chờ xử lý sai lệch';
+    case 'RETURN_PENDING':
+      return 'Chờ hoàn trả';
     case 'PENDING_CUSTOMER_SIGNATURE':
       return 'Waiting signature';
     case 'PENDING_SALES_VERIFICATION':
@@ -776,6 +1111,10 @@ function translateStatus(status: string) {
       return 'Verified';
     case 'CONTRACT_SIGNED':
       return 'Contract signed';
+    case 'EXECUTED':
+      return 'Đã xử lý';
+    case 'RECEIVING':
+      return 'Đang nhập kho';
     case 'ASSIGNED':
       return 'Đã phân xe';
     case 'IN_TRANSIT':
