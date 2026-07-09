@@ -10,16 +10,22 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 
+import { GoongRouteMap } from '../../components/customer/GoongRouteMap';
 import { getApiErrorMessage } from '../../services/apiClient';
 import { getCustomerIdFromToken, getUserIdFromToken } from '../../services/jwt';
 import { getMockDeliveryFlow } from '../../services/mockDeliveryApi';
 import { getUserNotifications, NotificationResponse } from '../../services/notificationApi';
 import { getCustomerOrders, OrderResponse } from '../../services/orderApi';
 import {
+  getPlannedTripRoute,
+  getTrackingByTripId,
+  TrackingDataResponse,
+  TripRouteResponse,
+} from '../../services/trackingApi';
+import {
   buildDispatchTimeline,
   mockAlertLogs,
   mockTemperatureLogs,
-  mockTrackingData,
   TimelineStep,
 } from '../../services/trackingMock';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -37,6 +43,11 @@ export default function TrackingScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [trackingData, setTrackingData] = useState<TrackingDataResponse | null>(null);
+  const [isTrackingLoading, setIsTrackingLoading] = useState(false);
+  const [plannedRoute, setPlannedRoute] = useState<TripRouteResponse | null>(null);
+  const [routeError, setRouteError] = useState<string | null>(null);
+  const [isRouteLoading, setIsRouteLoading] = useState(false);
 
   const activeOrder = useMemo(() => {
     return orders.find((order) => !isClosedStatus(order.status)) ?? orders[0] ?? null;
@@ -100,6 +111,57 @@ export default function TrackingScreen() {
     }
   }, [accessToken, customerId, userId]);
 
+  const fetchRealTracking = useCallback(async (tripId: string) => {
+    if (!accessToken) return;
+    setIsTrackingLoading(true);
+    try {
+      const res = await getTrackingByTripId(accessToken, tripId);
+      if (res.success && res.data) {
+        setTrackingData(res.data);
+      } else {
+        setTrackingData(null);
+      }
+    } catch (err) {
+      console.log('Error fetching tracking data', err);
+      setTrackingData(null);
+    } finally {
+      setIsTrackingLoading(false);
+    }
+  }, [accessToken]);
+
+  const fetchPlannedRoute = useCallback(async (tripId: string) => {
+    if (!accessToken) return;
+
+    setIsRouteLoading(true);
+    setRouteError(null);
+    try {
+      const res = await getPlannedTripRoute(accessToken, tripId);
+      if (res.success && res.data) {
+        setPlannedRoute(res.data);
+      } else {
+        setPlannedRoute(null);
+        setRouteError(res.message || 'Không thể tải tuyến đường dự kiến.');
+      }
+    } catch (err) {
+      console.log('Error fetching planned trip route', err);
+      setPlannedRoute(null);
+      setRouteError('Không thể tải tuyến đường dự kiến.');
+    } finally {
+      setIsRouteLoading(false);
+    }
+  }, [accessToken]);
+
+  React.useEffect(() => {
+    if (activeOrder?.masterTripId) {
+      fetchRealTracking(activeOrder.masterTripId);
+      fetchPlannedRoute(activeOrder.masterTripId);
+    } else {
+      setTrackingData(null);
+      setPlannedRoute(null);
+      setRouteError(null);
+    }
+  }, [activeOrder?.masterTripId, fetchPlannedRoute, fetchRealTracking]);
+
   useFocusEffect(
     useCallback(() => {
       setIsLoading(true);
@@ -110,6 +172,10 @@ export default function TrackingScreen() {
   const onRefresh = () => {
     setIsRefreshing(true);
     fetchTrackingData();
+    if (activeOrder?.masterTripId) {
+      fetchRealTracking(activeOrder.masterTripId);
+      fetchPlannedRoute(activeOrder.masterTripId);
+    }
   };
 
   if (isLoading) {
@@ -171,18 +237,75 @@ export default function TrackingScreen() {
             </View>
           </View>
 
+          <SectionCard title="Bản đồ tuyến đường dự kiến" icon="map-outline">
+            {!activeOrder.masterTripId ? (
+              <View className="items-center justify-center py-4">
+                <Text className="text-center text-sm font-medium leading-6 text-[#877369]">
+                  Đơn hàng chưa xuất bến nên chưa có bản đồ vận chuyển.
+                </Text>
+              </View>
+            ) : isRouteLoading ? (
+              <ActivityIndicator size="small" color="#8B4513" className="py-4" />
+            ) : routeError ? (
+              <View className="gap-3 rounded-2xl border border-red-200 bg-red-50 p-4">
+                <Text className="text-sm font-semibold leading-5 text-red-700">{routeError}</Text>
+                <Pressable
+                  onPress={() => activeOrder.masterTripId && fetchPlannedRoute(activeOrder.masterTripId)}
+                  className="self-start rounded-xl bg-[#8B4513] px-4 py-2"
+                >
+                  <Text className="font-bold text-white">Tải lại</Text>
+                </Pressable>
+              </View>
+            ) : plannedRoute ? (
+              <>
+                <View className="gap-2 rounded-2xl bg-[#F8F9FA] p-4">
+                  <InfoRow label="Điểm đi" value={plannedRoute.origin?.address || 'Chưa cập nhật'} />
+                  <InfoRow label="Điểm đến" value={plannedRoute.destination?.address || 'Chưa cập nhật'} />
+                  <InfoRow label="Khoảng cách" value={formatDistance(plannedRoute.totalDistanceMeters)} />
+                  <InfoRow label="Thời gian dự kiến" value={formatDuration(plannedRoute.totalDurationSeconds)} />
+                </View>
+
+                {!trackingData?.latestTelemetry ? (
+                  <View className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                    <Text className="text-sm font-medium leading-6 text-amber-800">
+                      Chưa có tín hiệu GPS realtime từ thiết bị IoT. Hiện đang hiển thị tuyến đường dự kiến.
+                    </Text>
+                  </View>
+                ) : null}
+
+                <GoongRouteMap route={plannedRoute} />
+                <RouteStopsList route={plannedRoute} />
+              </>
+            ) : (
+              <View className="items-center justify-center py-4">
+                <Text className="text-sm font-medium text-[#877369]">Không thể tải tuyến đường dự kiến.</Text>
+              </View>
+            )}
+          </SectionCard>
+
           <SectionCard title="Cold-chain monitoring" icon="thermometer-outline">
-            {/* TODO: replace mock tracking data with real IoT/tracking API */}
-            <View className="flex-row gap-3">
-              <MetricCard label="Nhiệt độ" value={`${mockTrackingData.currentTemperatureC} °C`} />
-              <MetricCard label="Độ ẩm" value={`${mockTrackingData.humidityPercent}%`} />
-            </View>
-            <InfoRow label="Vị trí hiện tại" value={mockTrackingData.currentLocation} />
-            <InfoRow label="GPS" value={mockTrackingData.gpsStatus} />
-            <InfoRow label="Geo-fence" value={mockTrackingData.geoFenceStatus} />
-            <View className="rounded-2xl border border-green-200 bg-green-50 p-4">
-              <Text className="text-sm font-semibold leading-5 text-green-700">{mockTrackingData.smartAlert}</Text>
-            </View>
+            {!activeOrder.masterTripId ? (
+              <View className="items-center justify-center py-4">
+                <Text className="text-sm font-medium text-[#877369]">Đơn hàng chưa xuất bến nên chưa có tracking vận chuyển.</Text>
+              </View>
+            ) : isTrackingLoading ? (
+              <ActivityIndicator size="small" color="#8B4513" className="py-4" />
+            ) : !trackingData?.latestTelemetry ? (
+              <View className="items-center justify-center py-4">
+                <Text className="text-sm font-medium text-[#877369]">Chưa có tín hiệu IoT từ xe. Vui lòng thử lại sau.</Text>
+              </View>
+            ) : (
+              <>
+                <View className="flex-row gap-3">
+                  <MetricCard label="Nhiệt độ" value={`${trackingData.latestTelemetry.tempC ?? trackingData.latestTelemetry.temperature ?? '--'} °C`} />
+                  <MetricCard label="Độ ẩm" value={`${trackingData.latestTelemetry.humidityPercent ?? trackingData.latestTelemetry.humidity ?? '--'}%`} />
+                </View>
+                <InfoRow label="Xe vận chuyển" value={trackingData.vehicle?.truckPlate || '--'} />
+                <InfoRow label="Vị trí hiện tại" value={`${trackingData.latestTelemetry.lat}, ${trackingData.latestTelemetry.lon}`} />
+                <InfoRow label="Cập nhật lúc" value={trackingData.latestTelemetry.timestamp ? new Date(trackingData.latestTelemetry.timestamp).toLocaleString('vi-VN') : '--'} />
+                <InfoRow label="ETA" value={trackingData.eta?.estimatedArrival ? new Date(trackingData.eta.estimatedArrival).toLocaleString('vi-VN') : '--'} />
+              </>
+            )}
           </SectionCard>
 
           <SectionCard title="Temperature log" icon="pulse-outline">
@@ -287,6 +410,27 @@ function InfoLine({ icon, text }: { icon: keyof typeof Ionicons.glyphMap; text: 
   );
 }
 
+function RouteStopsList({ route }: { route: TripRouteResponse }) {
+  if (route.optimizedStops.length === 0) return null;
+
+  return (
+    <View className="gap-2">
+      <Text className="text-xs font-bold text-[#877369]">Điểm dừng giao hàng</Text>
+      {route.optimizedStops.map((stop, index) => (
+        <View key={stop.stopId ?? `${stop.locationId}-${index}`} className="flex-row items-start gap-3">
+          <View className="mt-0.5 h-7 w-7 items-center justify-center rounded-full bg-[#8B4513]/10">
+            <Text className="text-xs font-bold text-[#8B4513]">{stop.optimizedSequence ?? index + 1}</Text>
+          </View>
+          <View className="flex-1 border-b border-[#DAC2B6]/30 pb-3">
+            <Text className="text-sm font-bold text-[#3A1F04]">{stop.address || 'Chưa cập nhật địa chỉ'}</Text>
+            <Text className="mt-1 text-xs leading-5 text-[#877369]">{getStopSummary(stop)}</Text>
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function AlertRow({ title, message }: { title: string; message: string }) {
   return (
     <View className="rounded-2xl border border-[#DAC2B6]/50 bg-[#F8F9FA] p-4">
@@ -340,6 +484,33 @@ function isClosedStatus(status: string) {
 function formatRoute(order: OrderResponse) {
   if (!order.route) return 'Tuyến vận chuyển đang được cập nhật';
   return `${order.route.routeCode} - ${order.route.originCity} -> ${order.route.destCity}`;
+}
+
+function formatDistance(meters?: number | null) {
+  if (!meters || meters <= 0) return 'Chưa cập nhật';
+  if (meters >= 1000) return `${(meters / 1000).toFixed(1)} km`;
+  return `${Math.round(meters)} m`;
+}
+
+function formatDuration(seconds?: number | null) {
+  if (!seconds || seconds <= 0) return 'Chưa cập nhật';
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} phút`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes > 0 ? `${hours} giờ ${remainingMinutes} phút` : `${hours} giờ`;
+}
+
+function getStopSummary(stop: TripRouteResponse['optimizedStops'][number]) {
+  const orderCount = stop.orders.length;
+  const lpnCount = stop.lpns.length;
+
+  if (orderCount > 0 && lpnCount > 0) {
+    return `${orderCount} đơn hàng · ${lpnCount} LPN`;
+  }
+  if (orderCount > 0) return `${orderCount} đơn hàng`;
+  if (lpnCount > 0) return `${lpnCount} LPN`;
+  return 'Điểm dừng trong tuyến dự kiến';
 }
 
 function translateStatus(status: string) {

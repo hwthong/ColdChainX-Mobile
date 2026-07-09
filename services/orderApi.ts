@@ -86,6 +86,7 @@ export interface OrderResponse {
   actualCbm?: number | null;
   cargoValue: number;
   status: string;
+  masterTripId?: string | null;
   createdAt?: string | null;
   route?: OrderRouteResponse | null;
   destination?: OrderLocationResponse | null;
