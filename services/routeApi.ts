@@ -16,6 +16,29 @@ export interface RouteOptionsQuery {
   destCity?: string;
 }
 
+/** Một lịch khởi hành trong tuần, trả về từ GET /api/routes/{routeId}/booking-options */
+export interface ScheduleOptionDto {
+  scheduleId: string;
+  scheduleName: string;
+  /** 1 = Thứ 2, ..., 7 = CN */
+  dayOfWeek: number;
+  departureTime: string;
+  cutOffTime: string;
+}
+
+/** Một điểm giao hàng thuộc tuyến, trả về từ GET /api/routes/{routeId}/booking-options */
+export interface StopOptionDto {
+  stopId: string;
+  stopName: string;
+}
+
+/** Toàn bộ options cần thiết để Customer tạo đơn cho 1 tuyến */
+export interface RouteBookingOptionsDto {
+  routeId: string;
+  availableSchedules: ScheduleOptionDto[];
+  availableStops: StopOptionDto[];
+}
+
 export function getRouteOptions(query: RouteOptionsQuery = {}) {
   const params = new URLSearchParams();
 
@@ -34,5 +57,16 @@ export function getRouteOptions(query: RouteOptionsQuery = {}) {
     {
       method: 'GET',
     }
+  );
+}
+
+/**
+ * Lấy schedules và stops của 1 tuyến — dùng để hiện dropdown chọn lịch & điểm giao.
+ * Customer phải chọn scheduleId + stopId từ kết quả này trước khi tạo đơn.
+ */
+export function getRouteBookingOptions(routeId: string) {
+  return apiRequest<ApiResponse<RouteBookingOptionsDto>>(
+    `/api/routes/${encodeURIComponent(routeId)}/booking-options`,
+    { method: 'GET' }
   );
 }

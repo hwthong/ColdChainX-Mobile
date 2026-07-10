@@ -11,13 +11,19 @@ export interface CreateOrderPayload {
   widthCm: number;
   heightCm: number;
   destAddressText: string;
-  routeId: string;
-  image: {
+  /** UUID của RouteSchedule — backend tự suy ra routeId từ schedule này */
+  scheduleId: string;
+  /** UUID của RouteStop thuộc tuyến đã chọn */
+  dropoffStopId: string;
+  hasStrongOdor?: boolean;
+  isStackable?: boolean;
+  cargoPhoto: {
     uri: string;
     mimeType?: string;
     fileName?: string;
   };
 }
+
 
 export interface OrderLocationResponse {
   locationId: string;
@@ -134,20 +140,24 @@ export function createOrder(accessToken: string, data: CreateOrderPayload) {
   formData.append('Width_CM', String(data.widthCm));
   formData.append('Height_CM', String(data.heightCm));
   formData.append('Dest_Address_Text', data.destAddressText);
-  formData.append('Route_ID', data.routeId);
+  formData.append('Schedule_ID', data.scheduleId);
+  formData.append('Dropoff_Stop_ID', data.dropoffStopId);
+  formData.append('Has_Strong_Odor', String(data.hasStrongOdor ?? false));
+  formData.append('Is_Stackable', String(data.isStackable ?? true));
 
-  formData.append('DocumentImage', {
-    uri: data.image.uri,
-    name: data.image.fileName || 'cargo.jpg',
-    type: data.image.mimeType || 'image/jpeg',
+  formData.append('Cargo_Photos', {
+    uri: data.cargoPhoto.uri,
+    name: data.cargoPhoto.fileName || 'cargo.jpg',
+    type: data.cargoPhoto.mimeType || 'image/jpeg',
   } as any);
 
   if (__DEV__) {
     console.log('[orderApi] create order payload', {
+      Schedule_ID: data.scheduleId,
+      Dropoff_Stop_ID: data.dropoffStopId,
       Packaging_Type: data.packagingType,
       Quantity: data.quantity,
-      Route_ID: data.routeId,
-      HasDocumentImage: Boolean(data.image.uri),
+      HasCargoPhoto: Boolean(data.cargoPhoto.uri),
     });
   }
 
@@ -155,12 +165,13 @@ export function createOrder(accessToken: string, data: CreateOrderPayload) {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
-      // Do not manually set Content-Type to multipart/form-data. 
+      // Do not manually set Content-Type to multipart/form-data.
       // fetch will do it automatically and add the boundary.
     },
     body: formData,
   });
 }
+
 
 export function getCustomerOrders(accessToken: string, customerId: string, page = 1, size = 10) {
   return apiRequest<ApiResponse<PagedResult<OrderResponse>>>(

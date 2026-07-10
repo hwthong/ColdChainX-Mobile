@@ -5,6 +5,7 @@ import {
   RefreshControl,
   ScrollView,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,6 +20,7 @@ import { getCustomerOrders, OrderResponse } from '../../services/orderApi';
 import {
   getPlannedTripRoute,
   getTrackingByTripId,
+  sanitizeTripId,
   TrackingDataResponse,
   TripRouteResponse,
 } from '../../services/trackingApi';
@@ -48,6 +50,7 @@ export default function TrackingScreen() {
   const [plannedRoute, setPlannedRoute] = useState<TripRouteResponse | null>(null);
   const [routeError, setRouteError] = useState<string | null>(null);
   const [isRouteLoading, setIsRouteLoading] = useState(false);
+  const [devTripId, setDevTripId] = useState('');
 
   const activeOrder = useMemo(() => {
     return orders.find((order) => !isClosedStatus(order.status)) ?? orders[0] ?? null;
@@ -70,6 +73,8 @@ export default function TrackingScreen() {
     () => getMockDeliveryFlow(activeOrder?.status ?? 'PENDING_REVIEW', activeOrder?.destination?.address),
     [activeOrder?.destination?.address, activeOrder?.status]
   );
+
+  const canUseDevTripFallback = __DEV__ && !activeOrder?.masterTripId && Boolean(accessToken && customerId && error);
 
   const fetchTrackingData = useCallback(async () => {
     if (!accessToken || !customerId) {
@@ -145,11 +150,25 @@ export default function TrackingScreen() {
     } catch (err) {
       console.log('Error fetching planned trip route', err);
       setPlannedRoute(null);
-      setRouteError('Không thể tải tuyến đường dự kiến.');
+      setRouteError(getApiErrorMessage(err));
     } finally {
       setIsRouteLoading(false);
     }
   }, [accessToken]);
+
+  const fetchDevTripRoute = useCallback(() => {
+    const tripId = sanitizeTripId(devTripId);
+
+    if (!tripId) {
+      setPlannedRoute(null);
+      setRouteError('TripId không hợp lệ. Vui lòng nhập UUID của chuyến.');
+      return;
+    }
+
+    setDevTripId(tripId);
+    setTrackingData(null);
+    fetchPlannedRoute(tripId);
+  }, [devTripId, fetchPlannedRoute]);
 
   React.useEffect(() => {
     if (activeOrder?.masterTripId) {
@@ -203,20 +222,34 @@ export default function TrackingScreen() {
         </View>
       ) : null}
 
+      {/* DEV ONLY - remove after customer orders API fixed */}
+      {canUseDevTripFallback ? (
+        <DevTripRouteFallback
+          tripId={devTripId}
+          onTripIdChange={setDevTripId}
+          onLoadRoute={fetchDevTripRoute}
+          route={plannedRoute}
+          routeError={routeError}
+          isRouteLoading={isRouteLoading}
+        />
+      ) : null}
+
       {!activeOrder ? (
-        <View className="items-center justify-center rounded-3xl bg-white p-8">
-          <Ionicons name="locate-outline" size={56} color="#877369" />
-          <Text className="mt-4 text-center text-base font-bold text-[#3A1F04]">Chưa có đơn để giám sát</Text>
-          <Text className="mt-2 text-center text-sm leading-6 text-[#877369]">
-            Khi bạn tạo đơn vận chuyển, trạng thái và cảnh báo sẽ xuất hiện tại đây.
-          </Text>
-          <Pressable
-            onPress={() => router.push('/(customer)/create-order')}
-            className="mt-5 rounded-xl bg-[#8B4513] px-5 py-3"
-          >
-            <Text className="font-bold text-white">Tạo đơn mới</Text>
-          </Pressable>
-        </View>
+        canUseDevTripFallback ? null : (
+          <View className="items-center justify-center rounded-3xl bg-white p-8">
+            <Ionicons name="locate-outline" size={56} color="#877369" />
+            <Text className="mt-4 text-center text-base font-bold text-[#3A1F04]">Chưa có đơn để giám sát</Text>
+            <Text className="mt-2 text-center text-sm leading-6 text-[#877369]">
+              Khi bạn tạo đơn vận chuyển, trạng thái và cảnh báo sẽ xuất hiện tại đây.
+            </Text>
+            <Pressable
+              onPress={() => router.push('/(customer)/create-order')}
+              className="mt-5 rounded-xl bg-[#8B4513] px-5 py-3"
+            >
+              <Text className="font-bold text-white">Tạo đơn mới</Text>
+            </Pressable>
+          </View>
+        )
       ) : (
         <>
           <View className="rounded-3xl bg-[#3A1F04] p-5">
@@ -360,6 +393,81 @@ export default function TrackingScreen() {
         </>
       )}
     </ScrollView>
+  );
+}
+
+function DevTripRouteFallback({
+  tripId,
+  onTripIdChange,
+  onLoadRoute,
+  route,
+  routeError,
+  isRouteLoading,
+}: {
+  tripId: string;
+  onTripIdChange: (value: string) => void;
+  onLoadRoute: () => void;
+  route: TripRouteResponse | null;
+  routeError: string | null;
+  isRouteLoading: boolean;
+}) {
+  const canLoadRoute = Boolean(tripId.trim()) && !isRouteLoading;
+
+  return (
+    <SectionCard title="TripId test" icon="map-outline">
+      <View className="gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+        <Text className="text-sm font-semibold leading-5 text-amber-900">
+          DEV ONLY - remove after customer orders API fixed
+        </Text>
+        <Text className="text-xs font-medium leading-5 text-amber-800">
+          Nhập tripId thủ công để test Goong map khi API customer orders đang lỗi schema.
+        </Text>
+      </View>
+
+      <View className="gap-2">
+        <Text className="text-xs font-bold uppercase tracking-wider text-[#877369]">TripId test</Text>
+        <TextInput
+          value={tripId}
+          onChangeText={onTripIdChange}
+          placeholder="Nhập tripId"
+          placeholderTextColor="#B8A79E"
+          autoCapitalize="none"
+          autoCorrect={false}
+          className="rounded-2xl border border-[#DAC2B6]/70 bg-[#FFFDFB] px-4 py-3 font-semibold text-[#3A1F04]"
+        />
+      </View>
+
+      <Pressable
+        onPress={onLoadRoute}
+        disabled={!canLoadRoute}
+        className={`flex-row items-center justify-center gap-2 rounded-2xl px-4 py-3 ${
+          canLoadRoute ? 'bg-[#8B4513]' : 'bg-[#C8B7AE]'
+        }`}
+      >
+        {isRouteLoading ? <ActivityIndicator color="#FFFFFF" /> : <Ionicons name="map-outline" size={18} color="#FFFFFF" />}
+        <Text className="font-bold text-white">{isRouteLoading ? 'Đang tải route...' : 'Tải route test'}</Text>
+      </Pressable>
+
+      {routeError ? (
+        <View className="rounded-2xl border border-red-200 bg-red-50 p-4">
+          <Text className="text-sm font-semibold leading-5 text-red-700">{routeError}</Text>
+        </View>
+      ) : null}
+
+      {route ? (
+        <>
+          <View className="gap-2 rounded-2xl bg-[#F8F9FA] p-4">
+            <InfoRow label="TripId" value={route.tripId || tripId.trim()} />
+            <InfoRow label="Điểm đi" value={route.origin?.address || 'Chưa cập nhật'} />
+            <InfoRow label="Điểm đến" value={route.destination?.address || 'Chưa cập nhật'} />
+            <InfoRow label="Khoảng cách" value={formatDistance(route.totalDistanceMeters)} />
+            <InfoRow label="Thời gian dự kiến" value={formatDuration(route.totalDurationSeconds)} />
+          </View>
+          <GoongRouteMap route={route} />
+          <RouteStopsList route={route} />
+        </>
+      ) : null}
+    </SectionCard>
   );
 }
 

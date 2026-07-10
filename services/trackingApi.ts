@@ -1,5 +1,7 @@
 import { apiRequest } from './apiClient';
 
+const TRIP_ID_PATTERN = /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/;
+
 export interface TrackingOrderDto {
   orderId: string;
   trackingCode: string;
@@ -110,8 +112,13 @@ export function getTrackingByTripId(accessToken: string, tripId: string) {
 }
 
 export async function getPlannedTripRoute(accessToken: string, tripId: string) {
+  const sanitizedTripId = sanitizeTripId(tripId);
+  if (!sanitizedTripId) {
+    throw new Error('TripId không hợp lệ. Vui lòng nhập UUID của chuyến.');
+  }
+
   const response = await apiRequest<ApiResponse<unknown>>(
-    `/api/Dispatch/trip/${encodeURIComponent(tripId)}/route`,
+    `/api/Dispatch/trip/${encodeURIComponent(sanitizedTripId)}/route`,
     {
       method: 'GET',
       headers: {
@@ -124,6 +131,11 @@ export async function getPlannedTripRoute(accessToken: string, tripId: string) {
     ...response,
     data: normalizeTripRoute(response.data),
   } satisfies ApiResponse<TripRouteResponse>;
+}
+
+export function sanitizeTripId(value: string) {
+  const uuidMatch = value.match(TRIP_ID_PATTERN);
+  return uuidMatch?.[0] ?? '';
 }
 
 function normalizeTripRoute(value: unknown): TripRouteResponse | null {
