@@ -74,7 +74,10 @@ export default function TrackingScreen() {
     [activeOrder?.destination?.address, activeOrder?.status]
   );
 
-  const canUseDevTripFallback = __DEV__ && !activeOrder?.masterTripId && Boolean(accessToken && customerId && error);
+  const canUseDevTripFallback =
+    __DEV__ &&
+    Boolean(accessToken && customerId) &&
+    (!activeOrder?.masterTripId || Boolean(error));
 
   const fetchTrackingData = useCallback(async () => {
     if (!accessToken || !customerId) {

@@ -243,8 +243,6 @@ export function acceptQuotation(accessToken: string, quoteId: string, customerId
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
-    body: {
-      Customer_ID: customerId,
-    },
+    body: {},
   });
 }
