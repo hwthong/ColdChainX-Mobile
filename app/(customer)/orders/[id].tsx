@@ -1071,6 +1071,8 @@ function getStatusColor(status: string) {
       return { container: 'bg-amber-100 border-amber-200', text: 'text-amber-800' };
     case 'RETURN_PENDING':
       return { container: 'bg-red-100 border-red-200', text: 'text-red-800' };
+    case 'LOADING':
+      return { container: 'bg-blue-100 border-blue-200', text: 'text-blue-800' };
     case 'IN_TRANSIT':
       return { container: 'bg-purple-100 border-purple-200', text: 'text-purple-800' };
     case 'ACCEPTED':
@@ -1117,6 +1119,8 @@ function translateStatus(status: string) {
       return 'Đang nhập kho';
     case 'ASSIGNED':
       return 'Đã phân xe';
+    case 'LOADING':
+      return 'Đang chuẩn bị xuất kho';
     case 'IN_TRANSIT':
       return 'Đang giao';
     case 'ACCEPTED':

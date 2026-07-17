@@ -989,6 +989,7 @@ function translateStatus(status: string) {
     case 'PENDING':
     case 'PENDING_REVIEW': return 'Chờ duyệt';
     case 'APPROVED': return 'Đã duyệt';
+    case 'LOADING': return 'Đang chuẩn bị xuất kho';
     case 'IN_TRANSIT': return 'Đang giao';
     case 'DELIVERED': return 'Đã giao';
     case 'CANCELLED': return 'Đã hủy';
