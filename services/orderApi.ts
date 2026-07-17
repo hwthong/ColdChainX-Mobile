@@ -130,20 +130,32 @@ export interface ApiResponse<T> {
 
 export function createOrder(accessToken: string, data: CreateOrderPayload) {
   const formData = new FormData();
-  formData.append('Item_Name', data.itemName);
-  formData.append('Category', data.category);
-  formData.append('Temp_Condition', String(data.tempCondition));
-  formData.append('Expected_Weight_KG', String(data.expectedWeightKg));
-  formData.append('Quantity', String(data.quantity));
-  formData.append('Packaging_Type', data.packagingType);
-  formData.append('Length_CM', String(data.lengthCm));
-  formData.append('Width_CM', String(data.widthCm));
-  formData.append('Height_CM', String(data.heightCm));
-  formData.append('Dest_Address_Text', data.destAddressText);
-  formData.append('Schedule_ID', data.scheduleId);
-  formData.append('Dropoff_Stop_ID', data.dropoffStopId);
-  formData.append('Has_Strong_Odor', String(data.hasStrongOdor ?? false));
-  formData.append('Is_Stackable', String(data.isStackable ?? true));
+
+  function appendFormAliases(
+    form: FormData,
+    legacyName: string,
+    propertyName: string,
+    value: string | number | boolean
+  ) {
+    const normalizedValue = String(value);
+    form.append(legacyName, normalizedValue);
+    form.append(propertyName, normalizedValue);
+  }
+
+  appendFormAliases(formData, 'Item_Name', 'ItemName', data.itemName);
+  appendFormAliases(formData, 'Category', 'Category', data.category);
+  appendFormAliases(formData, 'Temp_Condition', 'TempCondition', data.tempCondition);
+  appendFormAliases(formData, 'Expected_Weight_KG', 'ExpectedWeightKg', data.expectedWeightKg);
+  appendFormAliases(formData, 'Quantity', 'Quantity', data.quantity);
+  appendFormAliases(formData, 'Packaging_Type', 'PackagingType', data.packagingType);
+  appendFormAliases(formData, 'Length_CM', 'LengthCm', data.lengthCm);
+  appendFormAliases(formData, 'Width_CM', 'WidthCm', data.widthCm);
+  appendFormAliases(formData, 'Height_CM', 'HeightCm', data.heightCm);
+  appendFormAliases(formData, 'Dest_Address_Text', 'DestAddressText', data.destAddressText);
+  appendFormAliases(formData, 'Schedule_ID', 'ScheduleId', data.scheduleId);
+  appendFormAliases(formData, 'Dropoff_Stop_ID', 'DropoffStopId', data.dropoffStopId);
+  appendFormAliases(formData, 'Has_Strong_Odor', 'HasStrongOdor', data.hasStrongOdor ?? false);
+  appendFormAliases(formData, 'Is_Stackable', 'IsStackable', data.isStackable ?? true);
 
   formData.append('Cargo_Photos', {
     uri: data.cargoPhoto.uri,

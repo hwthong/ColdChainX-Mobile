@@ -28,7 +28,6 @@ import {
   RouteBookingOptionsDto,
   RouteOptionResponse,
   ScheduleOptionDto,
-  StopOptionDto,
 } from '../../services/routeApi';
 import { useAuthStore } from '../../store/useAuthStore';
 
