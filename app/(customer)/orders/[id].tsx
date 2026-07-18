@@ -433,6 +433,24 @@ export default function OrderDetailScreen() {
           </View>
           <StatusBadge status={order.status} />
         </View>
+        {order.masterTripId ? (
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: '/(customer)/tracking',
+                params: { orderId: order.orderId },
+              })
+            }
+            className="flex-row items-center justify-center gap-2 rounded-xl bg-[#8B4513] px-4 py-3"
+          >
+            <Ionicons name="navigate-outline" size={18} color="#FFFFFF" />
+            <Text className="font-bold text-white">Mở giám sát chuyến</Text>
+          </Pressable>
+        ) : (
+          <Text className="text-sm font-medium leading-6 text-[#877369]">
+            Đơn hàng chưa được điều phối vào chuyến.
+          </Text>
+        )}
       </View>
 
       <InfoCard title="Thông tin hàng hóa" icon="cube-outline">
