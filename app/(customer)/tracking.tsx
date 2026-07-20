@@ -112,7 +112,7 @@ export default function TrackingScreen() {
       const response = await getTripTracking(accessToken, currentTripId);
       if (!response.success || !response.data) {
         setTracking(null);
-        setTrackingError(response.message || response.error || 'Không thể tải dữ liệu giám sát hiện tại.');
+        setTrackingError(response.message || 'Không thể tải dữ liệu giám sát hiện tại.');
         return null;
       }
       setTracking(response.data);
@@ -133,7 +133,7 @@ export default function TrackingScreen() {
       const response = await getTripRoute(accessToken, currentTripId);
       if (!response.success || !response.data) {
         setRoute(null);
-        setRouteError(response.message || response.error || 'Không có dữ liệu tuyến đường.');
+        setRouteError(response.message || 'Không có dữ liệu tuyến đường.');
         return;
       }
       setRoute(response.data);
@@ -153,7 +153,7 @@ export default function TrackingScreen() {
       const response = await getTripTemperatureChart(accessToken, currentTripId);
       if (!response.success || !response.data) {
         setChart(null);
-        setChartError(response.message || response.error || 'Không thể tải biểu đồ nhiệt độ.');
+        setChartError(response.message || 'Không thể tải biểu đồ nhiệt độ.');
         return;
       }
       setChart(response.data);
@@ -173,7 +173,7 @@ export default function TrackingScreen() {
       const response = await getTripSmartAlerts(accessToken, currentTripId);
       if (!response.success) {
         setAlerts([]);
-        setAlertsError(response.message || response.error || 'Không thể tải cảnh báo thông minh.');
+        setAlertsError(response.message || 'Không thể tải cảnh báo thông minh.');
         return;
       }
       setAlerts(response.data ?? []);
@@ -358,13 +358,13 @@ function TelemetrySummary({ tracking }: { tracking: TripTracking }) {
   return <View className="gap-3">
     {deviceState === 'Ngoại tuyến' ? <View className="rounded-2xl border border-amber-200 bg-amber-50 p-4"><Text className="text-sm font-semibold text-amber-800">Thiết bị đang ngoại tuyến.</Text></View> : null}
     {telemetry ? <View className="flex-row gap-3">
-      <MetricCard label="Nhiệt độ hiện tại" value={telemetry.temperatureC === null ? '--' : `${formatNumber(telemetry.temperatureC)} °C`} />
-      <MetricCard label="Trạng thái cửa" value={formatDoorState(telemetry.doorOpen)} />
+      <MetricCard label="Nhiệt độ hiện tại" value={telemetry.temperatureC === null || telemetry.temperatureC === undefined ? '--' : `${formatNumber(telemetry.temperatureC)} °C`} />
+      <MetricCard label="Trạng thái cửa" value={formatDoorState(telemetry.doorOpen ?? null)} />
     </View> : null}
     <InfoRow label="Thiết bị" value={deviceState} />
     <InfoRow label="Cập nhật lần cuối" value={formatDateTime(telemetry?.timestamp ?? tracking.device?.lastSeenAt)} />
     <InfoRow label="ETA" value={formatDateTime(tracking.eta?.estimatedArrival)} />
-    <InfoRow label="Biển số xe" value={tracking.vehicle?.plateNumber || '--'} />
+    <InfoRow label="Biển số xe" value={tracking.vehicle?.truckPlate || '--'} />
     <InfoRow label="Trạng thái chuyến" value={tracking.status || '--'} />
   </View>;
 }
@@ -380,7 +380,7 @@ function RouteSummary({ route }: { route: TripRouteResponse }) {
 
 function AlertRow({ alert }: { alert: SmartAlert }) {
   return <View className="gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-4">
-    <View className="flex-row items-start justify-between gap-3"><Text className="flex-1 text-sm font-bold text-amber-900">{alert.type || 'Không xác định'}</Text><Text className="text-xs font-bold uppercase text-amber-800">{alert.severity || 'Không có mức độ'}</Text></View>
+    <View className="flex-row items-start justify-between gap-3"><Text className="flex-1 text-sm font-bold text-amber-900">{alert.title || alert.alertType || 'Không xác định'}</Text></View>
     <Text className="text-sm leading-5 text-amber-900">{alert.message || 'Không có nội dung.'}</Text>
     <Text className="text-xs text-amber-700">{formatDateTime(alert.createdAt)}</Text>
   </View>;

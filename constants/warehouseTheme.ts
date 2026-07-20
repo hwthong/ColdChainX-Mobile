@@ -139,6 +139,30 @@ export const STATUS_STYLES: Record<string, StatusStyle> = {
     border: '#BFDBFE',
     label: 'Đang giao',
   },
+  IN_TRANSIT: {
+    bg: '#ECFEFF',
+    text: '#0E7490',
+    border: '#A5F3FC',
+    label: 'Đang di chuyển',
+  },
+  DELAYED: {
+    bg: '#FFF7ED',
+    text: '#C2410C',
+    border: '#FED7AA',
+    label: 'Bị trễ',
+  },
+  COMPLETED: {
+    bg: '#F0FDF4',
+    text: '#166534',
+    border: '#BBF7D0',
+    label: 'Hoàn thành',
+  },
+  CANCELLED: {
+    bg: '#FEF2F2',
+    text: '#991B1B',
+    border: '#FECACA',
+    label: 'Đã hủy',
+  },
 } as const;
 
 /** Message tone colors used by AppMessage component */
