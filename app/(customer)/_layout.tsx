@@ -13,6 +13,8 @@ export default function CustomerLayout() {
             'create-order': 'Tạo đơn hàng',
             status: 'Trạng thái đơn',
             tracking: 'Giám sát đơn',
+            chat: 'Trao đổi',
+            'chat/[orderId]': 'Tin nhắn đơn hàng',
             profile: 'Hồ sơ cá nhân',
             notifications: 'Thông báo',
             'schedule-delivery': 'Đặt lịch giao',
@@ -69,6 +71,19 @@ export default function CustomerLayout() {
         options={{
           title: 'Cá nhân',
           tabBarIcon: ({ color }) => <Ionicons name="person-outline" size={24} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="chat"
+        options={{
+          title: 'Trao đổi',
+          tabBarIcon: ({ color }) => <Ionicons name="chatbubbles-outline" size={24} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="chat/[orderId]"
+        options={{
+          href: null,
         }}
       />
       <Tabs.Screen

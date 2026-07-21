@@ -9,7 +9,7 @@ import { getApiErrorMessage } from '../../services/apiClient';
 import { getCustomerIdFromToken } from '../../services/jwt';
 import {
   getTripRoute,
-  getTripSmartAlerts,
+  getTripAlerts,
   getTripTemperatureChart,
   getTripTracking,
   SmartAlert,
@@ -20,7 +20,8 @@ import { getCustomerOrders, OrderResponse } from '../../services/orderApi';
 import { TripRouteResponse } from '../../services/trackingApi';
 import { useAuthStore } from '../../store/useAuthStore';
 
-const POLLING_INTERVAL_MS = 20_000;
+const POLLING_INTERVAL_MS = 15_000;
+const MAX_POLLING_INTERVAL_MS = 60_000;
 const TERMINAL_TRIP_STATUSES = new Set(['COMPLETED', 'CANCELLED']);
 
 export default function TrackingScreen() {
@@ -170,7 +171,7 @@ export default function TrackingScreen() {
     setAreAlertsLoading(true);
     try {
       setAlertsError(null);
-      const response = await getTripSmartAlerts(accessToken, currentTripId);
+      const response = await getTripAlerts(accessToken, currentTripId);
       if (!response.success) {
         setAlerts([]);
         setAlertsError(response.message || 'Không thể tải cảnh báo thông minh.');
@@ -205,6 +206,8 @@ export default function TrackingScreen() {
     let pollingTimer: ReturnType<typeof setTimeout> | null = null;
     let pollingInFlight = false;
     let terminalReached = false;
+    let consecutiveFailures = 0;
+    let successfulPolls = 0;
     let currentAppState = AppState.currentState;
     const clearTimer = () => {
       if (pollingTimer) clearTimeout(pollingTimer);
@@ -217,8 +220,21 @@ export default function TrackingScreen() {
       pollingInFlight = false;
       terminalReached = isTerminalTripStatus(nextTracking?.status);
       if (disposed || terminalReached) return;
+      if (nextTracking) {
+        consecutiveFailures = 0;
+        successfulPolls += 1;
+        if (successfulPolls % 3 === 0) {
+          void Promise.all([loadChart(tripId), loadAlerts(tripId)]);
+        }
+      } else {
+        consecutiveFailures += 1;
+      }
       clearTimer();
-      pollingTimer = setTimeout(() => void poll(false), POLLING_INTERVAL_MS);
+      const nextDelay = Math.min(
+        POLLING_INTERVAL_MS * 2 ** consecutiveFailures,
+        MAX_POLLING_INTERVAL_MS
+      );
+      pollingTimer = setTimeout(() => void poll(false), nextDelay);
     };
 
     void Promise.all([loadRoute(tripId), loadChart(tripId), loadAlerts(tripId)]);
@@ -272,6 +288,16 @@ export default function TrackingScreen() {
       {activeOrder ? (
         <>
           <OrderHeader order={activeOrder} />
+          <Pressable
+            onPress={() => router.push({
+              pathname: '/(customer)/chat/[orderId]',
+              params: { orderId: activeOrder.orderId, trackingCode: activeOrder.trackingCode },
+            } as never)}
+            className="flex-row items-center justify-center gap-2 rounded-2xl border border-[#DAC2B6]/60 bg-white p-4"
+          >
+            <Ionicons name="chatbubbles-outline" size={20} color="#8B4513" />
+            <Text className="font-bold text-[#8B4513]">Trao đổi về đơn hàng</Text>
+          </Pressable>
           {!tripId ? (
             <SectionCard title="Giám sát chuyến" icon="locate-outline">
               <EmptyMessage message="Đơn hàng chưa được điều phối vào chuyến." />
@@ -280,7 +306,15 @@ export default function TrackingScreen() {
             <>
               <SectionCard title="Bản đồ tuyến đường" icon="map-outline">
                 {isRouteLoading ? <SectionLoader /> : routeError ? <ErrorCard message={routeError} onRetry={() => loadRoute(tripId)} /> : route ? (
-                  <><RouteSummary route={route} /><GoongRouteMap route={route} vehiclePosition={getVehiclePosition(tracking)} /></>
+                  <>
+                    <RouteSummary route={route} />
+                    <GoongRouteMap route={route} vehiclePosition={getVehiclePosition(tracking)} />
+                    {!getVehiclePosition(tracking) ? (
+                      <Text className="text-center text-sm font-medium text-[#877369]">
+                        Chưa nhận được vị trí từ thiết bị.
+                      </Text>
+                    ) : null}
+                  </>
                 ) : <EmptyMessage message="Chưa có dữ liệu tuyến đường." />}
               </SectionCard>
               <SectionCard title="Dữ liệu hiện tại" icon="thermometer-outline">
@@ -362,6 +396,7 @@ function TelemetrySummary({ tracking }: { tracking: TripTracking }) {
       <MetricCard label="Trạng thái cửa" value={formatDoorState(telemetry.doorOpen ?? null)} />
     </View> : null}
     <InfoRow label="Thiết bị" value={deviceState} />
+    <InfoRow label="Mã thiết bị" value={tracking.device?.deviceCode || '--'} />
     <InfoRow label="Cập nhật lần cuối" value={formatDateTime(telemetry?.timestamp ?? tracking.device?.lastSeenAt)} />
     <InfoRow label="ETA" value={formatDateTime(tracking.eta?.estimatedArrival)} />
     <InfoRow label="Biển số xe" value={tracking.vehicle?.truckPlate || '--'} />
@@ -375,6 +410,7 @@ function RouteSummary({ route }: { route: TripRouteResponse }) {
     <InfoRow label="Điểm giao" value={route.destination?.address || '--'} />
     <InfoRow label="Điểm dừng" value={String(route.optimizedStops.length)} />
     <InfoRow label="Khoảng cách" value={formatDistance(route.totalDistanceMeters)} />
+    <InfoRow label="Thời gian dự kiến" value={formatDuration(route.totalDurationSeconds)} />
   </View>;
 }
 
@@ -436,6 +472,7 @@ function getDeviceState(tracking: TripTracking) {
 function formatDoorState(value: boolean | null) { return value === true ? 'Đang mở' : value === false ? 'Đang đóng' : '--'; }
 function formatDateTime(value?: string | null) { if (!value) return '--'; const date = new Date(value); return Number.isNaN(date.getTime()) ? '--' : date.toLocaleString('vi-VN'); }
 function formatDistance(value: number) { if (!Number.isFinite(value) || value <= 0) return '--'; return value >= 1000 ? `${formatNumber(value / 1000)} km` : `${Math.round(value)} m`; }
+function formatDuration(value: number) { if (!Number.isFinite(value) || value <= 0) return '--'; const minutes = Math.round(value / 60); const hours = Math.floor(minutes / 60); const remaining = minutes % 60; return hours > 0 ? `${hours} giờ ${remaining} phút` : `${minutes} phút`; }
 function formatNumber(value: number) { return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 1 }).format(value); }
 function isValidLatitude(value: number | null | undefined): value is number { return typeof value === 'number' && Number.isFinite(value) && value >= -90 && value <= 90; }
 function isValidLongitude(value: number | null | undefined): value is number { return typeof value === 'number' && Number.isFinite(value) && value >= -180 && value <= 180; }
