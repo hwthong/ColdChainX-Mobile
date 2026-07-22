@@ -152,6 +152,7 @@ export function getMobileRoleFromBackend(role: AuthUserDto['role']): UserRole | 
 
   if (
     normalizedRole === 'WAREHOUSE' ||
+    normalizedRole === 'WAREHOUSEOPERATOR' ||
     normalizedRole === 'WAREHOUSEWORKER' ||
     normalizedRole === 'WAREHOUSESTAFF' ||
     normalizedRole === 'WAREHOUSEMONITOR' ||

@@ -1,4 +1,5 @@
 import { apiRequest, buildApiUrl } from './apiClient';
+import type { PagedResult } from './pagination';
 
 export type LpnState =
   | 'EXPECTED'
@@ -7,8 +8,13 @@ export type LpnState =
   | 'RETURN_PENDING'
   | 'IN_STOCK'
   | 'ALLOCATED'
-  | 'PICKED'
-  | 'SHIPPED';
+  | 'LOADING'
+  | 'LOADING_COMPLETED'
+  | 'RELEASED'
+  | 'SHIPPING'
+  | 'DELETED'
+  | 'DELIVERED'
+  | 'DELIVERY_RETURNED';
 
 export interface LpnDto {
   lpnId: string;
@@ -23,7 +29,7 @@ export interface LpnDto {
   quantity: number;
   expectedWeightKg: number;
   actualWeightKg: number;
-  state: string;
+  state: LpnState;
   condition?: string | null;
   inboundTime?: string | null;
   slaDeadline?: string | null;
@@ -44,15 +50,19 @@ export interface LpnDocumentsResponse {
 type LpnListParams = {
   status?: LpnState | '';
   keyword?: string;
+  pageNumber?: number;
+  pageSize?: number;
 };
 
 export function getInventoryLpns(accessToken: string | null, params: LpnListParams = {}) {
   const query = new URLSearchParams();
   if (params.status) query.set('status', params.status);
   if (params.keyword) query.set('keyword', params.keyword);
+  query.set('pageNumber', String(params.pageNumber ?? 1));
+  query.set('pageSize', String(params.pageSize ?? 10));
   const suffix = query.toString() ? `?${query.toString()}` : '';
 
-  return apiRequest<LpnDto[]>(`/api/Inventory/lpns${suffix}`, {
+  return apiRequest<PagedResult<LpnDto>>(`/api/Inventory/lpns${suffix}`, {
     headers: accessToken ? getAuthHeaders(accessToken) : undefined,
   });
 }

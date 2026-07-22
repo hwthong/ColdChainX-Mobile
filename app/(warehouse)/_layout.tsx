@@ -7,10 +7,10 @@ import { WH_COLORS } from '../../constants/warehouseTheme';
 
 const TITLE_MAP: Record<string, string> = {
   home: 'ColdChainX',
-  inbound: 'Nhập kho',
+  inbound: 'Tiếp nhận',
   outbound: 'Xuất kho',
-  receipts: 'Phiếu nhập',
-  inventory: 'Tồn kho',
+  receipts: 'Phiếu nhập kho',
+  inventory: 'Hàng trong kho',
 };
 
 export default function WarehouseLayout() {
@@ -19,8 +19,7 @@ export default function WarehouseLayout() {
       screenOptions={{
         header: ({ route }) => {
           const title = TITLE_MAP[route.name] || 'ColdChainX';
-          const showBackButton = route.name !== 'home';
-          return <WarehouseHeader title={title} showBackButton={showBackButton} />;
+          return <WarehouseHeader title={title} />;
         },
         tabBarActiveTintColor: WH_COLORS.primary,
         tabBarInactiveTintColor: WH_COLORS.textSecondary,
@@ -33,19 +32,23 @@ export default function WarehouseLayout() {
           shadowOpacity: 0.03,
           shadowRadius: 20,
         },
+        tabBarLabelStyle: {
+          fontSize: 10,
+          fontWeight: '600',
+        },
       }}
     >
       <Tabs.Screen
         name="home"
         options={{
-          title: 'Trang chủ',
+          title: 'Tổng quan',
           tabBarIcon: ({ color }) => <Ionicons name="home-outline" size={24} color={color} />,
         }}
       />
       <Tabs.Screen
         name="inbound"
         options={{
-          title: 'Nhập kho',
+          title: 'Tiếp nhận',
           tabBarIcon: ({ color }) => <Ionicons name="cube-outline" size={24} color={color} />,
         }}
       />
@@ -59,7 +62,7 @@ export default function WarehouseLayout() {
       <Tabs.Screen
         name="receipts"
         options={{
-          title: 'Phiếu nhập',
+          title: 'Phiếu nhập kho',
           tabBarIcon: ({ color }) => (
             <Ionicons name="document-text-outline" size={24} color={color} />
           ),
@@ -68,7 +71,7 @@ export default function WarehouseLayout() {
       <Tabs.Screen
         name="inventory"
         options={{
-          title: 'Tồn kho',
+          title: 'Hàng trong kho',
           tabBarIcon: ({ color }) => <Ionicons name="layers-outline" size={24} color={color} />,
         }}
       />

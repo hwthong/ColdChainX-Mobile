@@ -1,4 +1,5 @@
 import { apiRequest, buildApiUrl } from './apiClient';
+import type { PagedResult } from './pagination';
 
 export type EvidenceImage = {
   uri: string;
@@ -151,10 +152,13 @@ export function putaway(accessToken: string, payload: PutawayPayload) {
   });
 }
 
-export function getInboundReceipts(accessToken?: string | null) {
-  return apiRequest<InboundReceiptDto[]>('/api/Inbound/receipts', {
-    headers: accessToken ? getAuthHeaders(accessToken) : undefined,
-  });
+export function getInboundReceipts(accessToken?: string | null, pageNumber = 1, pageSize = 10) {
+  return apiRequest<PagedResult<InboundReceiptDto>>(
+    `/api/Inbound/receipts?pageNumber=${pageNumber}&pageSize=${pageSize}`,
+    {
+      headers: accessToken ? getAuthHeaders(accessToken) : undefined,
+    }
+  );
 }
 
 export function getInboundReceiptById(accessToken: string | null, id: string) {

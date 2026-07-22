@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import { useFocusEffect } from 'expo-router';
@@ -25,19 +25,22 @@ export default function WarehouseReceiptsScreen() {
   const [receipts, setReceipts] = useState<InboundReceiptDto[]>([]);
   const [selectedReceipt, setSelectedReceipt] = useState<InboundReceiptDetailDto | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  const loadReceipts = useCallback(async () => {
-    setIsLoading(true);
+  const loadReceipts = useCallback(async (refreshing = false) => {
+    if (refreshing) setIsRefreshing(true);
+    else setIsLoading(true);
     setMessage(null);
 
     try {
       const result = await getInboundReceipts(token);
-      setReceipts(result);
+      setReceipts(result.data);
     } catch (error) {
       setMessage(getApiErrorMessage(error));
     } finally {
-      setIsLoading(false);
+      if (refreshing) setIsRefreshing(false);
+      else setIsLoading(false);
     }
   }, [token]);
 
@@ -63,7 +66,18 @@ export default function WarehouseReceiptsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: WH_COLORS.background }}>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 36 }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 36 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={() => loadReceipts(true)}
+            colors={[WH_COLORS.primary]}
+            tintColor={WH_COLORS.primary}
+          />
+        }
+      >
         {/* Header row */}
         <View style={{ marginBottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <View>
@@ -75,7 +89,7 @@ export default function WarehouseReceiptsScreen() {
             </Text>
           </View>
           <Pressable
-            onPress={loadReceipts}
+            onPress={() => loadReceipts()}
             style={{
               flexDirection: 'row',
               alignItems: 'center',
@@ -92,8 +106,13 @@ export default function WarehouseReceiptsScreen() {
         </View>
 
         {isLoading ? <ActivityIndicator style={{ marginVertical: 16 }} color={WH_COLORS.primary} /> : null}
-        {message ? <AppMessage text={message} tone="error" /> : null}
-        {!isLoading && receipts.length === 0 ? (
+        {message ? (
+          <View style={{ gap: 12 }}>
+            <AppMessage text={message} tone="error" />
+            <AppButton icon="refresh-outline" label="Thử lại" onPress={() => loadReceipts()} variant="secondary" />
+          </View>
+        ) : null}
+        {!isLoading && !message && receipts.length === 0 ? (
           <EmptyState icon="document-text-outline" message="Chưa có phiếu nhập kho." />
         ) : null}
 
@@ -122,10 +141,10 @@ export default function WarehouseReceiptsScreen() {
                     {receipt.orderId}
                   </Text>
                 </View>
-                <StatusBadge status={receipt.status || 'N/A'} showVietnameseLabel />
+                <StatusBadge status={getReceiptTypeLabel(receipt.status)} />
               </View>
               <AppInfoRow label="Thời gian đến" value={formatDateTimeVi(receipt.arrivalTime)} />
-              <AppInfoRow label="Người giao" value={receipt.driverName || 'N/A'} />
+              <AppInfoRow label="Người giao" value={receipt.driverName || 'Chưa cập nhật'} />
               <View style={{ marginTop: 16, flexDirection: 'row', gap: 8 }}>
                 <AppButton icon="eye-outline" label="Chi tiết" onPress={() => openDetail(receipt.receiptId)} compact />
                 <AppButton icon="open-outline" label="Mở PDF" onPress={() => openPdf(receipt.receiptId)} compact variant="secondary" />
@@ -153,9 +172,9 @@ export default function WarehouseReceiptsScreen() {
               Chi tiết phiếu nhập
             </Text>
             <AppInfoRow label="Mã phiếu" value={selectedReceipt.receiptCode} />
-            <AppInfoRow label="Trạng thái" value={selectedReceipt.status || 'N/A'} />
+            <AppInfoRow label="Loại phiếu" value={getReceiptTypeLabel(selectedReceipt.status)} />
             <AppInfoRow label="Đơn hàng" value={selectedReceipt.orderId} />
-            <AppInfoRow label="Người giao" value={selectedReceipt.driverName || 'N/A'} />
+            <AppInfoRow label="Người giao" value={selectedReceipt.driverName || 'Chưa cập nhật'} />
 
             <Text style={{ marginTop: 16, fontSize: 14, fontWeight: '700', color: WH_COLORS.textPrimary }}>
               Danh sách hàng
@@ -179,7 +198,7 @@ export default function WarehouseReceiptsScreen() {
                   <Text style={{ fontWeight: '700', color: WH_COLORS.textPrimary }}>{item.itemName}</Text>
                   <AppInfoRow label="Dự kiến" value={String(item.expectedQuantity)} />
                   <AppInfoRow label="Thực tế" value={String(item.actualQuantity)} />
-                  <AppInfoRow label="Tình trạng" value={item.conditionStatus} />
+                  <AppInfoRow label="Tình trạng" value={getConditionStatusLabel(item.conditionStatus)} />
                 </View>
               ))
             )}
@@ -197,4 +216,18 @@ export default function WarehouseReceiptsScreen() {
       </ScrollView>
     </View>
   );
+}
+
+function getReceiptTypeLabel(status?: string | null) {
+  return status?.trim().toUpperCase() === 'INBOUND' ? 'Phiếu nhập kho' : 'Phiếu kho';
+}
+
+function getConditionStatusLabel(status?: string | null) {
+  const labels: Record<string, string> = {
+    GOOD: 'Đạt',
+    DAMAGED: 'Hư hỏng',
+    DISCREPANCY: 'Có sai lệch',
+  };
+
+  return labels[status?.trim().toUpperCase() ?? ''] ?? 'Chưa xác định';
 }

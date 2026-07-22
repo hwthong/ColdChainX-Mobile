@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -9,8 +9,7 @@ import { AppInfoRow } from '../../components/AppInfoRow';
 import { AppInput } from '../../components/AppInput';
 import { AppMessage } from '../../components/AppMessage';
 import { EmptyState } from '../../components/EmptyState';
-import { StatusBadge } from '../../components/StatusBadge';
-import { WH_COLORS, formatDateTimeVi, type MessageTone } from '../../constants/warehouseTheme';
+import { WH_COLORS, formatDateTimeVi, getStatusStyle, type MessageTone } from '../../constants/warehouseTheme';
 import { getApiErrorMessage } from '../../services/apiClient';
 import { putaway } from '../../services/inboundApi';
 import {
@@ -34,6 +33,22 @@ const STATUS_FILTERS: { label: string; value: LpnState | '' }[] = [
   { label: 'Chờ trả', value: 'RETURN_PENDING' },
 ];
 
+const LPN_STATE_LABELS: Record<LpnState, string> = {
+  EXPECTED: 'Chờ tiếp nhận',
+  RECEIVING: 'Chờ nhập vị trí',
+  DISCREPANCY_HOLD: 'Tạm giữ do sai lệch',
+  RETURN_PENDING: 'Chờ trả hàng',
+  IN_STOCK: 'Đã nhập kho',
+  ALLOCATED: 'Đã phân chuyến',
+  LOADING: 'Chờ bốc lên xe',
+  LOADING_COMPLETED: 'Đã bốc xong',
+  RELEASED: 'Đã xuất kho',
+  SHIPPING: 'Đang giao',
+  DELETED: 'Đã ngừng theo dõi',
+  DELIVERED: 'Đã giao hàng',
+  DELIVERY_RETURNED: 'Đã hoàn hàng',
+};
+
 /** Map for document type Vietnamese labels */
 const DOC_TYPE_LABELS: Record<string, string> = {
   WarehouseReceipt: 'Phiếu nhập kho',
@@ -54,13 +69,15 @@ export default function WarehouseInventoryScreen() {
   const [selectedLpn, setSelectedLpn] = useState<LpnDto | null>(null);
   const [documents, setDocuments] = useState<LpnDocumentDto[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isPuttingAway, setIsPuttingAway] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [putawayLocation, setPutawayLocation] = useState('');
   const [putawayMessage, setPutawayMessage] = useState<{ text: string; tone: MessageTone } | null>(null);
 
-  const loadLpns = useCallback(async () => {
-    setIsLoading(true);
+  const loadLpns = useCallback(async (refreshing = false) => {
+    if (refreshing) setIsRefreshing(true);
+    else setIsLoading(true);
     setMessage(null);
 
     try {
@@ -68,11 +85,12 @@ export default function WarehouseInventoryScreen() {
         status,
         keyword: keyword.trim() || undefined,
       });
-      setLpns(result);
+      setLpns(result.data);
     } catch (error) {
       setMessage(getApiErrorMessage(error));
     } finally {
-      setIsLoading(false);
+      if (refreshing) setIsRefreshing(false);
+      else setIsLoading(false);
     }
   }, [keyword, status, token]);
 
@@ -154,7 +172,7 @@ export default function WarehouseInventoryScreen() {
 
       const latestLpn = await refreshSelectedLpn(currentLpnId, { preservePutawayLocation: true });
       if (normalizeLpnState(latestLpn.state) !== 'RECEIVING') {
-        throw new Error('Chỉ có thể nhập kho khi LPN đang ở trạng thái RECEIVING.');
+        throw new Error('Chỉ có thể nhập kho khi LPN đang chờ nhập vị trí.');
       }
       if (!hasGeneratedWarehouseReceipt(latestLpn) && !hasWarehouseReceiptDocument(documents)) {
         throw new Error('LPN đang chờ tạo phiếu nhập kho. Vui lòng tạo phiếu nhập trước khi nhập vị trí kho.');
@@ -208,7 +226,18 @@ export default function WarehouseInventoryScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: WH_COLORS.background }}>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 36 }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 36 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={() => loadLpns(true)}
+            colors={[WH_COLORS.primary]}
+            tintColor={WH_COLORS.primary}
+          />
+        }
+      >
         {/* Title */}
         <View style={{ marginBottom: 16 }}>
           <Text style={{ fontSize: 24, fontWeight: '700', color: WH_COLORS.textPrimary }}>Tồn kho</Text>
@@ -276,7 +305,7 @@ export default function WarehouseInventoryScreen() {
           </View>
           <View style={{ marginTop: 16 }}>
             <Pressable
-              onPress={loadLpns}
+              onPress={() => loadLpns()}
               style={{
                 flexDirection: 'row',
                 alignItems: 'center',
@@ -295,8 +324,13 @@ export default function WarehouseInventoryScreen() {
         </View>
 
         {isLoading ? <ActivityIndicator style={{ marginVertical: 16 }} color={WH_COLORS.primary} /> : null}
-        {message ? <View style={{ marginTop: 12 }}><AppMessage text={message} tone="error" /></View> : null}
-        {!isLoading && lpns.length === 0 ? (
+        {message ? (
+          <View style={{ marginTop: 12, gap: 12 }}>
+            <AppMessage text={message} tone="error" />
+            <AppButton icon="refresh-outline" label="Thử lại" onPress={() => loadLpns()} variant="secondary" />
+          </View>
+        ) : null}
+        {!isLoading && !message && lpns.length === 0 ? (
           <EmptyState icon="layers-outline" message="Không tìm thấy LPN nào." />
         ) : null}
 
@@ -322,13 +356,13 @@ export default function WarehouseInventoryScreen() {
                   <Text style={{ fontSize: 16, fontWeight: '700', color: WH_COLORS.textPrimary }}>{lpn.lpnCode}</Text>
                   <Text style={{ marginTop: 4, fontSize: 12, color: WH_COLORS.textSecondary }}>{lpn.itemName}</Text>
                 </View>
-                <StatusBadge status={lpn.state} showVietnameseLabel />
+                <LpnStatusBadge state={lpn.state} />
               </View>
               <AppInfoRow label="Số lượng" value={String(lpn.quantity)} />
               <AppInfoRow label="Cân nặng" value={`${lpn.actualWeightKg} / ${lpn.expectedWeightKg} kg`} />
-              <AppInfoRow label="Vị trí" value={lpn.storageLocation || 'N/A'} />
+              <AppInfoRow label="Vị trí" value={lpn.storageLocation || 'Chưa cập nhật'} />
               <AppInfoRow label="Thời gian nhập" value={formatDateTimeVi(lpn.inboundTime)} />
-              {lpn.condition ? <AppInfoRow label="Tình trạng" value={lpn.condition} /> : null}
+              {lpn.condition ? <AppInfoRow label="Tình trạng" value={getConditionLabel(lpn.condition)} /> : null}
             </Pressable>
           ))}
         </View>
@@ -353,9 +387,9 @@ export default function WarehouseInventoryScreen() {
             </Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 8 }}>
               <Text style={{ width: 90, fontSize: 12, fontWeight: '700', color: WH_COLORS.textSecondary }}>Trạng thái</Text>
-              <StatusBadge status={selectedLpn.state} showVietnameseLabel />
+              <LpnStatusBadge state={selectedLpn.state} />
             </View>
-            <AppInfoRow label="Vị trí" value={selectedLpn.storageLocation || 'N/A'} />
+            <AppInfoRow label="Vị trí" value={selectedLpn.storageLocation || 'Chưa cập nhật'} />
             <AppInfoRow label="Hạn SLA" value={formatDateTimeVi(selectedLpn.slaDeadline)} />
 
             {putawayMessage ? (
@@ -428,7 +462,7 @@ export default function WarehouseInventoryScreen() {
               <View style={{ marginTop: 12 }}>
                 <AppMessage
                   tone="success"
-                  text={`Lô hàng đã được nhập kho.\nVị trí: ${selectedLpn.storageLocation || 'N/A'}`}
+                  text={`Lô hàng đã được nhập kho.\nVị trí: ${selectedLpn.storageLocation || 'Chưa cập nhật'}`}
                 />
               </View>
             ) : null}
@@ -460,7 +494,7 @@ export default function WarehouseInventoryScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontWeight: '700', color: WH_COLORS.textPrimary }}>{doc.documentName}</Text>
                     <Text style={{ marginTop: 4, fontSize: 12, color: WH_COLORS.textSecondary }}>
-                      {DOC_TYPE_LABELS[doc.documentType] || doc.documentType}
+                      {DOC_TYPE_LABELS[doc.documentType] || 'Chứng từ khác'}
                     </Text>
                   </View>
                   <Ionicons name="open-outline" size={18} color={WH_COLORS.primary} />
@@ -481,6 +515,37 @@ export default function WarehouseInventoryScreen() {
       </ScrollView>
     </View>
   );
+}
+
+function LpnStatusBadge({ state }: { state: LpnState }) {
+  const style = getStatusStyle(state);
+
+  return (
+    <View
+      style={{
+        borderRadius: 999,
+        borderWidth: 1,
+        borderColor: style.border,
+        backgroundColor: style.bg,
+        paddingHorizontal: 12,
+        paddingVertical: 4,
+      }}
+    >
+      <Text style={{ fontSize: 11, fontWeight: '700', color: style.text }}>
+        {LPN_STATE_LABELS[state] ?? 'Trạng thái chưa xác định'}
+      </Text>
+    </View>
+  );
+}
+
+function getConditionLabel(condition: string) {
+  const labels: Record<string, string> = {
+    GOOD: 'Đạt',
+    DAMAGED: 'Hư hỏng',
+    DISCREPANCY: 'Có sai lệch',
+  };
+
+  return labels[condition.trim().toUpperCase()] ?? 'Chưa xác định';
 }
 
 function normalizeLpnState(state?: string | null) {
