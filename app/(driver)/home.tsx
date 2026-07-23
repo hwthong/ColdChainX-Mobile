@@ -18,10 +18,10 @@ export default function DriverHomeScreen() {
   const loadActiveTrip = async () => {
     try {
       setIsLoading(true);
-      // Fetch trips that are in progress
-      const result = await driverApi.getMyTrips(['IN_TRANSIT', 'SEALED', 'LOADING_COMPLETED', 'PICKING', 'PLANNED'], 1, 1);
-      if (result.data && result.data.length > 0) {
-        setActiveTrip(result.data[0]);
+      const trips = await driverApi.getMyTrips();
+      const active = trips.find(t => ['IN_TRANSIT', 'SEALED', 'LOADING_COMPLETED', 'PICKING', 'PLANNED'].includes(t.status));
+      if (active) {
+        setActiveTrip(active);
       } else {
         setActiveTrip(null);
       }
@@ -65,7 +65,7 @@ export default function DriverHomeScreen() {
             ) : activeTrip ? (
               <View className="mt-3 gap-3">
                 <View className="flex-row items-center justify-between">
-                  <Text className="text-lg font-bold text-amber-900">{activeTrip.vehiclePlate || 'Chưa gán xe'}</Text>
+                  <Text className="text-lg font-bold text-amber-900">{activeTrip.vehicle?.truckPlate || 'Chưa gán xe'}</Text>
                   <Text className="text-xs font-semibold uppercase text-blue-700 bg-blue-100 px-2 py-1 rounded overflow-hidden">
                     {activeTrip.status}
                   </Text>
@@ -73,17 +73,17 @@ export default function DriverHomeScreen() {
 
                 <View className="flex-row items-center gap-2">
                   <Ionicons name="location-outline" size={16} color="#8B4513" />
-                  <Text className="flex-1 text-sm text-amber-900 line-clamp-1" numberOfLines={1}>{activeTrip.originAddress || 'N/A'}</Text>
+                  <Text className="flex-1 text-sm text-amber-900 line-clamp-1" numberOfLines={1}>{activeTrip.stops?.[0]?.address || 'N/A'}</Text>
                 </View>
                 <View className="flex-row items-center gap-2">
                   <Ionicons name="flag-outline" size={16} color="#8B4513" />
-                  <Text className="flex-1 text-sm text-amber-900 line-clamp-1" numberOfLines={1}>{activeTrip.destinationAddress || 'N/A'}</Text>
+                  <Text className="flex-1 text-sm text-amber-900 line-clamp-1" numberOfLines={1}>{activeTrip.stops?.[activeTrip.stops.length - 1]?.address || 'N/A'}</Text>
                 </View>
 
                 <View className="flex-row items-center justify-between border-t border-amber-200/50 pt-3">
                   <Text className="text-sm text-amber-800">{activeTrip.stopCount} điểm dừng</Text>
                   <Text className="text-sm text-amber-800">
-                    IoT: {activeTrip.iotOnline ? '🟢 Online' : '🔴 Offline'}
+                    Khoảng cách: {activeTrip.totalDistanceKm || 0} km
                   </Text>
                 </View>
 

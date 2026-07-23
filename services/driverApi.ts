@@ -18,28 +18,28 @@ export interface ApiResponse<T> {
   errors?: unknown;
 }
 
+export interface DriverTripVehicle {
+  vehicleId: string;
+  truckPlate: string;
+  vehicleType: string;
+}
+
+export interface DriverTripStopSummary {
+  stopSequence: number;
+  address: string;
+  plannedArrivalTime?: string;
+}
+
 export interface DriverTripSummaryResponse {
   tripId: string;
   status: string;
   plannedStartTime?: string;
   plannedEndTime?: string;
-  startedAt?: string;
-  completedAt?: string;
-  driverRole: string;
-  vehicleId?: string;
-  vehiclePlate?: string;
-  originName?: string;
-  originAddress?: string;
-  destinationName?: string;
-  destinationAddress?: string;
+  totalDistanceKm?: number;
+  targetTemperature?: number;
+  vehicle?: DriverTripVehicle;
   stopCount: number;
-  lpnCount: number;
-  totalWeightKg?: number;
-  totalCbm?: number;
-  requiredTemperature?: number;
-  deviceCode?: string;
-  iotOnline?: boolean;
-  sealCode?: string;
+  stops: DriverTripStopSummary[];
 }
 
 export const driverApi = {
@@ -48,25 +48,19 @@ export const driverApi = {
    * Based on GET /api/drivers/me/trips
    */
   getMyTrips: async (
-    statuses?: string[],
-    pageNumber: number = 1,
-    pageSize: number = 20
-  ): Promise<PagedResult<DriverTripSummaryResponse>> => {
+    status?: string
+  ): Promise<DriverTripSummaryResponse[]> => {
     const token = useAuthStore.getState().token;
     if (!token) throw new Error('Not authenticated');
 
-    const params = new URLSearchParams({
-      pageNumber: pageNumber.toString(),
-      pageSize: pageSize.toString(),
-    });
-
-    if (statuses && statuses.length > 0) {
-      statuses.forEach((status) => params.append('statuses', status));
+    const params = new URLSearchParams();
+    if (status) {
+      params.append('status', status);
     }
 
     const endpoint = `/api/drivers/me/trips?${params.toString()}`;
 
-    const response = await apiRequest<ApiResponse<PagedResult<DriverTripSummaryResponse>>>(
+    const response = await apiRequest<ApiResponse<DriverTripSummaryResponse[]>>(
       endpoint,
       {
         method: 'GET',

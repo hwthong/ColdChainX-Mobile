@@ -135,7 +135,17 @@ export default function DriverTripDetailScreen() {
 
       <Section title="Lịch sử nhiệt độ" icon="pulse-outline">{errors.chart ? <ErrorMessage message={errors.chart} onRetry={loadChart} /> : null}{chart ? <TemperatureChart points={chart.points} /> : !errors.chart ? <Empty message="Chưa có dữ liệu nhiệt độ." /> : null}</Section>
       <Section title="Cảnh báo vận hành" icon="notifications-outline">{errors.alerts ? <ErrorMessage message={errors.alerts} onRetry={loadAlerts} /> : null}{!errors.alerts && alerts.length === 0 ? <Empty message="Chưa có cảnh báo cho chuyến này." /> : null}{alerts.map((alert, index) => <View key={alert.alertId || `${alert.createdAt}-${index}`} className="rounded-2xl border border-red-200 bg-red-50 p-4"><Text className="font-bold text-red-900">{alert.title || alert.alertType || 'Cảnh báo'}</Text><Text className="mt-2 text-sm leading-5 text-red-800">{alert.message || 'Không có nội dung.'}</Text><Text className="mt-2 text-xs text-red-700">{formatDateTime(alert.createdAt)}</Text></View>)}</Section>
-      <Section title={`Điểm dừng (${route?.optimizedStops.length ?? 0})`} icon="trail-sign-outline">{route?.optimizedStops.map((stop, index) => <StopRow key={stop.stopId || `${stop.lat}-${stop.lon}-${index}`} stop={stop} index={index} />)}{!route?.optimizedStops.length ? <Empty message="Chưa có điểm dừng." /> : null}</Section>
+      <Section title={`Điểm dừng (${route?.optimizedStops.length ?? 0})`} icon="trail-sign-outline">
+        {route?.optimizedStops.map((stop, index) => (
+          <StopRow 
+            key={stop.stopId || `${stop.lat}-${stop.lon}-${index}`} 
+            stop={stop} 
+            index={index} 
+            onPress={() => router.push(`/(driver)/trips/stop/${stop.stopId}?tripId=${tripId}` as any)}
+          />
+        ))}
+        {!route?.optimizedStops.length ? <Empty message="Chưa có điểm dừng." /> : null}
+      </Section>
     </ScrollView>
   );
 }
@@ -144,7 +154,20 @@ function Section({ title, icon, children }: { title: string; icon: React.Compone
 function Action({ icon, label, danger = false, onPress }: { icon: React.ComponentProps<typeof Ionicons>['name']; label: string; danger?: boolean; onPress: () => void }) { return <Pressable onPress={onPress} className={`flex-1 flex-row items-center justify-center rounded-xl border p-3 ${danger ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-white'}`}><Ionicons name={icon} size={20} color={danger ? '#991B1B' : '#8B4513'} /><Text className={`ml-2 text-sm font-bold ${danger ? 'text-red-900' : 'text-amber-900'}`}>{label}</Text></Pressable>; }
 function Metric({ label, value }: { label: string; value: string }) { return <View className="flex-1 rounded-2xl bg-amber-50 p-4"><Text className="text-xs text-amber-700">{label}</Text><Text className="mt-2 text-lg font-bold text-amber-950">{value}</Text></View>; }
 function InfoRow({ label, value }: { label: string; value: string }) { return <View className="flex-row items-start justify-between gap-4 border-b border-amber-100 pb-2"><Text className="text-sm text-amber-700">{label}</Text><Text className="flex-1 text-right text-sm font-semibold text-amber-950">{value}</Text></View>; }
-function StopRow({ stop, index }: { stop: OptimizedTripStopDto; index: number }) { return <View className="flex-row gap-3"><View className="h-7 w-7 items-center justify-center rounded-full bg-amber-800"><Text className="text-xs font-bold text-white">{stop.optimizedSequence ?? index + 1}</Text></View><View className="flex-1"><Text className="font-semibold text-amber-950">{stop.address || 'Chưa có địa chỉ'}</Text><Text className="mt-1 text-xs text-amber-700">{stop.orders.length} đơn · {stop.lpns.length} LPN</Text></View></View>; }
+function StopRow({ stop, index, onPress }: { stop: OptimizedTripStopDto; index: number; onPress?: () => void }) { 
+  return (
+    <Pressable onPress={onPress} className="flex-row gap-3 items-center" style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
+      <View className="h-7 w-7 items-center justify-center rounded-full bg-amber-800">
+        <Text className="text-xs font-bold text-white">{stop.optimizedSequence ?? index + 1}</Text>
+      </View>
+      <View className="flex-1">
+        <Text className="font-semibold text-amber-950">{stop.address || 'Chưa có địa chỉ'}</Text>
+        <Text className="mt-1 text-xs text-amber-700">{stop.orders.length} đơn · {stop.lpns.length} LPN</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={20} color="#8B4513" />
+    </Pressable>
+  ); 
+}
 function ErrorMessage({ message, onRetry }: { message: string; onRetry: () => void | Promise<unknown> }) { return <View className="rounded-2xl border border-red-200 bg-red-50 p-4"><Text className="text-sm leading-5 text-red-800">{message}</Text><Pressable onPress={() => void onRetry()} className="mt-3 self-start rounded-lg bg-red-800 px-4 py-2"><Text className="font-bold text-white">Thử lại</Text></Pressable></View>; }
 function Empty({ message }: { message: string }) { return <Text className="py-3 text-center text-sm font-medium text-amber-700">{message}</Text>; }
 

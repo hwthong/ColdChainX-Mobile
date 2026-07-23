@@ -17,8 +17,8 @@ export default function DriverTripsScreen() {
   const fetchTrips = async () => {
     try {
       setError('');
-      const result = await driverApi.getMyTrips(undefined, 1, 50);
-      setTrips(result.data);
+      const result = await driverApi.getMyTrips();
+      setTrips(result);
     } catch (err: any) {
       setError(err.message || 'Không thể tải danh sách chuyến đi. Vui lòng thử lại.');
     } finally {
@@ -63,9 +63,9 @@ export default function DriverTripsScreen() {
             <Text className="text-base font-bold text-amber-900">
               Chuyến {item.tripId.substring(0, 8).toUpperCase()}
             </Text>
-            {item.vehiclePlate && (
+            {item.vehicle?.truckPlate && (
               <Text className="mt-1 text-sm font-medium text-amber-700">
-                Xe: {item.vehiclePlate}
+                Xe: {item.vehicle.truckPlate}
               </Text>
             )}
           </View>
@@ -79,13 +79,13 @@ export default function DriverTripsScreen() {
         <View className="mb-1.5 flex-row items-center">
           <Ionicons name="location" size={16} color="#8B4513" className="mr-2" />
           <Text className="ml-2 flex-1 text-sm text-amber-900 line-clamp-1" numberOfLines={1}>
-            {item.originAddress || item.originName || 'Chưa xác định'}
+            {item.stops && item.stops.length > 0 ? item.stops[0].address : 'Chưa xác định'}
           </Text>
         </View>
         <View className="mb-3 flex-row items-center">
           <Ionicons name="flag" size={16} color="#8B4513" className="mr-2" />
           <Text className="ml-2 flex-1 text-sm text-amber-900 line-clamp-1" numberOfLines={1}>
-            {item.destinationAddress || item.destinationName || 'Chưa xác định'}
+            {item.stops && item.stops.length > 1 ? item.stops[item.stops.length - 1].address : 'Chưa xác định'}
           </Text>
         </View>
 
@@ -97,9 +97,9 @@ export default function DriverTripsScreen() {
             </Text>
           </View>
           <View className="items-end">
-            <Text className="text-xs text-amber-700">Hàng hoá</Text>
+            <Text className="text-xs text-amber-700">Hành trình</Text>
             <Text className="mt-1 text-sm font-semibold text-amber-900">
-              {item.stopCount} điểm • {item.lpnCount} kiện
+              {item.stopCount} điểm dừng
             </Text>
           </View>
         </View>
