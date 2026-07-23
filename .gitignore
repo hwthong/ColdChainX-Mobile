@@ -8,6 +8,8 @@ node_modules/
 dist/
 build/
 web-build/
+artifacts/
+*.apk
 expo-env.d.ts
 
 # Native
@@ -39,7 +41,7 @@ Thumbs.db
 # local env files
 .env
 .env.local
-.env*.local
+.env.*.local
 
 # typescript
 *.tsbuildinfo

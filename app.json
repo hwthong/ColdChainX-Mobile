@@ -2,6 +2,7 @@
   "expo": {
     "name": "coldchainx-mobile",
     "slug": "coldchainx-mobile",
+    "owner": "hwthong",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -18,7 +19,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.coldchainxmobile"
+      "package": "com.anonymous.coldchainxmobile",
+      "versionCode": 3
     },
     "web": {
       "output": "static",
@@ -38,11 +40,25 @@
         }
       ],
       "@react-native-community/datetimepicker",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "b93c7ef5-d382-40db-934f-da900ff7a53e"
+      }
     }
   }
 }
