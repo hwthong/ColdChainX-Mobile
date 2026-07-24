@@ -11,6 +11,7 @@ import {
   SmartAlert, TemperatureChart as TemperatureChartData, TripTracking,
 } from '../../../services/monitoringApi';
 import { OptimizedTripStopDto, TripRouteResponse } from '../../../services/trackingApi';
+import { getIncidents, IncidentResponse } from '../../../services/incidentApi';
 import { useAuthStore } from '../../../store/useAuthStore';
 
 const POLL_MS = 15_000;
@@ -31,6 +32,7 @@ export default function DriverTripDetailScreen() {
   const [route, setRoute] = useState<TripRouteResponse | null>(null);
   const [chart, setChart] = useState<TemperatureChartData | null>(null);
   const [alerts, setAlerts] = useState<SmartAlert[]>([]);
+  const [activeIncident, setActiveIncident] = useState<IncidentResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errors, setErrors] = useState<Record<string, string | null>>({});
@@ -78,6 +80,22 @@ export default function DriverTripDetailScreen() {
     } catch (error) { setError('alerts', getApiErrorMessage(error)); }
   }, [setError, token, tripId]);
 
+  const loadIncident = useCallback(async () => {
+    if (!token || !tripId) return;
+    try {
+      const response = await getIncidents(token, tripId, 1, 1);
+      if (response.success && response.data?.data?.length) {
+        // Find first non-resolved incident, or the first one if all are resolved
+        const active = response.data.data.find((i: IncidentResponse) => i.status !== 'RESOLVED');
+        setActiveIncident(active || response.data.data[0]);
+      } else {
+        setActiveIncident(null);
+      }
+    } catch (error) {
+      // It's okay to fail silently for this secondary info
+    }
+  }, [token, tripId]);
+
   useFocusEffect(useCallback(() => {
     if (!token || !tripId) { setError('tracking', 'Thiếu phiên đăng nhập hoặc TripId hợp lệ.'); setLoading(false); return; }
     let disposed = false;
@@ -94,25 +112,25 @@ export default function DriverTripDetailScreen() {
       const current = await loadTracking();
       inFlight = false;
       terminal = Boolean(current?.status && TERMINAL.has(current.status.toUpperCase()));
-      if (current) { failures = 0; successes += 1; if (successes % 3 === 0) void Promise.all([loadChart(), loadAlerts()]); }
+      if (current) { failures = 0; successes += 1; if (successes % 3 === 0) void Promise.all([loadChart(), loadAlerts(), loadIncident()]); }
       else failures += 1;
       setLoading(false);
       if (disposed || terminal) return;
       clear();
       timer = setTimeout(() => void poll(), Math.min(POLL_MS * 2 ** failures, MAX_POLL_MS));
     };
-    void Promise.all([loadRoute(), loadChart(), loadAlerts()]);
+    void Promise.all([loadRoute(), loadChart(), loadAlerts(), loadIncident()]);
     void poll();
     const subscription = AppState.addEventListener('change', (nextState) => {
       appState = nextState;
       if (nextState !== 'active') clear(); else if (!terminal) void poll();
     });
     return () => { disposed = true; clear(); subscription.remove(); };
-  }, [loadAlerts, loadChart, loadRoute, loadTracking, setError, token, tripId]));
+  }, [loadAlerts, loadChart, loadRoute, loadTracking, loadIncident, setError, token, tripId]));
 
   const refresh = useCallback(async () => {
-    setRefreshing(true); await Promise.all([loadTracking(), loadRoute(), loadChart(), loadAlerts()]); setRefreshing(false);
-  }, [loadAlerts, loadChart, loadRoute, loadTracking]);
+    setRefreshing(true); await Promise.all([loadTracking(), loadRoute(), loadChart(), loadAlerts(), loadIncident()]); setRefreshing(false);
+  }, [loadAlerts, loadChart, loadRoute, loadTracking, loadIncident]);
 
   if (loading) return <View className="flex-1 items-center justify-center bg-[#F6F8F2]"><ActivityIndicator size="large" color="#8B4513" /><Text className="mt-4 text-amber-800">Đang tải giám sát chuyến...</Text></View>;
   const vehiclePosition = getVehiclePosition(tracking);
@@ -121,7 +139,15 @@ export default function DriverTripDetailScreen() {
   return (
     <ScrollView className="flex-1 bg-[#F6F8F2]" contentContainerStyle={{ padding: 20, paddingBottom: 100, gap: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#8B4513" />}>
       <View className="flex-row items-start justify-between gap-3"><View className="flex-1"><Text className="text-xs font-bold uppercase tracking-widest text-amber-700">Chuyến vận chuyển</Text><Text className="mt-1 text-2xl font-bold text-amber-950">{tripId?.slice(0, 8).toUpperCase() || '--'}</Text></View><View className="rounded-xl bg-amber-100 px-3 py-2"><Text className="text-xs font-bold text-amber-900">{STATUS[status.toUpperCase()] || status}</Text></View></View>
-      <View className="flex-row gap-3"><Action icon="document-text-outline" label="Chứng từ" onPress={() => router.push(`/(driver)/trips/${tripId}/documents` as never)} /><Action icon="warning-outline" label="Báo sự cố" danger onPress={() => router.push(`/(driver)/trips/${tripId}/incident` as never)} /></View>
+      <View className="flex-row gap-3">
+        <Action icon="document-text-outline" label="Chứng từ" onPress={() => router.push(`/(driver)/trips/${tripId}/documents` as never)} />
+        <Action 
+          icon={activeIncident ? "warning" : "warning-outline"} 
+          label={activeIncident ? "Sự cố đang xử lý" : "Báo sự cố"} 
+          danger 
+          onPress={() => router.push(activeIncident ? `/(driver)/trips/${tripId}/incident-detail?incidentId=${activeIncident.incidentId}` as never : `/(driver)/trips/${tripId}/incident` as never)} 
+        />
+      </View>
 
       <Section title="Bản đồ tuyến đường" icon="map-outline">
         {errors.route ? <ErrorMessage message={errors.route} onRetry={loadRoute} /> : null}
