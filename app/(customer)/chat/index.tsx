@@ -3,10 +3,9 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, AppState, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 
-import { getApiErrorMessage } from '../../../services/apiClient';
+import { getCustomerDataErrorMessage } from '../../../services/apiClient';
 import { ChatMessage, getChatMessages, getChatUnreadCount } from '../../../services/chatApi';
-import { getCustomerIdFromToken } from '../../../services/jwt';
-import { getCustomerOrders, OrderResponse } from '../../../services/orderApi';
+import { getMyCustomerOrders, OrderResponse } from '../../../services/orderApi';
 import { useAuthStore } from '../../../store/useAuthStore';
 
 type Conversation = { order: OrderResponse; lastMessage: ChatMessage | null; unreadCount: number };
@@ -14,33 +13,34 @@ type Conversation = { order: OrderResponse; lastMessage: ChatMessage | null; unr
 export default function CustomerChatListScreen() {
   const router = useRouter();
   const token = useAuthStore((state) => state.token);
-  const storedCustomerId = useAuthStore((state) => state.customerId ?? state.user?.customerId ?? null);
-  const customerId = storedCustomerId ?? (token ? getCustomerIdFromToken(token) : null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async (silent = false) => {
-    if (!token || !customerId) { setError('Không tìm thấy phiên Customer hợp lệ.'); setLoading(false); return; }
+    if (!token) { setConversations([]); setError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'); setLoading(false); return; }
     if (!silent) setError(null);
     try {
-      const ordersResponse = await getCustomerOrders(token, customerId, 1, 30);
+      const ordersResponse = await getMyCustomerOrders(token, 1, 30);
       if (!ordersResponse.success) throw new Error(ordersResponse.message || 'Không thể tải đơn hàng cho Chat.');
       const orders = ordersResponse.data ?? [];
       const rows = await Promise.all(orders.map(async (order): Promise<Conversation> => {
-        const [messagesResult, unreadResult] = await Promise.allSettled([
+        const [messagesResult, unreadResult] = await Promise.all([
           getChatMessages(token, order.orderId, 1, 1), getChatUnreadCount(token, order.orderId),
         ]);
-        const messages = messagesResult.status === 'fulfilled' && messagesResult.value.success ? messagesResult.value.data ?? [] : [];
-        const unread = unreadResult.status === 'fulfilled' && unreadResult.value.success ? unreadResult.value.data?.unreadCount ?? 0 : 0;
+        if (!messagesResult.success || !unreadResult.success) {
+          throw new Error(messagesResult.message || unreadResult.message || 'Không thể tải hội thoại.');
+        }
+        const messages = messagesResult.data ?? [];
+        const unread = unreadResult.data?.unreadCount ?? 0;
         return { order, lastMessage: messages[messages.length - 1] ?? null, unreadCount: unread };
       }));
       rows.sort((left, right) => Date.parse(right.lastMessage?.createdAt ?? right.order.createdAt ?? '') - Date.parse(left.lastMessage?.createdAt ?? left.order.createdAt ?? ''));
       setConversations(rows); setError(null);
-    } catch (loadError) { setError(getApiErrorMessage(loadError)); }
+    } catch (loadError) { setConversations([]); setError(getCustomerDataErrorMessage(loadError)); }
     finally { setLoading(false); setRefreshing(false); }
-  }, [customerId, token]);
+  }, [token]);
 
   useFocusEffect(useCallback(() => {
     let appState = AppState.currentState;

@@ -110,6 +110,20 @@ export function getApiErrorMessage(error: unknown): string {
   return 'Đã có lỗi xảy ra. Vui lòng thử lại.';
 }
 
+export function getCustomerDataErrorMessage(error: unknown): string {
+  if (error instanceof ApiClientError) {
+    if (error.status === 401) {
+      return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+    }
+
+    if (error.status === 403) {
+      return 'Bạn không có quyền truy cập dữ liệu này.';
+    }
+  }
+
+  return 'Không thể tải dữ liệu. Vui lòng thử lại.';
+}
+
 function normalizePath(path: string) {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
 

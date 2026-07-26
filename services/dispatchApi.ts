@@ -52,6 +52,10 @@ export interface ReadyToSealTripDto {
   label?: string | null;
 }
 
+interface ReadyToSealTripApiDto extends ReadyToSealTripDto {
+  allocatedLpns?: number | null;
+}
+
 export interface SealAndDispatchResult {
   tripId: string;
   sealCode: string;
@@ -94,11 +98,16 @@ export function startPickingTrip(accessToken: string, tripId: string) {
   );
 }
 
-export function getTripsReadyToSeal(accessToken: string) {
-  return getAllDispatchPages<ReadyToSealTripDto>(
+export async function getTripsReadyToSeal(accessToken: string) {
+  const trips = await getAllDispatchPages<ReadyToSealTripApiDto>(
     accessToken,
     '/api/Dispatch/trips/ready-to-seal'
   );
+
+  return trips.map(({ allocatedLpns, ...trip }) => ({
+    ...trip,
+    releasedLpns: trip.releasedLpns ?? allocatedLpns,
+  }));
 }
 
 export function sealAndDispatch(accessToken: string, tripId: string, sealCode: string) {

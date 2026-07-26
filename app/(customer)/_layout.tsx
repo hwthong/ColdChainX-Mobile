@@ -13,7 +13,7 @@ export default function CustomerLayout() {
             'create-order': 'Tạo đơn hàng',
             status: 'Trạng thái đơn',
             tracking: 'Giám sát đơn',
-            chat: 'Trao đổi',
+            'chat/index': 'Trao đổi',
             'chat/[orderId]': 'Tin nhắn đơn hàng',
             profile: 'Hồ sơ cá nhân',
             notifications: 'Thông báo',
@@ -74,7 +74,7 @@ export default function CustomerLayout() {
         }}
       />
       <Tabs.Screen
-        name="chat"
+        name="chat/index"
         options={{
           title: 'Trao đổi',
           tabBarIcon: ({ color }) => <Ionicons name="chatbubbles-outline" size={24} color={color} />,

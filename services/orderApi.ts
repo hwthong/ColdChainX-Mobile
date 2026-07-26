@@ -185,9 +185,9 @@ export function createOrder(accessToken: string, data: CreateOrderPayload) {
 }
 
 
-export function getCustomerOrders(accessToken: string, customerId: string, page = 1, size = 10) {
+export function getMyCustomerOrders(accessToken: string, page = 1, size = 10) {
   return apiRequest<ApiResponse<PagedResult<OrderResponse>>>(
-    `/api/customers/${customerId}/orders?pageNumber=${page}&pageSize=${size}`,
+    `/api/customers/my/orders?pageNumber=${page}&pageSize=${size}`,
     {
       method: 'GET',
       headers: {

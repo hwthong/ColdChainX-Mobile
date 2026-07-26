@@ -5,8 +5,7 @@ import { ActivityIndicator, AppState, Pressable, RefreshControl, ScrollView, Tex
 
 import { GoongRouteMap } from '../../components/customer/GoongRouteMap';
 import { TemperatureChart } from '../../components/customer/TemperatureChart';
-import { getApiErrorMessage } from '../../services/apiClient';
-import { getCustomerIdFromToken } from '../../services/jwt';
+import { getApiErrorMessage, getCustomerDataErrorMessage } from '../../services/apiClient';
 import {
   getTripRoute,
   getTripAlerts,
@@ -16,7 +15,7 @@ import {
   TemperatureChart as TemperatureChartData,
   TripTracking,
 } from '../../services/monitoringApi';
-import { getCustomerOrders, OrderResponse } from '../../services/orderApi';
+import { getMyCustomerOrders, OrderResponse } from '../../services/orderApi';
 import { TripRouteResponse } from '../../services/trackingApi';
 import { useAuthStore } from '../../store/useAuthStore';
 
@@ -29,8 +28,6 @@ export default function TrackingScreen() {
   const params = useLocalSearchParams<{ orderId?: string | string[] }>();
   const explicitOrderId = getSingleParam(params.orderId);
   const accessToken = useAuthStore((state) => state.token);
-  const storedCustomerId = useAuthStore((state) => state.customerId ?? state.user?.customerId ?? null);
-  const customerId = storedCustomerId ?? (accessToken ? getCustomerIdFromToken(accessToken) : null);
 
   const [orders, setOrders] = useState<OrderResponse[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -74,15 +71,15 @@ export default function TrackingScreen() {
   const tripId = activeOrder?.masterTripId?.trim() || null;
 
   const loadOrders = useCallback(async () => {
-    if (!accessToken || !customerId) {
+    if (!accessToken) {
       setOrders([]);
-      setOrderError('Không tìm thấy phiên đăng nhập hoặc mã khách hàng. Vui lòng đăng nhập lại.');
+      setOrderError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
       setIsLoading(false);
       return;
     }
     try {
       setOrderError(null);
-      const response = await getCustomerOrders(accessToken, customerId, 1, 50);
+      const response = await getMyCustomerOrders(accessToken, 1, 50);
       if (!response.success) {
         setOrders([]);
         setOrderError(response.message || 'Không thể tải đơn hàng để giám sát.');
@@ -99,11 +96,11 @@ export default function TrackingScreen() {
       );
     } catch (error) {
       setOrders([]);
-      setOrderError(getApiErrorMessage(error));
+      setOrderError(getCustomerDataErrorMessage(error));
     } finally {
       setIsLoading(false);
     }
-  }, [accessToken, customerId]);
+  }, [accessToken]);
 
   const loadTracking = useCallback(async (currentTripId: string, showLoading = false) => {
     if (!accessToken) return null;
@@ -270,7 +267,7 @@ export default function TrackingScreen() {
       refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor="#8B4513" />}
       showsVerticalScrollIndicator={false}>
       {orderError ? <ErrorCard message={orderError} onRetry={loadOrders} /> : null}
-      {explicitOrderMissing ? (
+      {!orderError && explicitOrderMissing ? (
         <EmptyMessage message="Không tìm thấy đơn hàng được yêu cầu trong tài khoản Customer hiện tại." />
       ) : null}
       {shouldShowSelector ? (
@@ -280,7 +277,7 @@ export default function TrackingScreen() {
           onSelect={setSelectedOrderId}
         />
       ) : null}
-      {!activeOrder && !explicitOrderMissing && trackableOrders.length === 0 ? (
+      {!orderError && !activeOrder && !explicitOrderMissing && trackableOrders.length === 0 ? (
         orders.length === 0
           ? <EmptyOrder onCreateOrder={() => router.push('/(customer)/create-order')} />
           : <EmptyMessage message="Chưa có đơn hàng nào được điều phối vào chuyến để giám sát." />

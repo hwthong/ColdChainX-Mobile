@@ -692,6 +692,12 @@ export default function WarehouseOutboundScreen() {
                     label="Xác nhận kẹp chì và xuất kho"
                     onPress={() => void handleSealAndDispatch()}
                     loading={sealingTripId === selectedSealTrip.tripId}
+                    disabled={
+                      normalizeStatus(selectedSealTrip.status) !== 'LOADING_COMPLETED' ||
+                      toNumber(selectedSealTrip.totalLpns) <= 0 ||
+                      toNumber(selectedSealTrip.releasedLpns) !== toNumber(selectedSealTrip.totalLpns) ||
+                      !sealCode.trim()
+                    }
                   />
                 </View>
               ) : null}
