@@ -49,13 +49,13 @@ export interface DriverTripVehicleDto {
 }
 
 export interface DriverTripStopDto {
+  stopId: string;
   stopSequence: number;
   address: string;
-  plannedArrivalTime?: string;
-  plannedDepartureTime?: string;
+  plannedArrivalTime?: string | null;
+  plannedDepartureTime?: string | null;
   status: string;
   stopType: string;
-  // stopId is MISSING from backend (BACKEND GAP)
 }
 
 export interface DriverTripDetailResponseDto {

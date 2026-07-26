@@ -12,7 +12,7 @@ import {
 } from '../../../services/monitoringApi';
 import { OptimizedTripStopDto, TripRouteResponse } from '../../../services/trackingApi';
 import { getIncidents, IncidentResponse } from '../../../services/incidentApi';
-import { driverApi, DriverTripDetailResponseDto } from '../../../services/driverApi';
+import { driverApi, DriverTripDetailResponseDto, DriverTripStopDto } from '../../../services/driverApi';
 import { useAuthStore } from '../../../store/useAuthStore';
 
 const POLL_MS = 15_000;
@@ -22,6 +22,12 @@ const STATUS: Record<string, string> = {
   PLANNED: 'Đã lên kế hoạch', PICKING: 'Đang lấy hàng', LOADING_COMPLETED: 'Đã xếp hàng',
   SEALED: 'Đã kẹp chì', DISPATCHED: 'Đã điều phối', IN_TRANSIT: 'Đang vận chuyển',
   DELAYED: 'Bị trễ', COMPLETED: 'Hoàn tất', CLOSED: 'Đã đóng', CANCELLED: 'Đã hủy',
+};
+const STOP_STATUS: Record<string, string> = {
+  PLANNED: 'Chờ check-in',
+  ARRIVED: 'Đã check-in',
+  DEPARTED: 'Đã rời đi',
+  FAILED_DELIVERY: 'Giao hàng thất bại',
 };
 
 export default function DriverTripDetailScreen() {
@@ -178,15 +184,13 @@ export default function DriverTripDetailScreen() {
         {errors.trip ? <ErrorMessage message={errors.trip} onRetry={loadTrip} /> : null}
         {trip?.stops?.map((stop, index) => (
           <StopRow 
-            key={`${stop.stopSequence}-${index}`} 
-            stop={stop as any} 
+            key={stop.stopId}
+            stop={stop}
             index={index} 
-            onPress={() => {
-              if (__DEV__) {
-                console.warn('[BACKEND GAP]: stopId is missing from getMyTripDetail API. Navigation to stop details is disabled.');
-                alert('[BACKEND GAP]: stopId is missing from API. Action is disabled.');
-              }
-            }}
+            onPress={() => router.push({
+              pathname: '/(driver)/trips/stop/[stopId]',
+              params: { stopId: stop.stopId, tripId },
+            } as never)}
           />
         ))}
         {!trip?.stops?.length ? <Empty message="Chưa có điểm dừng." /> : null}
@@ -199,17 +203,24 @@ function Section({ title, icon, children }: { title: string; icon: React.Compone
 function Action({ icon, label, danger = false, onPress }: { icon: React.ComponentProps<typeof Ionicons>['name']; label: string; danger?: boolean; onPress: () => void }) { return <Pressable onPress={onPress} className={`flex-1 flex-row items-center justify-center rounded-xl border p-3 ${danger ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-white'}`}><Ionicons name={icon} size={20} color={danger ? '#991B1B' : '#8B4513'} /><Text className={`ml-2 text-sm font-bold ${danger ? 'text-red-900' : 'text-amber-900'}`}>{label}</Text></Pressable>; }
 function Metric({ label, value }: { label: string; value: string }) { return <View className="flex-1 rounded-2xl bg-amber-50 p-4"><Text className="text-xs text-amber-700">{label}</Text><Text className="mt-2 text-lg font-bold text-amber-950">{value}</Text></View>; }
 function InfoRow({ label, value }: { label: string; value: string }) { return <View className="flex-row items-start justify-between gap-4 border-b border-amber-100 pb-2"><Text className="text-sm text-amber-700">{label}</Text><Text className="flex-1 text-right text-sm font-semibold text-amber-950">{value}</Text></View>; }
-function StopRow({ stop, index, onPress }: { stop: any; index: number; onPress?: () => void }) { 
+function StopRow({ stop, index, onPress }: { stop: DriverTripStopDto; index: number; onPress: () => void }) {
+  const status = stop.status?.toUpperCase() || 'UNKNOWN';
+  const disabled = !stop.stopId || status === 'DEPARTED';
   return (
-    <Pressable onPress={onPress} className="flex-row gap-3 items-center" style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
+    <Pressable
+      disabled={disabled}
+      onPress={onPress}
+      className="flex-row gap-3 items-center"
+      style={({ pressed }) => ({ opacity: disabled ? 0.5 : pressed ? 0.7 : 1 })}
+    >
       <View className="h-7 w-7 items-center justify-center rounded-full bg-amber-800">
         <Text className="text-xs font-bold text-white">{stop.stopSequence ?? index + 1}</Text>
       </View>
       <View className="flex-1">
         <Text className="font-semibold text-amber-950">{stop.address || 'Chưa có địa chỉ'}</Text>
-        <Text className="mt-1 text-xs text-amber-700 uppercase">{stop.status || 'Chưa xác định'}</Text>
+        <Text className="mt-1 text-xs font-semibold text-amber-700">{STOP_STATUS[status] || 'Chưa xác định'}</Text>
       </View>
-      <Ionicons name="chevron-forward" size={20} color="#8B4513" />
+      {!disabled ? <Ionicons name="chevron-forward" size={20} color="#8B4513" /> : null}
     </Pressable>
   ); 
 }
