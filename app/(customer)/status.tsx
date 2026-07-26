@@ -11,44 +11,33 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
-import { API_BASE_URL, getApiErrorMessage } from '../../services/apiClient';
-import { getCustomerAsns, type AsnResponse } from '../../services/asnApi';
-import { getCustomerIdFromToken } from '../../services/jwt';
-import { getCustomerOrders, OrderResponse } from '../../services/orderApi';
+import { customerApi, CustomerOrderSummaryResponse } from '../../services/customerApi';
 import { useAuthStore } from '../../store/useAuthStore';
+import { ScrollView } from 'react-native';
+
+const TABS = [
+  { key: 'WAITING', label: 'Chờ xử lý' },
+  { key: 'IN_STOCK', label: 'Trong kho' },
+  { key: 'TRANSIT', label: 'Đang giao' },
+  { key: 'DELIVERED', label: 'Đã giao' },
+  { key: 'RETURNED', label: 'Hoàn trả' },
+  { key: 'CANCELLED', label: 'Đã hủy' },
+];
 
 export default function StatusScreen() {
   const router = useRouter();
   const accessToken = useAuthStore((state) => state.token);
-  const storedCustomerId = useAuthStore((state) => state.customerId ?? state.user?.customerId ?? null);
 
-  const [orders, setOrders] = useState<OrderResponse[]>([]);
+  const [activeTab, setActiveTab] = useState(TABS[0].key);
+  const [orders, setOrders] = useState<CustomerOrderSummaryResponse[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [asnsByOrderId, setAsnsByOrderId] = useState<Record<string, AsnResponse>>({});
 
   const fetchOrders = useCallback(async () => {
-    const fallbackCustomerId = accessToken ? getCustomerIdFromToken(accessToken) : null;
-    const resolvedCustomerId = storedCustomerId ?? fallbackCustomerId;
-
-    console.log('[Status] hasToken:', Boolean(accessToken));
-    console.log('[Status] customerId from store:', storedCustomerId);
-    console.log('[Status] customerId from token fallback:', fallbackCustomerId);
-
     if (!accessToken) {
-      setError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+      setError('Phiên đăng nhập đã hết hạn.');
       setOrders([]);
-      setAsnsByOrderId({});
-      setIsLoading(false);
-      setIsRefreshing(false);
-      return;
-    }
-
-    if (!resolvedCustomerId) {
-      setError('Không tìm thấy mã khách hàng. Vui lòng đăng xuất và đăng nhập lại.');
-      setOrders([]);
-      setAsnsByOrderId({});
       setIsLoading(false);
       setIsRefreshing(false);
       return;
@@ -56,35 +45,16 @@ export default function StatusScreen() {
 
     try {
       setError(null);
-      const response = await getCustomerOrders(accessToken, resolvedCustomerId, 1, 10);
-
-      if (response.success) {
-        setOrders(response.data ?? []);
-
-        try {
-          const asnResponse = await getCustomerAsns(accessToken, resolvedCustomerId);
-          const nextAsnsByOrderId = Object.fromEntries(
-            (asnResponse.data ?? []).map((asn) => [asn.orderId, asn])
-          );
-
-          setAsnsByOrderId(nextAsnsByOrderId);
-        } catch (asnError) {
-          console.warn('[Status] Could not load customer ASNs', asnError);
-          setAsnsByOrderId({});
-        }
-      } else {
-        setError(response.message || 'Không thể lấy danh sách đơn hàng.');
-        setAsnsByOrderId({});
-      }
-    } catch (err) {
-      setError(getApiErrorMessage(err));
+      const data = await customerApi.getMyOrdersByCategory(activeTab);
+      setOrders(data || []);
+    } catch (err: any) {
+      setError(err.message || 'Lỗi kết nối.');
       setOrders([]);
-      setAsnsByOrderId({});
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [accessToken, storedCustomerId]);
+  }, [accessToken, activeTab]);
 
   useFocusEffect(
     useCallback(() => {
@@ -98,11 +68,7 @@ export default function StatusScreen() {
     fetchOrders();
   };
 
-  const renderOrder = ({ item }: { item: OrderResponse }) => {
-    const imageUrl = getOrderImageUrl(item);
-    const existingAsn = asnsByOrderId[item.orderId];
-    const canScheduleDelivery = isContractSigned(item.status);
-
+  const renderOrder = ({ item }: { item: CustomerOrderSummaryResponse }) => {
     return (
       <Pressable
         onPress={() => router.push(`/(customer)/orders/${item.orderId}` as never)}
@@ -121,72 +87,34 @@ export default function StatusScreen() {
           </View>
 
           <View className="flex-row gap-3">
-            {imageUrl ? (
-              <Image source={{ uri: imageUrl }} className="h-20 w-20 rounded-xl bg-[#F8F9FA]" resizeMode="cover" />
-            ) : (
-              <View className="h-20 w-20 items-center justify-center rounded-xl bg-[#F8F9FA]">
-                <Ionicons name="image-outline" size={24} color="#877369" />
-              </View>
-            )}
+            <View className="h-20 w-20 items-center justify-center rounded-xl bg-[#F8F9FA]">
+              <Ionicons name="cube-outline" size={24} color="#877369" />
+            </View>
 
             <View className="flex-1 gap-2">
               <View className="flex-row items-center gap-2">
-                <Ionicons name="cube-outline" size={16} color="#8B4513" />
                 <Text className="flex-1 font-semibold text-[#3A1F04]">{item.itemName}</Text>
               </View>
 
               <View className="flex-row items-center gap-2">
-                <Ionicons name="thermometer-outline" size={16} color="#006E0A" />
-                <Text className="font-medium text-[#006E0A]">{formatTemperature(item.tempCondition)}</Text>
-                <Text className="text-[#877369]">•</Text>
-                <Text className="font-medium text-[#877369]">{item.expectedWeightKg} kg</Text>
+                <Ionicons name="grid-outline" size={16} color="#8B4513" />
+                <Text className="font-medium text-[#8B4513]">{item.category}</Text>
               </View>
 
               <View className="flex-row items-start gap-2">
                 <Ionicons name="location-outline" size={16} color="#877369" />
                 <Text className="flex-1 text-sm leading-5 text-[#877369]">
-                  {item.destination?.address || 'Chưa cập nhật địa chỉ'}
+                  {item.destinationAddress || 'Chưa cập nhật địa chỉ'}
                 </Text>
               </View>
 
-              {item.route ? (
+              {item.routeCode ? (
                 <View className="flex-row items-center gap-2">
                   <Ionicons name="git-branch-outline" size={16} color="#8B4513" />
                   <Text className="flex-1 text-sm font-semibold text-[#8B4513]">
-                    {`${item.route.routeCode} - ${item.route.originCity} -> ${item.route.destCity}`}
+                    {item.routeCode}
                   </Text>
                 </View>
-              ) : null}
-
-              {getLatestQuotationStatus(item) ? (
-                <View className="flex-row items-center gap-2">
-                  <Ionicons name="receipt-outline" size={16} color="#877369" />
-                  <Text className="text-sm font-medium text-[#877369]">
-                    Báo giá: {translateStatus(getLatestQuotationStatus(item) ?? '')}
-                  </Text>
-                </View>
-              ) : null}
-
-              {canScheduleDelivery ? (
-                <Pressable
-                  onPress={() =>
-                    router.push({
-                      pathname: '/(customer)/schedule-delivery',
-                      params: {
-                        orderId: item.orderId,
-                        asnId: existingAsn?.asnId ?? '',
-                      },
-                    } as never)
-                  }
-                  className={`mt-2 flex-row items-center justify-center gap-2 rounded-xl px-4 py-3 ${
-                    existingAsn ? 'bg-green-700' : 'bg-[#8B4513]'
-                  }`}
-                >
-                  <Ionicons name={existingAsn ? 'qr-code-outline' : 'calendar-outline'} size={18} color="#FFFFFF" />
-                  <Text className="font-bold text-white">
-                    {existingAsn ? 'Xem lịch đã đặt' : 'Đặt lịch giao'}
-                  </Text>
-                </Pressable>
               ) : null}
             </View>
           </View>
@@ -206,6 +134,23 @@ export default function StatusScreen() {
 
   return (
     <View className="flex-1 bg-[#F5F2F0]">
+      {/* TABS */}
+      <View className="bg-white px-2 pt-2 shadow-sm z-10">
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 16, paddingBottom: 12 }}>
+          {TABS.map((tab) => (
+            <Pressable
+              key={tab.key}
+              onPress={() => setActiveTab(tab.key)}
+              className={`rounded-full px-5 py-2.5 ${activeTab === tab.key ? 'bg-[#8B4513]' : 'bg-gray-100'}`}
+            >
+              <Text className={`font-bold ${activeTab === tab.key ? 'text-white' : 'text-gray-600'}`}>
+                {tab.label}
+              </Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      </View>
+
       {error ? (
         <View className="flex-1 items-center justify-center p-6">
           <Ionicons name="alert-circle-outline" size={48} color="#dc2626" />
@@ -305,36 +250,6 @@ function translateStatus(status: string) {
   }
 }
 
-function getOrderImageUrl(order: OrderResponse) {
-  const rawUrl =
-    order.documents?.find((doc) => doc.docType === 'CargoImage')?.imageUrl ??
-    order.documents?.[0]?.imageUrl ??
-    order.documentUrl;
-
-  if (!rawUrl) {
-    return null;
-  }
-
-  if (rawUrl.startsWith('http')) {
-    return rawUrl;
-  }
-
-  return `${API_BASE_URL}${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`;
-}
-
 function formatDate(value?: string | null) {
   return value ? new Date(value).toLocaleString('vi-VN') : 'Chưa cập nhật';
-}
-
-function formatTemperature(value: string | number) {
-  const text = String(value);
-  return text.includes('°') ? text : `${text} °C`;
-}
-
-function getLatestQuotationStatus(order: OrderResponse) {
-  return order.quotations?.[0]?.status ?? null;
-}
-
-function isContractSigned(status: string) {
-  return status.toUpperCase() === 'CONTRACT_SIGNED';
 }

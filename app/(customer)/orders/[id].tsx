@@ -22,6 +22,7 @@ import {
   getAppendixHtml,
   rejectAppendix,
 } from '../../../services/appendixApi';
+import { customerApi } from '../../../services/customerApi';
 import {
   ContractInfoResponse,
   getContractByOrder,
@@ -29,7 +30,6 @@ import {
   uploadSignedContract,
 } from '../../../services/contractApi';
 import { getCustomerIdFromToken } from '../../../services/jwt';
-import { getMockDeliveryFlow, MockDeliveryFlow } from '../../../services/mockDeliveryApi';
 import {
   acceptQuotation,
   getOrderById,
@@ -37,7 +37,6 @@ import {
   OrderResponse,
   QuotationResponse,
 } from '../../../services/orderApi';
-import { buildDispatchTimeline, buildInboundTimeline, TimelineStep } from '../../../services/trackingMock';
 import { useAuthStore } from '../../../store/useAuthStore';
 
 export default function OrderDetailScreen() {
@@ -51,6 +50,7 @@ export default function OrderDetailScreen() {
   const [quotations, setQuotations] = useState<QuotationResponse[]>([]);
   const [contract, setContract] = useState<ContractInfoResponse | null>(null);
   const [appendix, setAppendix] = useState<ContractAppendixResponse | null>(null);
+  const [trackingDetail, setTrackingDetail] = useState<any>(null);
   const [selectedSignedFile, setSelectedSignedFile] = useState<SignedContractFile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isContractLoading, setIsContractLoading] = useState(false);
@@ -154,6 +154,13 @@ export default function OrderDetailScreen() {
         setQuotations(orderResponse.data?.quotations ?? []);
       }
 
+      try {
+        const detail = await customerApi.getMyOrderTrackingDetail(orderId);
+        setTrackingDetail(detail);
+      } catch (err) {
+        console.warn('Could not fetch tracking detail', err);
+      }
+
       await Promise.all([fetchContractDetail(), fetchAppendixDetail()]);
     } catch (err) {
       setError(getApiErrorMessage(err));
@@ -175,18 +182,7 @@ export default function OrderDetailScreen() {
   );
 
   const documentImage = getFullAssetUrl(getOrderImageUrl(order));
-  const inboundTimeline = useMemo(
-    () => buildInboundTimeline(order?.status ?? 'PENDING_REVIEW', appendix?.status),
-    [order?.status, appendix?.status]
-  );
-  const dispatchTimeline = useMemo(
-    () => buildDispatchTimeline(order?.status ?? 'PENDING_REVIEW'),
-    [order?.status]
-  );
-  const deliveryFlow = useMemo(
-    () => getMockDeliveryFlow(order?.status ?? 'PENDING_REVIEW', order?.destination?.address),
-    [order?.destination?.address, order?.status]
-  );
+
 
   const handleAcceptQuotation = async (quote: QuotationResponse) => {
     if (!accessToken) {
@@ -545,17 +541,52 @@ export default function OrderDetailScreen() {
         onView={handleViewAppendix}
       />
 
-      <InfoCard title="Giao hàng tại Hub" icon="business-outline">
-        {/* TODO: replace inbound timeline with real warehouse receipt status API when available */}
-        <TimelineList steps={inboundTimeline} />
-      </InfoCard>
+      {trackingDetail?.warehouse ? (
+        <InfoCard title="Giao hàng tại Hub" icon="business-outline">
+          <InfoRow label="Kho nhận" value={trackingDetail.warehouse.warehouseName} strong />
+          <InfoRow label="Nhiệt độ ghi nhận" value={formatTemperature(trackingDetail.warehouse.storedTemperature)} />
+          <InfoRow label="Thời gian nhận" value={formatDate(trackingDetail.warehouse.receivedAt)} />
+        </InfoCard>
+      ) : null}
 
-      <InfoCard title="Điều phối & xếp xe" icon="file-tray-stacked-outline">
-        {/* TODO: connect real dispatch/trip status when customer tracking endpoint is available */}
-        <TimelineList steps={dispatchTimeline} />
-      </InfoCard>
+      {trackingDetail?.tripInfo ? (
+        <InfoCard title="Điều phối & xếp xe" icon="file-tray-stacked-outline">
+          <InfoRow label="Chuyến xe" value={trackingDetail.tripInfo.tripId?.slice(0,8).toUpperCase()} strong />
+          <InfoRow label="Số seal" value={trackingDetail.tripInfo.sealNumber || '--'} />
+          {trackingDetail.vehicle ? (
+            <InfoRow label="Xe vận chuyển" value={`${trackingDetail.vehicle.truckPlate} - ${trackingDetail.vehicle.vehicleType}`} />
+          ) : null}
+          {trackingDetail.drivers?.length > 0 ? (
+            <InfoRow label="Tài xế" value={trackingDetail.drivers.map((d: any) => d.fullName).join(', ')} />
+          ) : null}
+          {trackingDetail.route ? (
+            <InfoRow label="Tuyến" value={`${trackingDetail.route.routeCode} (${trackingDetail.route.originCity} -> ${trackingDetail.route.destCity})`} />
+          ) : null}
+          <InfoRow label="Khởi hành" value={formatDate(trackingDetail.tripInfo.departedAt)} />
+          <InfoRow label="Dự kiến đến" value={formatDate(trackingDetail.estimatedArrival)} />
+        </InfoCard>
+      ) : null}
 
-      <DeliveryFlowCard flow={deliveryFlow} />
+      {trackingDetail?.delivery ? (
+        <InfoCard title="Giao hàng tận nơi & COD" icon="home-outline">
+          <InfoRow label="Người nhận" value={trackingDetail.delivery.receiverName} strong />
+          <InfoRow label="SĐT nhận" value={trackingDetail.delivery.receiverPhone} />
+          <InfoRow label="Ghi chú ePOD" value={trackingDetail.delivery.note || '--'} />
+          <InfoRow label="Thời gian ký nhận" value={formatDate(trackingDetail.delivery.signedAt)} />
+          
+          {trackingDetail?.returnedItems?.length > 0 ? (
+            <View className="mt-2 rounded-xl border border-red-200 bg-red-50 p-3">
+              <Text className="text-sm font-bold text-red-700">Hàng trả về ({trackingDetail.returnedItems.length})</Text>
+              {trackingDetail.returnedItems.map((item: any, idx: number) => (
+                <View key={idx} className="mt-2">
+                  <Text className="text-xs text-red-800 font-semibold">{item.itemName} (SL: {item.quantity})</Text>
+                  <Text className="text-xs text-red-600">Lý do: {item.reasonNote || item.reasonType}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </InfoCard>
+      ) : null}
     </ScrollView>
   );
 }
@@ -926,54 +957,7 @@ function AppendixSection({
   );
 }
 
-function TimelineList({ steps }: { steps: TimelineStep[] }) {
-  return (
-    <View className="gap-3">
-      {steps.map((step, index) => {
-        const styles = getTimelineStyles(step.state);
-        const isLast = index === steps.length - 1;
 
-        return (
-          <View key={step.key} className="flex-row gap-3">
-            <View className="items-center">
-              <View className={`h-8 w-8 items-center justify-center rounded-full ${styles.dot}`}>
-                <Ionicons name={styles.icon} size={16} color={styles.iconColor} />
-              </View>
-              {!isLast ? <View className="mt-2 h-8 w-px bg-[#DAC2B6]/70" /> : null}
-            </View>
-
-            <View className="flex-1 pb-1">
-              <Text className={`text-sm font-bold ${styles.title}`}>{step.title}</Text>
-              <Text className="mt-1 text-xs leading-5 text-[#877369]">{step.description}</Text>
-            </View>
-          </View>
-        );
-      })}
-    </View>
-  );
-}
-
-function DeliveryFlowCard({ flow }: { flow: MockDeliveryFlow }) {
-  const deliverySteps: TimelineStep[] = flow.stops.map((stop) => ({
-    key: stop.id,
-    title: stop.label,
-    description: `${stop.address} - ETA ${stop.eta}`,
-    state: mapDeliveryState(stop.status),
-  }));
-
-  return (
-    <InfoCard title="Giao hàng tận nơi & COD" icon="home-outline">
-      {/* TODO: replace mock delivery flow when backend provides delivery/check-in/ePOD/COD APIs */}
-      <TimelineList steps={deliverySteps} />
-
-      <View className="mt-2 gap-3 rounded-2xl border border-[#DAC2B6]/50 bg-[#F8F9FA] p-4">
-        <InfoRow label="e-POD" value={flow.epodStatus} />
-        <InfoRow label="COD" value={flow.codStatus} />
-        {flow.rejectionReason ? <InfoRow label="Lý do từ chối" value={flow.rejectionReason} /> : null}
-      </View>
-    </InfoCard>
-  );
-}
 
 function InfoCard({
   title,
@@ -995,56 +979,7 @@ function InfoCard({
   );
 }
 
-function getTimelineStyles(state: TimelineStep['state']): {
-  dot: string;
-  title: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  iconColor: string;
-} {
-  switch (state) {
-    case 'done':
-      return {
-        dot: 'bg-green-100',
-        title: 'text-green-700',
-        icon: 'checkmark',
-        iconColor: '#15803d',
-      };
-    case 'current':
-      return {
-        dot: 'bg-[#8B4513]/10',
-        title: 'text-[#8B4513]',
-        icon: 'ellipse',
-        iconColor: '#8B4513',
-      };
-    case 'issue':
-      return {
-        dot: 'bg-red-100',
-        title: 'text-red-700',
-        icon: 'alert',
-        iconColor: '#b91c1c',
-      };
-    default:
-      return {
-        dot: 'bg-[#DAC2B6]/30',
-        title: 'text-[#877369]',
-        icon: 'time-outline',
-        iconColor: '#877369',
-      };
-  }
-}
 
-function mapDeliveryState(status: MockDeliveryFlow['stops'][number]['status']): TimelineStep['state'] {
-  switch (status) {
-    case 'done':
-      return 'done';
-    case 'current':
-      return 'current';
-    case 'issue':
-      return 'issue';
-    default:
-      return 'pending';
-  }
-}
 
 function InfoRow({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
   return (

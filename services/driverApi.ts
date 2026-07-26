@@ -1,7 +1,7 @@
 import { apiRequest } from './apiClient';
 import { useAuthStore } from '../store/useAuthStore';
-import { API_BASE_URL } from './apiClient';
 
+// Common structures from backend
 export interface PagedResult<T> {
   totalRecords: number;
   totalPages: number;
@@ -18,38 +18,72 @@ export interface ApiResponse<T> {
   errors?: unknown;
 }
 
-export interface DriverTripVehicle {
+// ------------------------------------------
+// DTOs for Driver APIs
+// ------------------------------------------
+
+// Replaces DriverTripSummaryResponse
+export interface TripListDto {
+  tripId: string;
+  tripCode: string;
+  status: string;
+  vehiclePlate?: string | null;
+  routeName?: string | null;
+  origin: string;
+  destination: string;
+  plannedStartTime?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  driverRole?: string | null;
+  totalOrders: number;
+  workHours?: number | null;
+  distanceKm?: number | null; // For history
+}
+
+export interface DriverTripVehicleDto {
   vehicleId: string;
   truckPlate: string;
   vehicleType: string;
+  maxWeight?: number;
+  maxCbm?: number;
 }
 
-export interface DriverTripStopSummary {
+export interface DriverTripStopDto {
   stopSequence: number;
   address: string;
   plannedArrivalTime?: string;
+  plannedDepartureTime?: string;
+  status: string;
+  stopType: string;
+  // stopId is MISSING from backend (BACKEND GAP)
 }
 
-export interface DriverTripSummaryResponse {
+export interface DriverTripDetailResponseDto {
   tripId: string;
   status: string;
   plannedStartTime?: string;
   plannedEndTime?: string;
+  startedAt?: string;
+  completedAt?: string;
   totalDistanceKm?: number;
+  estimatedDurationHours?: number;
   targetTemperature?: number;
-  vehicle?: DriverTripVehicle;
+  encodedPolyline?: string | null;
+  vehicle?: DriverTripVehicleDto;
   stopCount: number;
-  stops: DriverTripStopSummary[];
+  stops: DriverTripStopDto[];
 }
+
+// ------------------------------------------
+// API Service
+// ------------------------------------------
 
 export const driverApi = {
   /**
-   * Fetch paginated trips assigned to the currently authenticated driver.
-   * Based on GET /api/drivers/me/trips
+   * Fetch active trips assigned to the currently authenticated driver.
+   * Route: GET /api/drivers/my/trips
    */
-  getMyTrips: async (
-    status?: string
-  ): Promise<DriverTripSummaryResponse[]> => {
+  getMyTrips: async (status?: string): Promise<TripListDto[]> => {
     const token = useAuthStore.getState().token;
     if (!token) throw new Error('Not authenticated');
 
@@ -58,23 +92,65 @@ export const driverApi = {
       params.append('status', status);
     }
 
-    const endpoint = `/api/drivers/me/trips?${params.toString()}`;
+    const endpoint = `/api/drivers/my/trips?${params.toString()}`;
 
-    const response = await apiRequest<ApiResponse<DriverTripSummaryResponse[]>>(
-      endpoint,
-      {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
+    const response = await apiRequest<{ success: boolean; data: TripListDto[] }>(endpoint, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
 
     if (!response.success || !response.data) {
-      if (response.statusCode === 401) throw new Error('Phiên đăng nhập đã hết hạn.');
-      if (response.statusCode === 403) throw new Error('Bạn không có quyền xem dữ liệu này.');
-      if (response.statusCode === 404) throw new Error('Không tìm thấy hồ sơ tài xế.');
       throw new Error('Không thể tải danh sách chuyến. Vui lòng thử lại.');
+    }
+
+    return response.data;
+  },
+
+  /**
+   * Fetch history of completed trips
+   * Route: GET /api/drivers/my/trip-history
+   */
+  getMyTripHistory: async (pageNumber = 1, pageSize = 10): Promise<PagedResult<TripListDto>> => {
+    const token = useAuthStore.getState().token;
+    if (!token) throw new Error('Not authenticated');
+
+    const endpoint = `/api/drivers/my/trip-history?pageNumber=${pageNumber}&pageSize=${pageSize}`;
+
+    const response = await apiRequest<ApiResponse<PagedResult<TripListDto>>>(endpoint, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!response.success || !response.data) {
+      throw new Error(response.message || 'Không thể tải lịch sử chuyến.');
+    }
+
+    return response.data;
+  },
+
+  /**
+   * Fetch trip details by TripId
+   * Route: GET /api/drivers/my/trips/{tripId}/detail
+   */
+  getMyTripDetail: async (tripId: string): Promise<DriverTripDetailResponseDto> => {
+    const token = useAuthStore.getState().token;
+    if (!token) throw new Error('Not authenticated');
+
+    const endpoint = `/api/drivers/my/trips/${tripId}/detail`;
+
+    const response = await apiRequest<{ success: boolean; data: DriverTripDetailResponseDto }>(endpoint, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!response.success || !response.data) {
+      throw new Error('Không thể tải chi tiết chuyến.');
     }
 
     return response.data;

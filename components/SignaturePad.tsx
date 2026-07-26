@@ -17,7 +17,7 @@ export function SignaturePad({ onOK, onClear }: SignaturePadProps) {
           (Màn hình ký tên giả lập - Chưa cài thư viện signature)
         </Text>
         <Text style={styles.subText}>
-          Vui lòng bấm "Xác nhận ký" để tiếp tục luồng.
+          Vui lòng bấm &quot;Xác nhận ký&quot; để tiếp tục luồng.
         </Text>
       </View>
       <View style={styles.row}>

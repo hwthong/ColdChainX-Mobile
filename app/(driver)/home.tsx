@@ -5,21 +5,21 @@ import { useRouter, useFocusEffect } from 'expo-router';
 
 import { GlassWidget } from '../../components/GlassWidget';
 import { useAuthStore } from '../../store/useAuthStore';
-import { driverApi, DriverTripSummaryResponse } from '../../services/driverApi';
+import { driverApi, TripListDto } from '../../services/driverApi';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function DriverHomeScreen() {
   const user = useAuthStore(state => state.user);
   const router = useRouter();
   
-  const [activeTrip, setActiveTrip] = useState<DriverTripSummaryResponse | null>(null);
+  const [activeTrip, setActiveTrip] = useState<TripListDto | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const loadActiveTrip = async () => {
     try {
       setIsLoading(true);
       const trips = await driverApi.getMyTrips();
-      const active = trips.find(t => ['IN_TRANSIT', 'SEALED', 'LOADING_COMPLETED', 'PICKING', 'PLANNED'].includes(t.status));
+      const active = trips.find(t => ['IN-TRANSIT', 'IN_TRANSIT', 'SEALED', 'DISPATCHED', 'LOADING_COMPLETED', 'LOADING', 'PICKING', 'PLANNED'].includes(t.status));
       if (active) {
         setActiveTrip(active);
       } else {
@@ -65,7 +65,7 @@ export default function DriverHomeScreen() {
             ) : activeTrip ? (
               <View className="mt-3 gap-3">
                 <View className="flex-row items-center justify-between">
-                  <Text className="text-lg font-bold text-amber-900">{activeTrip.vehicle?.truckPlate || 'Chưa gán xe'}</Text>
+                  <Text className="text-lg font-bold text-amber-900">{activeTrip.vehiclePlate || 'Chưa gán xe'}</Text>
                   <Text className="text-xs font-semibold uppercase text-blue-700 bg-blue-100 px-2 py-1 rounded overflow-hidden">
                     {activeTrip.status}
                   </Text>
@@ -73,17 +73,17 @@ export default function DriverHomeScreen() {
 
                 <View className="flex-row items-center gap-2">
                   <Ionicons name="location-outline" size={16} color="#8B4513" />
-                  <Text className="flex-1 text-sm text-amber-900 line-clamp-1" numberOfLines={1}>{activeTrip.stops?.[0]?.address || 'N/A'}</Text>
+                  <Text className="flex-1 text-sm text-amber-900 line-clamp-1" numberOfLines={1}>{activeTrip.origin || 'N/A'}</Text>
                 </View>
                 <View className="flex-row items-center gap-2">
                   <Ionicons name="flag-outline" size={16} color="#8B4513" />
-                  <Text className="flex-1 text-sm text-amber-900 line-clamp-1" numberOfLines={1}>{activeTrip.stops?.[activeTrip.stops.length - 1]?.address || 'N/A'}</Text>
+                  <Text className="flex-1 text-sm text-amber-900 line-clamp-1" numberOfLines={1}>{activeTrip.destination || 'N/A'}</Text>
                 </View>
 
                 <View className="flex-row items-center justify-between border-t border-amber-200/50 pt-3">
-                  <Text className="text-sm text-amber-800">{activeTrip.stopCount} điểm dừng</Text>
+                  <Text className="text-sm text-amber-800">{activeTrip.totalOrders} đơn hàng</Text>
                   <Text className="text-sm text-amber-800">
-                    Khoảng cách: {activeTrip.totalDistanceKm || 0} km
+                    Khoảng cách: {activeTrip.distanceKm || 0} km
                   </Text>
                 </View>
 

@@ -4,7 +4,7 @@ import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 import { getApiErrorMessage } from '../../services/apiClient';
-import { getCustomerById, CustomerResponse } from '../../services/customerApi';
+import { customerApi, CustomerResponse } from '../../services/customerApi';
 import { getCustomerIdFromToken } from '../../services/jwt';
 import { useAuthStore } from '../../store/useAuthStore';
 
@@ -36,14 +36,9 @@ export default function ProfileScreen() {
         setError(null);
 
         try {
-          const response = await getCustomerById(accessToken, customerId);
+          const data = await customerApi.getCustomerById(customerId);
           if (!isActive) return;
-
-          if (response.success && response.data) {
-            setCustomer(response.data);
-          } else {
-            setError(response.message || 'Không thể tải thông tin khách hàng.');
-          }
+          setCustomer(data);
         } catch (err) {
           if (isActive) {
             setError(getApiErrorMessage(err));

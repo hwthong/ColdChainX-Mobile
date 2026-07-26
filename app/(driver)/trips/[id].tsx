@@ -12,6 +12,7 @@ import {
 } from '../../../services/monitoringApi';
 import { OptimizedTripStopDto, TripRouteResponse } from '../../../services/trackingApi';
 import { getIncidents, IncidentResponse } from '../../../services/incidentApi';
+import { driverApi, DriverTripDetailResponseDto } from '../../../services/driverApi';
 import { useAuthStore } from '../../../store/useAuthStore';
 
 const POLL_MS = 15_000;
@@ -29,6 +30,7 @@ export default function DriverTripDetailScreen() {
   const router = useRouter();
   const token = useAuthStore((state) => state.token);
   const [tracking, setTracking] = useState<TripTracking | null>(null);
+  const [trip, setTrip] = useState<DriverTripDetailResponseDto | null>(null);
   const [route, setRoute] = useState<TripRouteResponse | null>(null);
   const [chart, setChart] = useState<TemperatureChartData | null>(null);
   const [alerts, setAlerts] = useState<SmartAlert[]>([]);
@@ -52,6 +54,17 @@ export default function DriverTripDetailScreen() {
       setTracking(response.data); setError('tracking', null); return response.data;
     } catch (error) { setError('tracking', getApiErrorMessage(error)); return null; }
   }, [setError, token, tripId]);
+
+  const loadTrip = useCallback(async () => {
+    if (!tripId) return;
+    try {
+      const data = await driverApi.getMyTripDetail(tripId);
+      setTrip(data);
+      setError('trip', null);
+    } catch (error) {
+      setError('trip', getApiErrorMessage(error));
+    }
+  }, [tripId, setError]);
 
   const loadRoute = useCallback(async () => {
     if (!token || !tripId) return;
@@ -119,22 +132,22 @@ export default function DriverTripDetailScreen() {
       clear();
       timer = setTimeout(() => void poll(), Math.min(POLL_MS * 2 ** failures, MAX_POLL_MS));
     };
-    void Promise.all([loadRoute(), loadChart(), loadAlerts(), loadIncident()]);
+    void Promise.all([loadTrip(), loadRoute(), loadChart(), loadAlerts(), loadIncident()]);
     void poll();
     const subscription = AppState.addEventListener('change', (nextState) => {
       appState = nextState;
       if (nextState !== 'active') clear(); else if (!terminal) void poll();
     });
     return () => { disposed = true; clear(); subscription.remove(); };
-  }, [loadAlerts, loadChart, loadRoute, loadTracking, loadIncident, setError, token, tripId]));
+  }, [loadTrip, loadAlerts, loadChart, loadRoute, loadTracking, loadIncident, setError, token, tripId]));
 
   const refresh = useCallback(async () => {
-    setRefreshing(true); await Promise.all([loadTracking(), loadRoute(), loadChart(), loadAlerts(), loadIncident()]); setRefreshing(false);
-  }, [loadAlerts, loadChart, loadRoute, loadTracking, loadIncident]);
+    setRefreshing(true); await Promise.all([loadTrip(), loadTracking(), loadRoute(), loadChart(), loadAlerts(), loadIncident()]); setRefreshing(false);
+  }, [loadTrip, loadAlerts, loadChart, loadRoute, loadTracking, loadIncident]);
 
-  if (loading) return <View className="flex-1 items-center justify-center bg-[#F6F8F2]"><ActivityIndicator size="large" color="#8B4513" /><Text className="mt-4 text-amber-800">Đang tải giám sát chuyến...</Text></View>;
+  if (loading) return <View className="flex-1 items-center justify-center bg-[#F6F8F2]"><ActivityIndicator size="large" color="#8B4513" /><Text className="mt-4 text-amber-800">Đang tải chi tiết chuyến...</Text></View>;
   const vehiclePosition = getVehiclePosition(tracking);
-  const status = tracking?.status || 'UNKNOWN';
+  const status = trip?.status || tracking?.status || 'UNKNOWN';
 
   return (
     <ScrollView className="flex-1 bg-[#F6F8F2]" contentContainerStyle={{ padding: 20, paddingBottom: 100, gap: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#8B4513" />}>
@@ -161,16 +174,22 @@ export default function DriverTripDetailScreen() {
 
       <Section title="Lịch sử nhiệt độ" icon="pulse-outline">{errors.chart ? <ErrorMessage message={errors.chart} onRetry={loadChart} /> : null}{chart ? <TemperatureChart points={chart.points} /> : !errors.chart ? <Empty message="Chưa có dữ liệu nhiệt độ." /> : null}</Section>
       <Section title="Cảnh báo vận hành" icon="notifications-outline">{errors.alerts ? <ErrorMessage message={errors.alerts} onRetry={loadAlerts} /> : null}{!errors.alerts && alerts.length === 0 ? <Empty message="Chưa có cảnh báo cho chuyến này." /> : null}{alerts.map((alert, index) => <View key={alert.alertId || `${alert.createdAt}-${index}`} className="rounded-2xl border border-red-200 bg-red-50 p-4"><Text className="font-bold text-red-900">{alert.title || alert.alertType || 'Cảnh báo'}</Text><Text className="mt-2 text-sm leading-5 text-red-800">{alert.message || 'Không có nội dung.'}</Text><Text className="mt-2 text-xs text-red-700">{formatDateTime(alert.createdAt)}</Text></View>)}</Section>
-      <Section title={`Điểm dừng (${route?.optimizedStops.length ?? 0})`} icon="trail-sign-outline">
-        {route?.optimizedStops.map((stop, index) => (
+      <Section title={`Điểm dừng (${trip?.stopCount ?? 0})`} icon="trail-sign-outline">
+        {errors.trip ? <ErrorMessage message={errors.trip} onRetry={loadTrip} /> : null}
+        {trip?.stops?.map((stop, index) => (
           <StopRow 
-            key={stop.stopId || `${stop.lat}-${stop.lon}-${index}`} 
-            stop={stop} 
+            key={`${stop.stopSequence}-${index}`} 
+            stop={stop as any} 
             index={index} 
-            onPress={() => router.push(`/(driver)/trips/stop/${stop.stopId}?tripId=${tripId}` as any)}
+            onPress={() => {
+              if (__DEV__) {
+                console.warn('[BACKEND GAP]: stopId is missing from getMyTripDetail API. Navigation to stop details is disabled.');
+                alert('[BACKEND GAP]: stopId is missing from API. Action is disabled.');
+              }
+            }}
           />
         ))}
-        {!route?.optimizedStops.length ? <Empty message="Chưa có điểm dừng." /> : null}
+        {!trip?.stops?.length ? <Empty message="Chưa có điểm dừng." /> : null}
       </Section>
     </ScrollView>
   );
@@ -180,15 +199,15 @@ function Section({ title, icon, children }: { title: string; icon: React.Compone
 function Action({ icon, label, danger = false, onPress }: { icon: React.ComponentProps<typeof Ionicons>['name']; label: string; danger?: boolean; onPress: () => void }) { return <Pressable onPress={onPress} className={`flex-1 flex-row items-center justify-center rounded-xl border p-3 ${danger ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-white'}`}><Ionicons name={icon} size={20} color={danger ? '#991B1B' : '#8B4513'} /><Text className={`ml-2 text-sm font-bold ${danger ? 'text-red-900' : 'text-amber-900'}`}>{label}</Text></Pressable>; }
 function Metric({ label, value }: { label: string; value: string }) { return <View className="flex-1 rounded-2xl bg-amber-50 p-4"><Text className="text-xs text-amber-700">{label}</Text><Text className="mt-2 text-lg font-bold text-amber-950">{value}</Text></View>; }
 function InfoRow({ label, value }: { label: string; value: string }) { return <View className="flex-row items-start justify-between gap-4 border-b border-amber-100 pb-2"><Text className="text-sm text-amber-700">{label}</Text><Text className="flex-1 text-right text-sm font-semibold text-amber-950">{value}</Text></View>; }
-function StopRow({ stop, index, onPress }: { stop: OptimizedTripStopDto; index: number; onPress?: () => void }) { 
+function StopRow({ stop, index, onPress }: { stop: any; index: number; onPress?: () => void }) { 
   return (
     <Pressable onPress={onPress} className="flex-row gap-3 items-center" style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
       <View className="h-7 w-7 items-center justify-center rounded-full bg-amber-800">
-        <Text className="text-xs font-bold text-white">{stop.optimizedSequence ?? index + 1}</Text>
+        <Text className="text-xs font-bold text-white">{stop.stopSequence ?? index + 1}</Text>
       </View>
       <View className="flex-1">
         <Text className="font-semibold text-amber-950">{stop.address || 'Chưa có địa chỉ'}</Text>
-        <Text className="mt-1 text-xs text-amber-700">{stop.orders.length} đơn · {stop.lpns.length} LPN</Text>
+        <Text className="mt-1 text-xs text-amber-700 uppercase">{stop.status || 'Chưa xác định'}</Text>
       </View>
       <Ionicons name="chevron-forward" size={20} color="#8B4513" />
     </Pressable>

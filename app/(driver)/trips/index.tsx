@@ -4,12 +4,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
-import { driverApi, DriverTripSummaryResponse } from '../../../services/driverApi';
+import { driverApi, TripListDto } from '../../../services/driverApi';
 import { formatDateTimeVi } from '../../../constants/warehouseTheme';
 
 export default function DriverTripsScreen() {
   const router = useRouter();
-  const [trips, setTrips] = useState<DriverTripSummaryResponse[]>([]);
+  const [trips, setTrips] = useState<TripListDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
@@ -40,6 +40,9 @@ export default function DriverTripsScreen() {
       'LOADING_COMPLETED': { label: 'Đã xếp hàng', colorClass: 'text-indigo-700 bg-indigo-100 border-indigo-200' },
       'SEALED': { label: 'Đã kẹp chì', colorClass: 'text-orange-700 bg-orange-100 border-orange-200' },
       'IN_TRANSIT': { label: 'Đang vận chuyển', colorClass: 'text-emerald-700 bg-emerald-100 border-emerald-200' },
+      'IN-TRANSIT': { label: 'Đang vận chuyển', colorClass: 'text-emerald-700 bg-emerald-100 border-emerald-200' },
+      'DISPATCHED': { label: 'Đã điều phối', colorClass: 'text-emerald-700 bg-emerald-100 border-emerald-200' },
+      'LOADING': { label: 'Đang lên hàng', colorClass: 'text-emerald-700 bg-emerald-100 border-emerald-200' },
       'DELAYED': { label: 'Bị trễ', colorClass: 'text-red-700 bg-red-100 border-red-200' },
       'COMPLETED': { label: 'Hoàn tất', colorClass: 'text-gray-700 bg-gray-100 border-gray-200' },
       'CANCELLED': { label: 'Đã hủy', colorClass: 'text-gray-500 bg-gray-100 border-gray-200' },
@@ -47,7 +50,7 @@ export default function DriverTripsScreen() {
     return map[status] || { label: status, colorClass: 'text-gray-700 bg-gray-100 border-gray-200' };
   };
 
-  const renderTrip = ({ item }: { item: DriverTripSummaryResponse }) => {
+  const renderTrip = ({ item }: { item: TripListDto }) => {
     const statusInfo = getStatusDisplay(item.status);
 
     return (
@@ -61,11 +64,11 @@ export default function DriverTripsScreen() {
         <View className="mb-3 flex-row items-start justify-between">
           <View className="flex-1">
             <Text className="text-base font-bold text-amber-900">
-              Chuyến {item.tripId.substring(0, 8).toUpperCase()}
+              {item.tripCode || `Chuyến ${item.tripId.substring(0, 8).toUpperCase()}`}
             </Text>
-            {item.vehicle?.truckPlate && (
+            {item.vehiclePlate && (
               <Text className="mt-1 text-sm font-medium text-amber-700">
-                Xe: {item.vehicle.truckPlate}
+                Xe: {item.vehiclePlate}
               </Text>
             )}
           </View>
@@ -79,13 +82,13 @@ export default function DriverTripsScreen() {
         <View className="mb-1.5 flex-row items-center">
           <Ionicons name="location" size={16} color="#8B4513" className="mr-2" />
           <Text className="ml-2 flex-1 text-sm text-amber-900 line-clamp-1" numberOfLines={1}>
-            {item.stops && item.stops.length > 0 ? item.stops[0].address : 'Chưa xác định'}
+            {item.origin || 'Chưa xác định'}
           </Text>
         </View>
         <View className="mb-3 flex-row items-center">
           <Ionicons name="flag" size={16} color="#8B4513" className="mr-2" />
           <Text className="ml-2 flex-1 text-sm text-amber-900 line-clamp-1" numberOfLines={1}>
-            {item.stops && item.stops.length > 1 ? item.stops[item.stops.length - 1].address : 'Chưa xác định'}
+            {item.destination || 'Chưa xác định'}
           </Text>
         </View>
 
@@ -97,9 +100,9 @@ export default function DriverTripsScreen() {
             </Text>
           </View>
           <View className="items-end">
-            <Text className="text-xs text-amber-700">Hành trình</Text>
+            <Text className="text-xs text-amber-700">Đơn hàng</Text>
             <Text className="mt-1 text-sm font-semibold text-amber-900">
-              {item.stopCount} điểm dừng
+              {item.totalOrders} đơn
             </Text>
           </View>
         </View>
