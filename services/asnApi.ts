@@ -36,6 +36,8 @@ export interface AsnResponse {
   phone?: string | null;
   warehouseId?: string | null;
   customerId?: string | null;
+  warehouseName?: string | null;
+  warehouseAddress?: string | null;
   fileUrl?: string | null;
   createdAt?: string | null;
 }
@@ -44,8 +46,7 @@ export interface CreateAsnRequest {
   orderId: string;
   requestedDropoffTime: string;
   phone?: string | null;
-  warehouseId?: string | null;
-  customerId?: string | null;
+  warehouseId: string;
 }
 
 type ScheduleParams = {
@@ -79,8 +80,7 @@ export function createAsn(accessToken: string, request: CreateAsnRequest) {
       orderId: request.orderId,
       requestedDropoffTime: request.requestedDropoffTime,
       phone: request.phone || null,
-      warehouseId: request.warehouseId || null,
-      customerId: request.customerId || null,
+      warehouseId: request.warehouseId,
     },
   });
 }

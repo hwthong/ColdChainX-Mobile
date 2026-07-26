@@ -13,6 +13,14 @@ export interface DispatchEnvelope<T> {
   Message?: string;
 }
 
+export interface DispatchPagedResult<T> {
+  totalRecords: number;
+  totalPages: number;
+  currentPage: number;
+  pageSize: number;
+  data: T[];
+}
+
 export interface PlannedDispatchTripDto {
   tripId: string;
   status: string;
@@ -70,11 +78,9 @@ interface DispatchDocumentUrlResponse {
 }
 
 export function getTripsCanStartPicking(accessToken: string) {
-  return apiRequest<DispatchEnvelope<PlannedDispatchTripDto[]>>(
-    '/api/Dispatch/trips/can-start-picking',
-    {
-      headers: getAuthHeaders(accessToken),
-    }
+  return getAllDispatchPages<PlannedDispatchTripDto>(
+    accessToken,
+    '/api/Dispatch/trips/can-start-picking'
   );
 }
 
@@ -89,11 +95,9 @@ export function startPickingTrip(accessToken: string, tripId: string) {
 }
 
 export function getTripsReadyToSeal(accessToken: string) {
-  return apiRequest<DispatchEnvelope<ReadyToSealTripDto[]>>(
-    '/api/Dispatch/trips/ready-to-seal',
-    {
-      headers: getAuthHeaders(accessToken),
-    }
+  return getAllDispatchPages<ReadyToSealTripDto>(
+    accessToken,
+    '/api/Dispatch/trips/ready-to-seal'
   );
 }
 
@@ -151,6 +155,48 @@ function isSuccess(response: Pick<DispatchDocumentUrlResponse, 'success' | 'Succ
 
 function getDispatchError(response: DispatchDocumentUrlResponse) {
   return response.error ?? response.Error ?? response.message ?? response.Message ?? null;
+}
+
+const DISPATCH_PAGE_SIZE = 100;
+
+async function getAllDispatchPages<T>(accessToken: string, path: string): Promise<T[]> {
+  const firstPage = await getDispatchPage<T>(accessToken, path, 1);
+  if (firstPage.totalPages <= 1) {
+    return firstPage.data;
+  }
+
+  const remainingPages = await Promise.all(
+    Array.from({ length: firstPage.totalPages - 1 }, (_, index) =>
+      getDispatchPage<T>(accessToken, path, index + 2)
+    )
+  );
+
+  return [firstPage, ...remainingPages].flatMap((page) => page.data);
+}
+
+async function getDispatchPage<T>(
+  accessToken: string,
+  path: string,
+  pageNumber: number
+): Promise<DispatchPagedResult<T>> {
+  const response = await apiRequest<DispatchPagedResult<T>>(
+    `${path}?pageNumber=${pageNumber}&pageSize=${DISPATCH_PAGE_SIZE}`,
+    {
+      headers: getAuthHeaders(accessToken),
+      logResponseBody: true,
+    }
+  );
+
+  if (
+    !response ||
+    !Array.isArray(response.data) ||
+    typeof response.totalPages !== 'number' ||
+    typeof response.totalRecords !== 'number'
+  ) {
+    throw new Error('Phản hồi danh sách chuyến không đúng định dạng PagedResult.');
+  }
+
+  return response;
 }
 
 function getAuthHeaders(accessToken: string) {

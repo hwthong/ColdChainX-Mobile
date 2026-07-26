@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -97,6 +97,7 @@ export default function CreateOrderScreen() {
   const [bookingOptions, setBookingOptions] = useState<RouteBookingOptionsDto | null>(null);
   const [isLoadingBooking, setIsLoadingBooking] = useState(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
+  const currentBookingRouteIdRef = useRef<string>('');
 
   // — UI state —
   const [errors, setErrors] = useState<ValidationErrors>({});
@@ -138,6 +139,7 @@ export default function CreateOrderScreen() {
 
   // ─── Fetch booking options (schedules + stops) when route changes ────────────
   const fetchBookingOptions = useCallback(async (routeId: string) => {
+    currentBookingRouteIdRef.current = routeId;
     setIsLoadingBooking(true);
     setBookingError(null);
     setBookingOptions(null);
@@ -145,6 +147,7 @@ export default function CreateOrderScreen() {
     setSelectedStopId('');
     try {
       const response = await getRouteBookingOptions(routeId);
+      if (currentBookingRouteIdRef.current !== routeId) return;
       if (response.success && response.data) {
         setBookingOptions(response.data);
         // Auto-select schedule and stop if each has exactly 1 option
@@ -155,12 +158,15 @@ export default function CreateOrderScreen() {
           setSelectedStopId(response.data.availableStops[0].stopId);
         }
       } else {
-        setBookingError(response.message || 'Không thể tải lịch và điểm giao cho tuyến này.');
+        setBookingError(response.message || 'Không thể tải lịch khởi hành.');
       }
     } catch (error) {
-      setBookingError(getApiErrorMessage(error));
+      if (currentBookingRouteIdRef.current !== routeId) return;
+      setBookingError(getApiErrorMessage(error) || 'Không thể tải lịch khởi hành.');
     } finally {
-      setIsLoadingBooking(false);
+      if (currentBookingRouteIdRef.current === routeId) {
+        setIsLoadingBooking(false);
+      }
     }
   }, []);
 
@@ -197,6 +203,15 @@ export default function CreateOrderScreen() {
     if (!selectedRouteId) nextErrors.routeId = 'Vui lòng chọn tuyến vận chuyển.';
     if (!selectedScheduleId) nextErrors.scheduleId = 'Vui lòng chọn lịch vận chuyển.';
     if (!selectedStopId) nextErrors.dropoffStopId = 'Vui lòng chọn điểm giao hàng.';
+    if (selectedScheduleId && (!bookingOptions || !bookingOptions.availableSchedules.some(s => s.scheduleId === selectedScheduleId))) {
+      nextErrors.scheduleId = 'Lịch vận chuyển không còn hợp lệ hoặc không thuộc tuyến đã chọn.';
+    }
+    if (selectedStopId && (!bookingOptions || !bookingOptions.availableStops.some(s => s.stopId === selectedStopId))) {
+      nextErrors.dropoffStopId = 'Điểm giao hàng không hợp lệ hoặc không thuộc tuyến đã chọn.';
+    }
+    if (bookingOptions && bookingOptions.routeId !== selectedRouteId) {
+      nextErrors.routeId = 'Thông tin tuyến vận chuyển đang được cập nhật.';
+    }
     if (!documentImage) nextErrors.documentImage = 'Vui lòng chọn ảnh lô hàng.';
     return nextErrors;
   };
@@ -204,6 +219,11 @@ export default function CreateOrderScreen() {
   // ─── Submit ─────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     if (__DEV__) console.log('[CreateOrder] submit pressed');
+
+    if (isLoadingBooking || isLoadingRoutes) {
+      showToast('warning', 'Vui lòng đợi hệ thống tải xong thông tin tuyến và lịch vận chuyển.', 'Đang tải dữ liệu');
+      return;
+    }
 
     const nextErrors = validateForm();
     setErrors(nextErrors);
@@ -485,7 +505,12 @@ export default function CreateOrderScreen() {
             error={routeError}
             onRetry={fetchRoutes}
             onSelect={(routeId) => {
-              setSelectedRouteId(routeId);
+              if (routeId !== selectedRouteId) {
+                setSelectedRouteId(routeId);
+                setSelectedScheduleId('');
+                setSelectedStopId('');
+                setBookingOptions(null);
+              }
               setErrors((current) => ({ ...current, routeId: undefined }));
             }}
           />
@@ -705,7 +730,7 @@ function BookingOptionsPicker({
     return (
       <View className="items-center py-4">
         <ActivityIndicator size="small" color="#8B4513" />
-        <Text className="mt-2 text-xs text-[#877369]">Đang tải lịch và điểm giao...</Text>
+        <Text className="mt-2 text-xs text-[#877369]">Đang tải lịch khởi hành...</Text>
       </View>
     );
   }
@@ -715,7 +740,7 @@ function BookingOptionsPicker({
       <View className="rounded-[14px] border border-red-200 bg-red-50 p-4 gap-3">
         <Text className="text-sm font-semibold leading-5 text-red-700">{error}</Text>
         <Pressable onPress={onRetry} className="self-start rounded-lg bg-[#8B4513] px-3 py-2">
-          <Text className="text-xs font-bold text-white">Tải lại</Text>
+          <Text className="text-xs font-bold text-white">Thử lại</Text>
         </Pressable>
       </View>
     );
@@ -732,7 +757,7 @@ function BookingOptionsPicker({
         </View>
         {bookingOptions.availableSchedules.length === 0 ? (
           <View className="rounded-[14px] border border-amber-200 bg-amber-50 p-4">
-            <Text className="text-sm leading-5 text-amber-800">Tuyến này chưa có lịch khởi hành. Vui lòng chọn tuyến khác.</Text>
+            <Text className="text-sm leading-5 text-amber-800">Tuyến này chưa có lịch khởi hành khả dụng. Vui lòng chọn tuyến khác.</Text>
           </View>
         ) : (
           <View className="gap-2">
@@ -752,8 +777,14 @@ function BookingOptionsPicker({
                       <Text className={['text-sm font-bold', isSelected ? 'text-white' : 'text-[#3A1F04]'].join(' ')}>
                         {schedule.scheduleName}
                       </Text>
-                      <Text className={['mt-1 text-xs', isSelected ? 'text-white/75' : 'text-[#877369]'].join(' ')}>
-                        {formatDayOfWeek(schedule.dayOfWeek)} · Khởi hành {schedule.departureTime.slice(0, 5)} · Đóng hàng {schedule.cutOffTime.slice(0, 5)}
+                      <Text className={['mt-1 text-xs font-semibold', isSelected ? 'text-white/90' : 'text-[#5B6EBC]'].join(' ')}>
+                        {formatDepartureDate(schedule.departureDate)}
+                      </Text>
+                      <Text className={['mt-0.5 text-xs', isSelected ? 'text-white/75' : 'text-[#877369]'].join(' ')}>
+                        Khởi hành: {schedule.departureTime.slice(0, 5)}
+                      </Text>
+                      <Text className={['mt-0.5 text-xs', isSelected ? 'text-white/75' : 'text-[#877369]'].join(' ')}>
+                        Đóng nhận đơn: {schedule.cutOffTime.slice(0, 5)}
                       </Text>
                     </View>
                     {isSelected ? <Ionicons name="checkmark-circle" size={20} color="#D4E0FF" /> : null}
@@ -960,13 +991,25 @@ function getRouteMeta(route: RouteOptionResponse) {
   return `${route.routeCode} · Dự kiến ${route.transitTime}`;
 }
 
-function formatDayOfWeek(day: number) {
-  const days: Record<number, string> = { 1: 'Thứ 2', 2: 'Thứ 3', 3: 'Thứ 4', 4: 'Thứ 5', 5: 'Thứ 6', 6: 'Thứ 7', 7: 'Chủ nhật' };
-  return days[day] ?? `Thứ ${day}`;
+function formatDepartureDate(value: string): string {
+  if (!value || typeof value !== 'string') return '—';
+  const parts = value.trim().split('-').map(Number);
+  if (parts.length !== 3 || parts.some(Number.isNaN)) return value;
+  const [year, month, day] = parts;
+  if (year < 1 || month < 1 || month > 12 || day < 1 || day > 31) return value;
+  const date = new Date(year, month - 1, day);
+  if (Number.isNaN(date.getTime()) || date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    return value;
+  }
+  const days = ['Chủ nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
+  const dayName = days[date.getDay()] ?? '—';
+  const formattedDay = String(day).padStart(2, '0');
+  const formattedMonth = String(month).padStart(2, '0');
+  return `${dayName}, ${formattedDay}/${formattedMonth}/${year}`;
 }
 
 function formatScheduleLabel(schedule: ScheduleOptionDto) {
-  return `${schedule.scheduleName} · ${formatDayOfWeek(schedule.dayOfWeek)} ${schedule.departureTime.slice(0, 5)}`;
+  return `${schedule.scheduleName} · ${formatDepartureDate(schedule.departureDate)} · Khởi hành ${schedule.departureTime.slice(0, 5)}`;
 }
 
 function isPositiveNumber(value: string) {

@@ -16,12 +16,11 @@ export interface RouteOptionsQuery {
   destCity?: string;
 }
 
-/** Một lịch khởi hành trong tuần, trả về từ GET /api/routes/{routeId}/booking-options */
+/** Một lịch khởi hành, trả về từ GET /api/routes/{routeId}/booking-options */
 export interface ScheduleOptionDto {
   scheduleId: string;
   scheduleName: string;
-  /** 1 = Thứ 2, ..., 7 = CN */
-  dayOfWeek: number;
+  departureDate: string;
   departureTime: string;
   cutOffTime: string;
 }

@@ -196,7 +196,6 @@ export default function ScheduleDeliveryScreen() {
         requestedDropoffTime: formatDateTimeForApi(dropoffDateTime),
         phone: phone.trim() || null,
         warehouseId: selectedWarehouseId.trim(),
-        customerId: customerId ?? null,
       });
 
       if (!response.success || !response.data) {

@@ -8,6 +8,7 @@ type ApiRequestOptions = {
   body?: unknown;
   headers?: Record<string, string>;
   signal?: AbortSignal;
+  logResponseBody?: boolean;
 };
 
 export class ApiClientError extends Error {
@@ -74,6 +75,17 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   });
 
   const data = await parseResponseBody(response);
+
+  if (__DEV__) {
+    console.log('[apiClient] Response details:', {
+      baseUrl: API_BASE_URL,
+      endpoint: normalizedPath,
+      method,
+      status: response.status,
+      ok: response.ok,
+      body: options.logResponseBody ? data : summarizeResponseBody(data),
+    });
+  }
 
   if (!response.ok) {
     throw new ApiClientError(getErrorMessage(data, response.status), response.status, data);
@@ -180,6 +192,27 @@ function getValidationMessage(errors: unknown): string | null {
 
 function getString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function summarizeResponseBody(data: unknown) {
+  if (Array.isArray(data)) {
+    return {
+      type: 'array',
+      count: data.length,
+      firstItemKeys: isRecord(data[0]) ? Object.keys(data[0]) : [],
+    };
+  }
+
+  if (isRecord(data)) {
+    return {
+      type: 'object',
+      keys: Object.keys(data),
+      success: data.success ?? data.Success,
+      message: getString(data.message) ?? getString(data.Message),
+    };
+  }
+
+  return data;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

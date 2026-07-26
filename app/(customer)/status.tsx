@@ -2,20 +2,26 @@ import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
-  Image,
   Pressable,
   RefreshControl,
+  ScrollView,
   Text,
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
+import { getApiErrorMessage } from '../../services/apiClient';
+import { getCustomerAsns } from '../../services/asnApi';
 import { customerApi, CustomerOrderSummaryResponse } from '../../services/customerApi';
+import { getCustomerIdFromToken } from '../../services/jwt';
 import { useAuthStore } from '../../store/useAuthStore';
-import { ScrollView } from 'react-native';
 
+const ASN_TAB = 'ASN';
+const ELIGIBLE_ASN_ORDER_STATUS = 'CONTRACT_SIGNED';
+const ORDER_PAGE_SIZE = 100;
 const TABS = [
+  { key: ASN_TAB, label: 'Tạo ASN' },
   { key: 'WAITING', label: 'Chờ xử lý' },
   { key: 'IN_STOCK', label: 'Trong kho' },
   { key: 'TRANSIT', label: 'Đang giao' },
@@ -27,8 +33,10 @@ const TABS = [
 export default function StatusScreen() {
   const router = useRouter();
   const accessToken = useAuthStore((state) => state.token);
+  const storedCustomerId = useAuthStore((state) => state.customerId ?? state.user?.customerId ?? null);
+  const customerId = storedCustomerId ?? (accessToken ? getCustomerIdFromToken(accessToken) : null);
 
-  const [activeTab, setActiveTab] = useState(TABS[0].key);
+  const [activeTab, setActiveTab] = useState(ASN_TAB);
   const [orders, setOrders] = useState<CustomerOrderSummaryResponse[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -45,16 +53,37 @@ export default function StatusScreen() {
 
     try {
       setError(null);
-      const data = await customerApi.getMyOrdersByCategory(activeTab);
-      setOrders(data || []);
-    } catch (err: any) {
-      setError(err.message || 'Lỗi kết nối.');
+
+      if (activeTab === ASN_TAB) {
+        if (!customerId) {
+          throw new Error('Không tìm thấy mã khách hàng trong phiên đăng nhập.');
+        }
+
+        const [eligibleOrders, asnResponse] = await Promise.all([
+          getAllEligibleAsnOrders(),
+          getCustomerAsns(accessToken, customerId),
+        ]);
+
+        if (!asnResponse.success) {
+          throw new Error(asnResponse.message || 'Không thể kiểm tra các ASN đã tạo.');
+        }
+
+        const orderIdsWithAsn = new Set(
+          (asnResponse.data ?? []).map((asn) => asn.orderId).filter(Boolean)
+        );
+        setOrders(eligibleOrders.filter((order) => !orderIdsWithAsn.has(order.orderId)));
+      } else {
+        const data = await customerApi.getMyOrdersByCategory(activeTab);
+        setOrders(data || []);
+      }
+    } catch (err) {
+      setError(getApiErrorMessage(err));
       setOrders([]);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [accessToken, activeTab]);
+  }, [accessToken, activeTab, customerId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -116,6 +145,22 @@ export default function StatusScreen() {
                   </Text>
                 </View>
               ) : null}
+
+              {activeTab === ASN_TAB ? (
+                <Pressable
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    router.push({
+                      pathname: '/(customer)/schedule-delivery',
+                      params: { orderId: item.orderId },
+                    } as never);
+                  }}
+                  className="mt-2 flex-row items-center justify-center gap-2 rounded-xl bg-[#8B4513] px-4 py-3"
+                >
+                  <Ionicons name="document-text-outline" size={18} color="#FFFFFF" />
+                  <Text className="font-bold text-white">Tạo ASN</Text>
+                </Pressable>
+              ) : null}
             </View>
           </View>
         </View>
@@ -173,7 +218,9 @@ export default function StatusScreen() {
             <View className="items-center justify-center py-20">
               <Ionicons name="document-text-outline" size={64} color="#877369" />
               <Text className="mt-4 text-center font-medium text-[#877369]">
-                Bạn chưa có đơn hàng nào.
+                {activeTab === ASN_TAB
+                  ? 'Không có đơn đã ký hợp đồng và chưa tạo ASN.'
+                  : 'Bạn chưa có đơn hàng nào.'}
               </Text>
             </View>
           }
@@ -181,6 +228,28 @@ export default function StatusScreen() {
       )}
     </View>
   );
+}
+
+async function getAllEligibleAsnOrders() {
+  const firstPage = await customerApi.getMyOrders(
+    1,
+    ORDER_PAGE_SIZE,
+    ELIGIBLE_ASN_ORDER_STATUS
+  );
+  const remainingPageNumbers = Array.from(
+    { length: Math.max(0, firstPage.totalPages - 1) },
+    (_, index) => index + 2
+  );
+  const remainingPages = await Promise.all(
+    remainingPageNumbers.map((pageNumber) =>
+      customerApi.getMyOrders(pageNumber, ORDER_PAGE_SIZE, ELIGIBLE_ASN_ORDER_STATUS)
+    )
+  );
+
+  return [
+    ...(firstPage.data ?? []),
+    ...remainingPages.flatMap((page) => page.data ?? []),
+  ];
 }
 
 function StatusBadge({ status }: { status: string }) {

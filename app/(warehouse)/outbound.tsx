@@ -23,7 +23,7 @@ import {
   formatDateTimeVi,
   type MessageTone,
 } from '../../constants/warehouseTheme';
-import { getApiErrorMessage } from '../../services/apiClient';
+import { ApiClientError, getApiErrorMessage } from '../../services/apiClient';
 import {
   buildDispatchDocumentUrl,
   getTripLifoPdfUrl,
@@ -50,6 +50,8 @@ import {
 import { useAuthStore } from '../../store/useAuthStore';
 
 type OutboundSection = 'planned' | 'picking' | 'seal';
+type SectionLoadingState = Record<OutboundSection, boolean>;
+type SectionErrorState = Record<OutboundSection, string | null>;
 
 const SECTIONS: { key: OutboundSection; label: string }[] = [
   { key: 'planned', label: 'Chờ bốc hàng' },
@@ -57,8 +59,17 @@ const SECTIONS: { key: OutboundSection; label: string }[] = [
   { key: 'seal', label: 'Chờ kẹp chì' },
 ];
 
+const SECTION_ENDPOINTS: Record<OutboundSection, string> = {
+  planned: '/api/Dispatch/trips/can-start-picking',
+  picking: '/api/Outbound/available-trips',
+  seal: '/api/Dispatch/trips/ready-to-seal',
+};
+
 export default function WarehouseOutboundScreen() {
   const token = useAuthStore((state) => state.token);
+  const appRole = useAuthStore((state) => state.role);
+  const backendRole = useAuthStore((state) => state.user?.backendRole ?? null);
+  const warehouseId = useAuthStore((state) => state.warehouseId ?? state.user?.warehouseId ?? null);
   const [activeSection, setActiveSection] = useState<OutboundSection>('planned');
   const [plannedTrips, setPlannedTrips] = useState<PlannedDispatchTripDto[]>([]);
   const [pickingTrips, setPickingTrips] = useState<AvailableTripDto[]>([]);
@@ -70,7 +81,16 @@ export default function WarehouseOutboundScreen() {
   const [pickLocation, setPickLocation] = useState('');
   const [sealCode, setSealCode] = useState('');
   const [notice, setNotice] = useState<{ text: string; tone: MessageTone } | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [loadingBySection, setLoadingBySection] = useState<SectionLoadingState>({
+    planned: false,
+    picking: false,
+    seal: false,
+  });
+  const [errorBySection, setErrorBySection] = useState<SectionErrorState>({
+    planned: null,
+    picking: null,
+    seal: null,
+  });
   const [startingTripId, setStartingTripId] = useState<string | null>(null);
   const [pickingLpnId, setPickingLpnId] = useState<string | null>(null);
   const [completingTripId, setCompletingTripId] = useState<string | null>(null);
@@ -103,55 +123,138 @@ export default function WarehouseOutboundScreen() {
     [token]
   );
 
-  const loadOutboundData = useCallback(async () => {
-    if (!token) {
-      setNotice({ text: 'Thiếu token xác thực. Vui lòng đăng nhập lại.', tone: 'error' });
-      setPlannedTrips([]);
-      setPickingTrips([]);
-      setSealTrips([]);
-      return [] as AvailableTripDto[];
-    }
+  const runSectionRequest = useCallback(
+    async <T,>(
+      section: OutboundSection,
+      request: (accessToken: string) => Promise<T>,
+      onSuccess: (data: T) => void,
+      onClear: () => void
+    ): Promise<T | null> => {
+      setLoadingBySection((current) => ({ ...current, [section]: true }));
+      setErrorBySection((current) => ({ ...current, [section]: null }));
 
-    setIsLoading(true);
+      if (!token) {
+        onClear();
+        setErrorBySection((current) => ({
+          ...current,
+          [section]: 'Không thể tải danh sách chuyến. Phiên đăng nhập không hợp lệ, vui lòng đăng nhập lại.',
+        }));
+        setLoadingBySection((current) => ({ ...current, [section]: false }));
+        return null;
+      }
+
+      if (__DEV__) {
+        console.log('[WarehouseOutbound] Loading tab', {
+          tab: section,
+          method: 'GET',
+          endpoint: SECTION_ENDPOINTS[section],
+          appRole,
+          backendRole,
+          warehouseId,
+        });
+      }
+
+      try {
+        const data = await request(token);
+        onSuccess(data);
+        return data;
+      } catch (error) {
+        onClear();
+        const message = getOutboundListError(error);
+        setErrorBySection((current) => ({ ...current, [section]: message }));
+
+        if (__DEV__) {
+          console.warn('[WarehouseOutbound] Failed to load tab', {
+            tab: section,
+            endpoint: SECTION_ENDPOINTS[section],
+            status: error instanceof ApiClientError ? error.status : undefined,
+            message: getApiErrorMessage(error),
+            appRole,
+            backendRole,
+            warehouseId,
+          });
+        }
+
+        return null;
+      } finally {
+        setLoadingBySection((current) => ({ ...current, [section]: false }));
+      }
+    },
+    [appRole, backendRole, token, warehouseId]
+  );
+
+  const loadPlannedTrips = useCallback(
+    () =>
+      runSectionRequest(
+        'planned',
+        getTripsCanStartPicking,
+        (data) => setPlannedTrips(data),
+        () => setPlannedTrips([])
+      ),
+    [runSectionRequest]
+  );
+
+  const loadPickingTrips = useCallback(
+    () =>
+      runSectionRequest(
+        'picking',
+        getAvailableOutboundTrips,
+        (data) => {
+          setPickingTrips(data);
+          setSelectedPickingTrip((current) =>
+            current ? data.find((trip) => trip.tripId === current.tripId) ?? null : null
+          );
+        },
+        () => {
+          setPickingTrips([]);
+          setSelectedPickingTrip(null);
+          setPendingLpns([]);
+        }
+      ),
+    [runSectionRequest]
+  );
+
+  const loadSealTrips = useCallback(
+    () =>
+      runSectionRequest(
+        'seal',
+        getTripsReadyToSeal,
+        (data) => {
+          setSealTrips(data);
+          setSelectedSealTrip((current) =>
+            current ? data.find((trip) => trip.tripId === current.tripId) ?? null : null
+          );
+        },
+        () => {
+          setSealTrips([]);
+          setSelectedSealTrip(null);
+        }
+      ),
+    [runSectionRequest]
+  );
+
+  const loadAllOutboundData = useCallback(async () => {
+    await Promise.all([loadPlannedTrips(), loadPickingTrips(), loadSealTrips()]);
+  }, [loadPickingTrips, loadPlannedTrips, loadSealTrips]);
+
+  const loadActiveSection = useCallback(async () => {
     setNotice(null);
-
-    try {
-      const [plannedResponse, pickingResponse, sealResponse] = await Promise.all([
-        getTripsCanStartPicking(token),
-        getAvailableOutboundTrips(token),
-        getTripsReadyToSeal(token),
-      ]);
-
-      assertDispatchSuccess(plannedResponse);
-      assertDispatchSuccess(sealResponse);
-
-      const plannedData = getDispatchData(plannedResponse, []);
-      const pickingData = pickingResponse ?? [];
-      const sealData = getDispatchData(sealResponse, []);
-
-      setPlannedTrips(plannedData);
-      setPickingTrips(pickingData);
-      setSealTrips(sealData);
-      setSelectedPickingTrip((current) =>
-        current ? pickingData.find((trip) => trip.tripId === current.tripId) ?? null : null
-      );
-      setSelectedSealTrip((current) =>
-        current ? sealData.find((trip) => trip.tripId === current.tripId) ?? null : null
-      );
-
-      return pickingData;
-    } catch (error) {
-      setNotice({ text: getApiErrorMessage(error), tone: 'error' });
-      return [] as AvailableTripDto[];
-    } finally {
-      setIsLoading(false);
+    if (activeSection === 'planned') {
+      await loadPlannedTrips();
+      return;
     }
-  }, [token]);
+    if (activeSection === 'picking') {
+      await loadPickingTrips();
+      return;
+    }
+    await loadSealTrips();
+  }, [activeSection, loadPickingTrips, loadPlannedTrips, loadSealTrips]);
 
   useFocusEffect(
     useCallback(() => {
-      void loadOutboundData();
-    }, [loadOutboundData])
+      setNotice(null);
+      void loadAllOutboundData();
+    }, [loadAllOutboundData])
   );
 
   const handleStartPicking = async (trip: PlannedDispatchTripDto) => {
@@ -179,8 +282,8 @@ export default function WarehouseOutboundScreen() {
       Alert.alert('Thành công', 'Đã bắt đầu bốc hàng.');
       setActiveSection('picking');
 
-      const pickingData = await loadOutboundData();
-      const updatedTrip = pickingData.find((item) => item.tripId === trip.tripId) ?? null;
+      const [pickingData] = await Promise.all([loadPickingTrips(), loadPlannedTrips()]);
+      const updatedTrip = pickingData?.find((item) => item.tripId === trip.tripId) ?? null;
       setSelectedPickingTrip(updatedTrip);
       if (updatedTrip) {
         await loadPendingLpns(updatedTrip.tripId);
@@ -249,8 +352,8 @@ export default function WarehouseOutboundScreen() {
       setScanLpnCode('');
       setPickLocation('');
 
-      const pickingData = await loadOutboundData();
-      const updatedTrip = pickingData.find((trip) => trip.tripId === selectedPickingTrip.tripId) ?? null;
+      const pickingData = await loadPickingTrips();
+      const updatedTrip = pickingData?.find((trip) => trip.tripId === selectedPickingTrip.tripId) ?? null;
       setSelectedPickingTrip(updatedTrip);
       await loadPendingLpns(selectedPickingTrip.tripId);
     } catch (error) {
@@ -288,7 +391,7 @@ export default function WarehouseOutboundScreen() {
       setSelectedPickingTrip(null);
       setPendingLpns([]);
       setActiveSection('seal');
-      await loadOutboundData();
+      await Promise.all([loadPickingTrips(), loadSealTrips()]);
     } catch (error) {
       setNotice({ text: getApiErrorMessage(error), tone: 'error' });
     } finally {
@@ -335,7 +438,7 @@ export default function WarehouseOutboundScreen() {
       Alert.alert('Thành công', 'Kẹp chì và xuất kho thành công.');
       setSealCode('');
       setSelectedSealTrip(null);
-      await loadOutboundData();
+      await loadSealTrips();
     } catch (error) {
       setNotice({ text: getApiErrorMessage(error), tone: 'error' });
     } finally {
@@ -397,7 +500,10 @@ export default function WarehouseOutboundScreen() {
               return (
                 <Pressable
                   key={section.key}
-                  onPress={() => setActiveSection(section.key)}
+                  onPress={() => {
+                    setActiveSection(section.key);
+                    setNotice(null);
+                  }}
                   style={{
                     borderRadius: 10,
                     paddingHorizontal: 12,
@@ -423,18 +529,24 @@ export default function WarehouseOutboundScreen() {
             <AppButton
               icon="refresh-outline"
               label="Làm mới"
-              onPress={() => void loadOutboundData()}
-              loading={isLoading}
+              onPress={() => void loadActiveSection()}
+              loading={loadingBySection[activeSection]}
               variant="secondary"
             />
           </View>
 
           {notice ? <View style={{ marginBottom: 12 }}><AppMessage text={notice.text} tone={notice.tone} /></View> : null}
-          {isLoading ? <ActivityIndicator style={{ marginVertical: 12 }} color={WH_COLORS.primary} /> : null}
 
           {activeSection === 'planned' ? (
             <Section title="Chuyến chờ bốc hàng" subtitle="Trip PLANNED, LPN ALLOCATED">
-              {plannedTrips.length === 0 ? (
+              {loadingBySection.planned ? (
+                <OutboundLoadingState />
+              ) : errorBySection.planned ? (
+                <OutboundErrorState
+                  message={errorBySection.planned}
+                  onRetry={() => void loadPlannedTrips()}
+                />
+              ) : plannedTrips.length === 0 ? (
                 <EmptyState icon="cube-outline" message="Không có chuyến nào đang chờ bốc hàng." />
               ) : (
                 <View style={{ gap: 12 }}>
@@ -455,7 +567,14 @@ export default function WarehouseOutboundScreen() {
 
           {activeSection === 'picking' ? (
             <Section title="Đang bốc hàng" subtitle="Trip PICKING, scan từng LPN LOADING">
-              {pickingTrips.length === 0 ? (
+              {loadingBySection.picking ? (
+                <OutboundLoadingState />
+              ) : errorBySection.picking ? (
+                <OutboundErrorState
+                  message={errorBySection.picking}
+                  onRetry={() => void loadPickingTrips()}
+                />
+              ) : pickingTrips.length === 0 ? (
                 <EmptyState icon="barcode-outline" message="Không có chuyến nào đang bốc hàng." />
               ) : (
                 <View style={{ gap: 12 }}>
@@ -470,7 +589,7 @@ export default function WarehouseOutboundScreen() {
                 </View>
               )}
 
-              {selectedPickingTrip ? (
+              {!loadingBySection.picking && !errorBySection.picking && selectedPickingTrip ? (
                 <View style={{ marginTop: 16, gap: 12 }}>
                   <Text style={{ fontSize: 16, fontWeight: '700', color: WH_COLORS.textPrimary }}>
                     Scan LPN bốc hàng
@@ -527,7 +646,7 @@ export default function WarehouseOutboundScreen() {
                 </View>
               ) : null}
 
-              {lastLoadingResult ? (
+              {!loadingBySection.picking && !errorBySection.picking && lastLoadingResult ? (
                 <OutboundDocuments result={lastLoadingResult} onOpenDocument={openOutboundDocument} />
               ) : null}
             </Section>
@@ -535,7 +654,14 @@ export default function WarehouseOutboundScreen() {
 
           {activeSection === 'seal' ? (
             <Section title="Chờ kẹp chì" subtitle="Trip LOADING_COMPLETED, LPN RELEASED">
-              {sealTrips.length === 0 ? (
+              {loadingBySection.seal ? (
+                <OutboundLoadingState />
+              ) : errorBySection.seal ? (
+                <OutboundErrorState
+                  message={errorBySection.seal}
+                  onRetry={() => void loadSealTrips()}
+                />
+              ) : sealTrips.length === 0 ? (
                 <EmptyState icon="lock-closed-outline" message="Không có chuyến nào đang chờ kẹp chì." />
               ) : (
                 <View style={{ gap: 12 }}>
@@ -550,7 +676,7 @@ export default function WarehouseOutboundScreen() {
                 </View>
               )}
 
-              {selectedSealTrip ? (
+              {!loadingBySection.seal && !errorBySection.seal && selectedSealTrip ? (
                 <View style={{ marginTop: 16, gap: 12 }}>
                   <Text style={{ fontSize: 16, fontWeight: '700', color: WH_COLORS.textPrimary }}>
                     Kẹp chì xe
@@ -570,7 +696,7 @@ export default function WarehouseOutboundScreen() {
                 </View>
               ) : null}
 
-              {lastSealResult ? (
+              {!loadingBySection.seal && !errorBySection.seal && lastSealResult ? (
                 <View style={{ marginTop: 16, gap: 12 }}>
                   <AppMessage
                     tone="success"
@@ -589,6 +715,37 @@ export default function WarehouseOutboundScreen() {
           ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
+    </View>
+  );
+}
+
+function OutboundLoadingState() {
+  return (
+    <View style={{ alignItems: 'center', gap: 10, paddingVertical: 28 }}>
+      <ActivityIndicator color={WH_COLORS.primary} />
+      <Text style={{ fontSize: 14, color: WH_COLORS.textSecondary }}>
+        Đang tải danh sách chuyến...
+      </Text>
+    </View>
+  );
+}
+
+function OutboundErrorState({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <View style={{ gap: 12 }}>
+      <AppMessage text={message} tone="error" />
+      <AppButton
+        icon="refresh-outline"
+        label="Thử lại"
+        onPress={onRetry}
+        variant="secondary"
+      />
     </View>
   );
 }
@@ -851,6 +1008,25 @@ function assertDispatchSuccess<T>(response: DispatchEnvelope<T>) {
 
 function getDispatchData<T>(response: DispatchEnvelope<T>, fallback: T) {
   return response.data ?? response.Data ?? fallback;
+}
+
+function getOutboundListError(error: unknown) {
+  if (error instanceof ApiClientError) {
+    if (error.status === 401) {
+      return 'Không thể tải danh sách chuyến. Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.';
+    }
+    if (error.status === 403) {
+      return 'Không thể tải danh sách chuyến. Tài khoản hiện tại không có quyền truy cập.';
+    }
+    if (error.status === 404) {
+      return 'Không thể tải danh sách chuyến. Endpoint chưa có trên Backend deploy.';
+    }
+    if (error.status && error.status >= 500) {
+      return 'Không thể tải danh sách chuyến. Backend đang gặp lỗi, vui lòng thử lại.';
+    }
+  }
+
+  return 'Không thể tải danh sách chuyến.';
 }
 
 function findLpnInTrip(lpns: AvailableTripLpnDto[], rawValue: string) {

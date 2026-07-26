@@ -58,6 +58,7 @@ export function getAvailableOutboundTrips(accessToken: string, tripId?: string |
 
   return apiRequest<AvailableTripDto[]>(`/api/Outbound/available-trips${query}`, {
     headers: getAuthHeaders(accessToken),
+    logResponseBody: true,
   });
 }
 
@@ -66,6 +67,7 @@ export function getAvailableOutboundLpns(accessToken: string, tripId?: string | 
 
   return apiRequest<AvailableLpnDto[]>(`/api/Outbound/available-lpns${query}`, {
     headers: getAuthHeaders(accessToken),
+    logResponseBody: true,
   });
 }
 
