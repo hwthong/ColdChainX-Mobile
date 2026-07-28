@@ -105,6 +105,17 @@ export function login(payload: LoginPayload) {
   });
 }
 
+export interface GoogleLoginRequest {
+  idToken: string;
+}
+
+export function googleLogin(idToken: string) {
+  return apiRequest<ApiResponse<AuthUserDto>>('/api/auth/google-login', {
+    method: 'POST',
+    body: { idToken },
+  });
+}
+
 export function refreshTokens(refreshToken: string) {
   return apiRequest<ApiResponse<AuthUserDto>>('/api/auth/refresh-tokens', {
     method: 'POST',
