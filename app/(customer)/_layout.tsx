@@ -19,6 +19,7 @@ export default function CustomerLayout() {
             notifications: 'Thông báo',
             'schedule-delivery': 'Đặt lịch giao',
             'delivery-schedules': 'Lịch vận chuyển',
+            'change-password': 'Đổi mật khẩu',
           };
           const title = titleMap[route.name] || 'ColdChainX';
           const showBackButton = route.name !== 'home' && route.name !== 'profile';
@@ -106,6 +107,12 @@ export default function CustomerLayout() {
       />
       <Tabs.Screen
         name="notifications"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="change-password"
         options={{
           href: null,
         }}

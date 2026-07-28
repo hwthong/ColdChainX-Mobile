@@ -127,6 +127,19 @@ export function updateProfile(accessToken: string, payload: UpdateProfilePayload
   });
 }
 
+export type ChangePasswordPayload = {
+  currentPassword?: string | null;
+  newPassword?: string | null;
+};
+
+export function changePassword(accessToken: string, payload: ChangePasswordPayload) {
+  return apiRequest<ApiResponse<boolean>>('/api/auth/change-password', {
+    method: 'PUT',
+    headers: getAuthHeaders(accessToken),
+    body: payload,
+  });
+}
+
 // Admin-only endpoint. Regular mobile user/driver flows should not call this.
 export function deleteUser(accessToken: string, userId: string) {
   return apiRequest<ApiResponse<boolean>>(`/api/auth/${userId}`, {

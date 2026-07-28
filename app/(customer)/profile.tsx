@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 import { getApiErrorMessage } from '../../services/apiClient';
@@ -120,6 +120,20 @@ export default function ProfileScreen() {
           </View>
         ) : null}
       </View>
+
+      <Pressable
+        onPress={() => router.push('/(customer)/change-password' as any)}
+        className="mt-6 flex-row items-center justify-between rounded-2xl bg-white p-5 shadow-sm"
+        style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+      >
+        <View className="flex-row items-center gap-3">
+          <View className="rounded-full bg-[#8B4513]/10 p-2">
+            <Ionicons name="lock-closed-outline" size={20} color="#8B4513" />
+          </View>
+          <Text className="text-base font-bold text-[#3A1F04]">Đổi mật khẩu</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color="#877369" />
+      </Pressable>
 
       <LogoutButton onPress={handleLogout} />
     </ScrollView>
