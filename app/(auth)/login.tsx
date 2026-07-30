@@ -19,13 +19,9 @@ import {
   logout as logoutApi,
   googleLogin,
 } from '../../services/authApi';
-import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
+import { isGoogleSigninSupported, performGoogleSignIn } from '../../services/googleAuth';
 import { getRoleFromToken } from '../../services/jwt';
 import { useAuthStore } from '../../store/useAuthStore';
-
-GoogleSignin.configure({
-  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-});
 
 const LOGIN_CREDENTIALS_ERROR = 'Email hoặc mật khẩu không chính xác';
 const UNSUPPORTED_MOBILE_ROLE_ERROR = 'Tài khoản này không hỗ trợ đăng nhập trên mobile.';
@@ -40,8 +36,16 @@ export default function LoginScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleGoogleLogin = async () => {
-    if (!process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID) {
-      setErrorMessage('ÄÄƒng nháº­p Google chÆ°a Ä‘Æ°á»£c cáº¥u hÃ¬nh.');
+    const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+    if (!webClientId) {
+      setErrorMessage('Đăng nhập Google chưa được cấu hình (thiếu EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID).');
+      return;
+    }
+
+    if (!isGoogleSigninSupported()) {
+      setErrorMessage(
+        'Đăng nhập Google yêu cầu bản Development Build (npx expo run:android). Tính năng không hỗ trợ trên Expo Go.'
+      );
       return;
     }
 
@@ -49,9 +53,16 @@ export default function LoginScreen() {
     setIsGoogleLoading(true);
 
     try {
-      await GoogleSignin.hasPlayServices();
-      const userInfo = await GoogleSignin.signIn();
-      const idToken = userInfo.data?.idToken;
+      const { idToken, cancelled, playServicesUnavailable } = await performGoogleSignIn(webClientId);
+
+      if (cancelled) {
+        return;
+      }
+
+      if (playServicesUnavailable) {
+        setErrorMessage('Thiết bị chưa hỗ trợ dịch vụ đăng nhập Google.');
+        return;
+      }
 
       if (!idToken) {
         throw new Error('Không nhận được thông tin xác thực từ Google. Vui lòng thử lại.');
@@ -67,7 +78,6 @@ export default function LoginScreen() {
       const backendRole = authData.role ?? getRoleFromToken(authData.accessToken);
       const appRole = getMobileRoleFromBackend(backendRole);
       if (!appRole) {
-        await revokeIssuedToken(authData.accessToken);
         throw new Error(UNSUPPORTED_MOBILE_ROLE_ERROR);
       }
 
@@ -86,14 +96,8 @@ export default function LoginScreen() {
         },
       });
 
-    } catch (error: any) {
-      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
-        // Do nothing
-      } else if (error.code === statusCodes.IN_PROGRESS) {
-        // Do nothing
-      } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
-        setErrorMessage('Thiết bị chưa hỗ trợ dịch vụ đăng nhập Google.');
-      } else if (error instanceof ApiClientError) {
+    } catch (error: unknown) {
+      if (error instanceof ApiClientError) {
         const msg = getApiErrorMessage(error);
         if (error.status === 401) {
           if (msg.includes('deactivated') || msg.includes('vô hiệu hóa') || msg.includes('deactivate')) {
@@ -104,12 +108,14 @@ export default function LoginScreen() {
         } else if (error.status === 409) {
           setErrorMessage('Email này đã được liên kết với một tài khoản Google khác.');
         } else if (error.status && error.status >= 500) {
-          setErrorMessage('ÄÄƒng nháº­p Google hiá»‡n chÆ°a kháº£ dá»¥ng. Vui lÃ²ng thá»­ láº¡i sau.');
+          setErrorMessage('Đăng nhập Google hiện chưa khả dụng. Vui lòng thử lại sau.');
         } else {
           setErrorMessage('Không thể kết nối máy chủ. Vui lòng kiểm tra mạng.');
         }
-      } else {
+      } else if (error instanceof Error) {
         setErrorMessage(error.message || 'Không thể kết nối máy chủ. Vui lòng kiểm tra mạng.');
+      } else {
+        setErrorMessage('Không thể kết nối máy chủ. Vui lòng kiểm tra mạng.');
       }
     } finally {
       setIsGoogleLoading(false);
