@@ -1,8 +1,9 @@
-import type { GoodsType } from '../../../components/GoodsTypeSelector';
 import type { RouteBookingOptionsDto, RouteOptionResponse } from '../../../services/routeApi';
 
 export const MIN_TEMPERATURE_CELSIUS = -18;
 export const MAX_TEMPERATURE_CELSIUS = -5;
+
+export type GoodsType = 'MEAT_SEAFOOD' | 'FROZEN_FRUITS_VEGGIES' | 'PHARMACEUTICALS';
 
 export type CreateOrderFieldKey =
   | 'itemName'

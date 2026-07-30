@@ -30,6 +30,7 @@ export const AddressAutocompleteField = forwardRef<TextInput, AddressAutocomplet
 ) {
   const [suggestions, setSuggestions] = useState<GoongAddressSuggestion[]>([]);
   const [searchState, setSearchState] = useState<SearchState>('idle');
+  const [isFocused, setIsFocused] = useState(false);
   const requestIdRef = useRef(0);
   const selectedAddressRef = useRef<string | null>(null);
 
@@ -92,7 +93,8 @@ export const AddressAutocompleteField = forwardRef<TextInput, AddressAutocomplet
       </Text>
       <View className={[
         'min-h-[52px] flex-row items-center rounded-[14px] border bg-[#F8F9FA] px-4',
-        error ? 'border-red-300' : 'border-[#DAC2B6]/60',
+        error ? 'border-red-300' : isFocused ? 'border-[#8B4513]' : 'border-[#DAC2B6]/60',
+        disabled ? 'opacity-60' : '',
       ].join(' ')}>
         <Ionicons name="location-outline" size={18} color="#8B4513" />
         <TextInput
@@ -100,11 +102,15 @@ export const AddressAutocompleteField = forwardRef<TextInput, AddressAutocomplet
           className="min-h-[52px] flex-1 px-3 text-[14px] font-medium text-[#3A1F04]"
           value={value}
           onChangeText={onChangeText}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
           editable={!disabled}
           placeholder="Nhập số nhà, đường, phường/xã..."
           placeholderTextColor="#877369"
           accessibilityLabel={`${label}${required ? ', bắt buộc' : ''}`}
           accessibilityHint={error || 'Nhập ít nhất 3 ký tự để nhận gợi ý địa chỉ'}
+          accessibilityState={{ disabled }}
+          selectionColor="#8B4513"
           returnKeyType="done"
         />
         {searchState === 'loading' ? <ActivityIndicator size="small" color="#8B4513" accessibilityLabel="Đang tải gợi ý địa chỉ" /> : null}

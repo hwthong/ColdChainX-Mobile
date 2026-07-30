@@ -1,31 +1,30 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   BackHandler,
-  Image,
   Keyboard,
   KeyboardAvoidingView,
   Linking,
-  Modal,
   Platform,
-  Pressable,
   ScrollView,
-  Text,
   TextInput,
   View,
   findNodeHandle,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppToast, ToastType } from '../../components/AppToast';
-import { GoodsType, GoodsTypeSelector } from '../../components/GoodsTypeSelector';
-import { getPackagingTypeLabel, PackagingTypeSelector } from '../../components/PackagingTypeSelector';
-import { TemperatureSelector } from '../../components/TemperatureSelector';
-import { AddressAutocompleteField } from '../../features/customer/create-order/components/AddressAutocompleteField';
+import { CargoInformationStep } from '../../features/customer/create-order/components/CargoInformationStep';
+import { CreateOrderReviewStep } from '../../features/customer/create-order/components/CreateOrderReviewStep';
+import {
+  CreateOrderBottomActionBar,
+  CreateOrderSuccessModal,
+  type CreateOrderSuccessData,
+} from '../../features/customer/create-order/components/CreateOrderUi';
+import { PackagingImageStep } from '../../features/customer/create-order/components/PackagingImageStep';
+import { RouteScheduleStep } from '../../features/customer/create-order/components/RouteScheduleStep';
 import { CreateOrderStepProgress } from '../../features/customer/create-order/CreateOrderStepProgress';
 import { mapCreateOrderRequest } from '../../features/customer/create-order/createOrderMapper';
 import {
@@ -35,6 +34,7 @@ import {
   CreateOrderStep,
   CreateOrderValidationErrors,
   DocumentImage,
+  GoodsType,
   isCreateOrderFormDirty,
   parseCreateOrderDecimal,
   validateCreateOrderForm,
@@ -47,16 +47,8 @@ import {
   getRouteOptions,
   RouteBookingOptionsDto,
   RouteOptionResponse,
-  ScheduleOptionDto,
 } from '../../services/routeApi';
 import { useAuthStore } from '../../store/useAuthStore';
-
-type SuccessData = {
-  orderId: string;
-  trackingCode: string;
-  status: string;
-  documentUrl?: string | null;
-};
 
 const STEP_DETAILS: Record<CreateOrderStep, { title: string; subtitle: string }> = {
   1: { title: 'Tuyến và lịch vận chuyển', subtitle: 'Chọn tuyến, lịch và điểm giao phù hợp.' },
@@ -114,7 +106,7 @@ export default function CreateOrderScreen() {
     message: '',
   });
   const [isLoading, setIsLoading] = useState(false);
-  const [successData, setSuccessData] = useState<SuccessData | null>(null);
+  const [successData, setSuccessData] = useState<CreateOrderSuccessData | null>(null);
   const [currentStep, setCurrentStep] = useState<CreateOrderStep>(1);
   const [hasUserEditedForm, setHasUserEditedForm] = useState(false);
 
@@ -541,46 +533,29 @@ export default function CreateOrderScreen() {
     setHasUserEditedForm(false);
   };
 
-  // ─── Text field helper ───────────────────────────────────────────────────────
-  const renderField = (
+  const registerField = (field: CreateOrderFieldKey, node: View | null) => {
+    fieldRefs.current[field] = node;
+  };
+
+  const registerInput = (field: CreateOrderFieldKey, node: TextInput | null) => {
+    inputRefs.current[field] = node;
+  };
+
+  const updateTextField = (
     field: CreateOrderFieldKey,
-    label: string,
-    placeholder: string,
     value: string,
-    onChangeText: (text: string) => void,
-    keyboardType: 'default' | 'numeric' = 'default'
-  ) => (
-    <View ref={(node) => { fieldRefs.current[field] = node; }} className="gap-1.5">
-      <Text className="text-[#3A1F04] text-[13px] font-bold">{label} <Text className="text-red-600">*</Text></Text>
-      <TextInput
-        ref={(node) => { inputRefs.current[field] = node; }}
-        className={[
-          'min-h-[52px] rounded-[14px] border bg-[#F8F9FA] px-4 text-[14px] font-medium text-[#3A1F04]',
-          errors[field] ? 'border-red-300' : 'border-[#DAC2B6]/60',
-        ].join(' ')}
-        placeholder={placeholder}
-        placeholderTextColor="#877369"
-        accessibilityLabel={`${label}, bắt buộc`}
-        accessibilityHint={errors[field] || undefined}
-        accessibilityState={{ disabled: false }}
-        value={value}
-          onChangeText={(text) => {
-            onChangeText(text);
-            setHasUserEditedForm(true);
-          if (errors[field]) setErrors((current) => ({ ...current, [field]: undefined }));
-        }}
-        keyboardType={keyboardType}
-        returnKeyType={getNextInputField(field) ? 'next' : 'done'}
-        blurOnSubmit={!getNextInputField(field)}
-        onSubmitEditing={() => {
-          const nextField = getNextInputField(field);
-          if (nextField) inputRefs.current[nextField]?.focus();
-          else Keyboard.dismiss();
-        }}
-      />
-      {errors[field] ? <Text accessibilityLiveRegion="polite" className="text-xs font-medium text-red-600">{errors[field]}</Text> : null}
-    </View>
-  );
+    setter: (nextValue: string) => void
+  ) => {
+    setter(value);
+    setHasUserEditedForm(true);
+    if (errors[field]) setErrors((current) => ({ ...current, [field]: undefined }));
+  };
+
+  const submitTextField = (field: CreateOrderFieldKey) => {
+    const nextField = getNextInputField(field);
+    if (nextField) inputRefs.current[nextField]?.focus();
+    else Keyboard.dismiss();
+  };
 
   // ─── Render ──────────────────────────────────────────────────────────────────
   return (
@@ -606,447 +581,127 @@ export default function CreateOrderScreen() {
         <CreateOrderStepProgress currentStep={currentStep} totalSteps={4} {...STEP_DETAILS[currentStep]} />
 
         {currentStep === 1 ? (
-          <View className="gap-4 rounded-2xl border border-[#DAC2B6]/50 bg-white p-5">
-            <SectionTitle title="Tuyến và lịch" icon="navigate-outline" />
-            <View className="rounded-xl bg-[#F8F3EF] p-4">
-              <Text className="text-sm font-bold text-[#3A1F04]">Điểm lấy hàng</Text>
-              <Text className="mt-1 text-sm leading-5 text-[#877369]">Hub ColdChainX sẽ được xác nhận sau khi yêu cầu được duyệt.</Text>
-            </View>
-            <View ref={(node) => { fieldRefs.current.routeId = node; }}>
-              <RouteOptionPicker routes={routeOptions} selectedRouteId={selectedRouteId} isLoading={isLoadingRoutes} error={routeError} onRetry={fetchRoutes} onSelect={handleRouteSelect} />
-              {errors.routeId ? <Text accessibilityLiveRegion="polite" className="text-xs font-medium text-red-600">{errors.routeId}</Text> : null}
-            </View>
-            {selectedRouteId ? (
-              <View ref={(node) => { fieldRefs.current.scheduleId = node; fieldRefs.current.dropoffStopId = node; }}>
-                <BookingOptionsPicker
-                  bookingOptions={bookingOptions}
-                  isLoading={isLoadingBooking}
-                  error={bookingError}
-                  selectedScheduleId={selectedScheduleId}
-                  selectedStopId={selectedStopId}
-                  scheduleError={errors.scheduleId}
-                  stopError={errors.dropoffStopId}
-                  onRetry={() => fetchBookingOptions(selectedRouteId)}
-                  onSelectSchedule={(scheduleId) => { setHasUserEditedForm(true); setSelectedScheduleId(scheduleId); setErrors((current) => ({ ...current, scheduleId: undefined })); }}
-                  onSelectStop={(stopId) => { setHasUserEditedForm(true); setSelectedStopId(stopId); setErrors((current) => ({ ...current, dropoffStopId: undefined })); }}
-                />
-              </View>
-            ) : (
-              <View className="rounded-xl border border-dashed border-[#DAC2B6] bg-[#F8F9FA] p-4">
-                <Text className="text-sm leading-5 text-[#877369]">Chọn tuyến vận chuyển để xem lịch và điểm giao.</Text>
-              </View>
-            )}
-            <View ref={(node) => { fieldRefs.current.destAddressText = node; }}>
-              <AddressAutocompleteField
-                ref={(node) => { inputRefs.current.destAddressText = node; }}
-                value={destAddressText}
-                error={errors.destAddressText}
-                onChangeText={(value) => {
-                  setHasUserEditedForm(true);
-                  setDestAddressText(value);
-                  if (errors.destAddressText) setErrors((current) => ({ ...current, destAddressText: undefined }));
-                }}
-                onSelectAddress={(address) => {
-                  setHasUserEditedForm(true);
-                  setDestAddressText(address);
-                  setErrors((current) => ({ ...current, destAddressText: undefined }));
-                }}
-              />
-            </View>
-          </View>
+          <RouteScheduleStep
+            routes={routeOptions}
+            selectedRouteId={selectedRouteId}
+            bookingOptions={bookingOptions}
+            selectedScheduleId={selectedScheduleId}
+            selectedStopId={selectedStopId}
+            address={destAddressText}
+            errors={errors}
+            isLoadingRoutes={isLoadingRoutes}
+            isLoadingBooking={isLoadingBooking}
+            routeError={routeError}
+            bookingError={bookingError}
+            registerField={registerField}
+            registerInput={registerInput}
+            onRetryRoutes={fetchRoutes}
+            onRetryBooking={() => fetchBookingOptions(selectedRouteId)}
+            onSelectRoute={handleRouteSelect}
+            onSelectSchedule={(scheduleId) => {
+              setHasUserEditedForm(true);
+              setSelectedScheduleId(scheduleId);
+              setErrors((current) => ({ ...current, scheduleId: undefined }));
+            }}
+            onSelectStop={(stopId) => {
+              setHasUserEditedForm(true);
+              setSelectedStopId(stopId);
+              setErrors((current) => ({ ...current, dropoffStopId: undefined }));
+            }}
+            onChangeAddress={(value) => updateTextField('destAddressText', value, setDestAddressText)}
+            onSelectAddress={(address) => {
+              setHasUserEditedForm(true);
+              setDestAddressText(address);
+              setErrors((current) => ({ ...current, destAddressText: undefined }));
+            }}
+          />
         ) : null}
 
         {currentStep === 2 ? (
-          <View className="gap-4">
-            <View className="rounded-2xl border border-[#DAC2B6]/50 bg-white p-5">
-              <SectionTitle title="Thông tin cơ bản" icon="cube-outline" />
-              <View className="mt-4 gap-4">
-                {renderField('itemName', 'Tên hàng hóa', 'Ví dụ: Nho Mỹ, vaccine, cá hồi...', itemName, setItemName)}
-                <View className="flex-row gap-3">
-                  <View className="flex-1">{renderField('expectedWeightKg', 'Khối lượng dự kiến (kg)', 'Ví dụ: 12.5', expectedWeightKg, setExpectedWeightKg, 'numeric')}</View>
-                  <View className="w-[118px]">{renderField('quantity', 'Số kiện', 'Ví dụ: 1', quantity, setQuantity, 'numeric')}</View>
-                </View>
-              </View>
-            </View>
-            <View ref={(node) => { fieldRefs.current.category = node; }}>
-              <GoodsTypeSelector value={category} onChange={(value) => { setHasUserEditedForm(true); setCategory(value); setErrors((current) => ({ ...current, category: undefined })); }} />
-              {errors.category ? <Text accessibilityLiveRegion="polite" className="mt-2 text-xs font-medium text-red-600">{errors.category}</Text> : null}
-            </View>
-            <View ref={(node) => { fieldRefs.current.tempCondition = node; }}>
-              <TemperatureSelector temperature={tempCondition} error={errors.tempCondition} setTemperature={(temperature) => { setHasUserEditedForm(true); setTempCondition(temperature); setErrors((current) => ({ ...current, tempCondition: undefined })); }} />
-            </View>
-          </View>
+          <CargoInformationStep
+            itemName={itemName}
+            expectedWeightKg={expectedWeightKg}
+            quantity={quantity}
+            category={category}
+            temperature={tempCondition}
+            errors={errors}
+            registerField={registerField}
+            registerInput={registerInput}
+            onChangeItemName={(value) => updateTextField('itemName', value, setItemName)}
+            onChangeExpectedWeight={(value) => updateTextField('expectedWeightKg', value, setExpectedWeightKg)}
+            onChangeQuantity={(value) => updateTextField('quantity', value, setQuantity)}
+            onChangeCategory={(value) => {
+              setHasUserEditedForm(true);
+              setCategory(value);
+              setErrors((current) => ({ ...current, category: undefined }));
+            }}
+            onChangeTemperature={(value) => {
+              setHasUserEditedForm(true);
+              setTempCondition(value);
+              setErrors((current) => ({ ...current, tempCondition: undefined }));
+            }}
+            onSubmitField={submitTextField}
+          />
         ) : null}
 
         {currentStep === 3 ? (
-          <View className="gap-4">
-            <View className="rounded-2xl border border-[#DAC2B6]/50 bg-white p-5">
-              <SectionTitle title="Đóng gói" icon="archive-outline" />
-              <View className="mt-4 gap-4">
-                <View ref={(node) => { fieldRefs.current.packagingType = node; }} className="gap-2">
-                  <Text className="text-[13px] font-bold text-[#3A1F04]">Loại bao bì <Text className="text-red-600">*</Text></Text>
-                  <Text className="text-xs text-[#877369]">Chọn một hoặc nhiều loại bao bì phù hợp với lô hàng.</Text>
-                  <PackagingTypeSelector selectedTypes={packagingType} onChange={(selected) => { setHasUserEditedForm(true); setPackagingType(selected); setErrors((current) => ({ ...current, packagingType: undefined })); }} />
-                  {errors.packagingType ? <Text className="text-xs font-medium text-red-600">{errors.packagingType}</Text> : null}
-                </View>
-                <View className="gap-2">
-                  <Text className="text-[13px] font-bold text-[#3A1F04]">Kích thước kiện hàng <Text className="text-red-600">*</Text></Text>
-                  <View className="flex-row gap-2">
-                    <View className="flex-1">{renderField('lengthCm', 'Dài (cm)', 'Dài', lengthCm, setLengthCm, 'numeric')}</View>
-                    <View className="flex-1">{renderField('widthCm', 'Rộng (cm)', 'Rộng', widthCm, setWidthCm, 'numeric')}</View>
-                    <View className="flex-1">{renderField('heightCm', 'Cao (cm)', 'Cao', heightCm, setHeightCm, 'numeric')}</View>
-                  </View>
-                </View>
-              </View>
-            </View>
-            {capacityWarning ? <View className="rounded-2xl border border-amber-200 bg-amber-50 p-4"><View className="flex-row items-start gap-2"><Ionicons name="warning-outline" size={18} color="#b45309" /><Text className="flex-1 text-sm font-semibold leading-5 text-amber-800">{capacityWarning}</Text></View></View> : null}
-            <View ref={(node) => { fieldRefs.current.documentImage = node; }} className="gap-3 rounded-2xl border border-[#DAC2B6]/50 bg-white p-5">
-              <SectionTitle title="Ảnh lô hàng" icon="camera-outline" />
-              {documentImage ? (
-                <View className="gap-3">
-                  <Image source={{ uri: documentImage.uri }} className="h-44 w-full rounded-xl" resizeMode="cover" />
-                  <View className="flex-row gap-3">
-                    <Pressable onPress={openImagePicker} accessibilityRole="button" accessibilityLabel="Thay ảnh lô hàng" className="min-h-11 flex-1 items-center justify-center rounded-xl bg-[#F8F3EF]"><Text className="text-sm font-bold text-[#8B4513]">Thay ảnh</Text></Pressable>
-                    <Pressable onPress={removeDocumentImage} accessibilityRole="button" accessibilityLabel="Xóa ảnh lô hàng" className="min-h-11 flex-1 items-center justify-center rounded-xl border border-[#DAC2B6]"><Text className="text-sm font-bold text-[#3A1F04]">Xóa ảnh</Text></Pressable>
-                  </View>
-                </View>
-              ) : (
-                <Pressable onPress={openImagePicker} accessibilityRole="button" accessibilityLabel="Thêm ảnh lô hàng" accessibilityHint="Chụp ảnh hoặc chọn ảnh rõ kiện hàng" className={['min-h-[148px] items-center justify-center rounded-xl border-2 border-dashed px-5', errors.documentImage ? 'border-red-300 bg-red-50' : 'border-[#DAC2B6] bg-[#F8F9FA]'].join(' ')}>
-                  <View className="h-12 w-12 items-center justify-center rounded-full bg-[#8B4513]/10"><Ionicons name="camera-outline" size={26} color="#8B4513" /></View>
-                  <Text className="mt-3 text-center text-sm font-bold text-[#3A1F04]">Thêm ảnh lô hàng</Text>
-                  <Text className="mt-1 text-center text-xs leading-5 text-[#877369]">Ảnh rõ kiện hàng, chỉ chọn ảnh và không chọn video.</Text>
-                </Pressable>
-              )}
-              {errors.documentImage ? <Text className="text-xs font-medium text-red-600">{errors.documentImage}</Text> : null}
-            </View>
-          </View>
+          <PackagingImageStep
+            packagingTypes={packagingType}
+            lengthCm={lengthCm}
+            widthCm={widthCm}
+            heightCm={heightCm}
+            image={documentImage}
+            capacityWarning={capacityWarning}
+            errors={errors}
+            registerField={registerField}
+            registerInput={registerInput}
+            onChangePackagingTypes={(value) => {
+              setHasUserEditedForm(true);
+              setPackagingType(value);
+              setErrors((current) => ({ ...current, packagingType: undefined }));
+            }}
+            onChangeLength={(value) => updateTextField('lengthCm', value, setLengthCm)}
+            onChangeWidth={(value) => updateTextField('widthCm', value, setWidthCm)}
+            onChangeHeight={(value) => updateTextField('heightCm', value, setHeightCm)}
+            onPickImage={openImagePicker}
+            onRemoveImage={removeDocumentImage}
+            onSubmitField={submitTextField}
+          />
         ) : null}
 
         {currentStep === 4 ? (
-          <View className="gap-3">
-            <ReviewSection title="Tuyến và lịch" onEdit={() => goToStep(1)} rows={[['Tuyến', selectedRoute ? getRouteLabel(selectedRoute) : '—'], ['Lịch', selectedSchedule ? formatScheduleLabel(selectedSchedule) : '—'], ['Điểm giao', selectedStop?.stopName || '—'], ['Địa chỉ', destAddressText || '—']]} />
-            <ReviewSection title="Hàng hóa" onEdit={() => goToStep(2)} rows={[['Tên hàng', itemName || '—'], ['Loại hàng', getGoodsTypeLabel(category)], ['Khối lượng', expectedWeightKg ? `${expectedWeightKg} kg` : '—'], ['Số kiện', quantity ? `${quantity} kiện` : '—'], ['Nhiệt độ', `${tempCondition}°C`]]} />
-            <ReviewSection title="Đóng gói và hình ảnh" onEdit={() => goToStep(3)} rows={[['Bao bì', packagingType.length ? packagingType.map(getPackagingTypeLabel).join(', ') : '—'], ['Kích thước', lengthCm && widthCm && heightCm ? `${lengthCm} × ${widthCm} × ${heightCm} cm` : '—'], ['Ảnh lô hàng', documentImage ? 'Đã chọn ảnh' : 'Chưa chọn ảnh']]} imageUri={documentImage?.uri} />
-          </View>
+          <CreateOrderReviewStep
+            values={formValues}
+            selectedRoute={selectedRoute}
+            selectedSchedule={selectedSchedule}
+            selectedStop={selectedStop}
+            onEdit={goToStep}
+          />
         ) : null}
       </ScrollView>
 
-      <View className="absolute bottom-0 inset-x-0 z-30 flex-row gap-3 border-t border-[#DAC2B6]/50 bg-[#F5F2F0] px-5 pt-4" style={{ paddingBottom: Math.max(insets.bottom, 16) }}>
-        {currentStep > 1 ? <Pressable onPress={handleBack} disabled={isLoading} accessibilityRole="button" accessibilityLabel="Quay lại bước trước" className="min-h-14 items-center justify-center rounded-2xl border border-[#8B4513] px-5"><Text className="text-base font-bold text-[#8B4513]">Quay lại</Text></Pressable> : null}
-        <Pressable onPress={handleContinue} disabled={isLoading} accessibilityRole="button" accessibilityLabel={currentStep === 4 ? 'Gửi yêu cầu vận chuyển' : 'Tiếp tục'} accessibilityState={{ disabled: isLoading }} className={['min-h-14 flex-1 flex-row items-center justify-center gap-2 rounded-2xl bg-[#8B4513]', isLoading ? 'opacity-70' : ''].join(' ')}>
-          {isLoading ? <ActivityIndicator color="#FFC29F" /> : null}
-          <Text className="text-base font-bold text-white">{isLoading ? 'Đang gửi yêu cầu...' : currentStep === 4 ? 'Gửi yêu cầu vận chuyển' : 'Tiếp tục'}</Text>
-        </Pressable>
-      </View>
+      <CreateOrderBottomActionBar
+        currentStep={currentStep}
+        isLoading={isLoading}
+        bottomInset={insets.bottom}
+        onBack={handleBack}
+        onContinue={handleContinue}
+      />
 
-      {/* Success modal */}
-      <Modal visible={!!successData} transparent animationType="fade">
-        <View className="flex-1 items-center justify-center bg-black/60 px-5">
-          <View className="w-full rounded-3xl bg-white p-6 shadow-lg">
-            <View className="items-center">
-              <View className="mb-4 h-16 w-16 items-center justify-center rounded-full bg-[#E8F5E9]">
-                <Ionicons name="checkmark-circle" size={42} color="#4CAF50" />
-              </View>
-              <Text className="text-center text-[20px] font-bold text-[#3A1F04]">Gửi yêu cầu thành công</Text>
-              <Text className="mt-2 text-center text-[14px] leading-6 text-[#877369]">
-                Bộ phận Sales sẽ kiểm duyệt yêu cầu và gửi báo giá cho bạn.
-              </Text>
-            </View>
-
-            <View className="my-6 gap-3 rounded-2xl border border-[#DAC2B6]/40 bg-[#F8F9FA] p-4">
-              <InfoRow label="Mã yêu cầu" value={successData?.trackingCode || 'Đang cập nhật'} />
-              <InfoRow label="Trạng thái" value={translateStatus(successData?.status || 'PENDING_REVIEW')} />
-            </View>
-
-            <View className="gap-3">
-              <Pressable
-                onPress={() => {
-                  const createdOrderId = successData?.orderId;
-                  setSuccessData(null);
-                  if (createdOrderId) {
-                    router.replace(`/(customer)/orders/${createdOrderId}` as never);
-                  } else {
-                    router.replace('/(customer)/status');
-                  }
-                }}
-                className="h-12 w-full items-center justify-center rounded-xl bg-[#8B4513]"
-              >
-                <Text className="text-[15px] font-bold text-white">
-                  {successData?.orderId ? 'Xem chi tiết đơn' : 'Xem trạng thái đơn'}
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={resetForm}
-                className="h-12 w-full items-center justify-center rounded-xl border border-[#8B4513] bg-white"
-              >
-                <Text className="text-[15px] font-bold text-[#8B4513]">Tạo đơn khác</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <CreateOrderSuccessModal
+        data={successData}
+        onViewOrder={() => {
+          const createdOrderId = successData?.orderId;
+          setSuccessData(null);
+          if (createdOrderId) {
+            router.replace(`/(customer)/orders/${createdOrderId}` as never);
+          } else {
+            router.replace('/(customer)/status');
+          }
+        }}
+        onCreateAnother={resetForm}
+      />
     </KeyboardAvoidingView>
-  );
-}
-
-// ─── BookingOptionsPicker component ──────────────────────────────────────────
-function BookingOptionsPicker({
-  bookingOptions,
-  isLoading,
-  error,
-  selectedScheduleId,
-  selectedStopId,
-  scheduleError,
-  stopError,
-  onRetry,
-  onSelectSchedule,
-  onSelectStop,
-}: {
-  bookingOptions: RouteBookingOptionsDto | null;
-  isLoading: boolean;
-  error: string | null;
-  selectedScheduleId: string;
-  selectedStopId: string;
-  scheduleError?: string;
-  stopError?: string;
-  onRetry: () => void;
-  onSelectSchedule: (scheduleId: string) => void;
-  onSelectStop: (stopId: string) => void;
-}) {
-  if (isLoading) {
-    return (
-      <View className="items-center py-4">
-        <ActivityIndicator size="small" color="#8B4513" />
-        <Text className="mt-2 text-xs text-[#877369]">Đang tải lịch khởi hành...</Text>
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View className="rounded-[14px] border border-red-200 bg-red-50 p-4 gap-3">
-        <Text className="text-sm font-semibold leading-5 text-red-700">{error}</Text>
-        <Pressable onPress={onRetry} className="self-start rounded-lg bg-[#8B4513] px-3 py-2">
-          <Text className="text-xs font-bold text-white">Thử lại</Text>
-        </Pressable>
-      </View>
-    );
-  }
-
-  if (!bookingOptions) return null;
-
-  return (
-    <>
-      {/* Schedule picker */}
-      <View className="gap-2">
-        <View className="flex-row items-center justify-between">
-          <Text className="text-[#3A1F04] text-[13px] font-bold">Lịch vận chuyển</Text>
-        </View>
-        {bookingOptions.availableSchedules.length === 0 ? (
-          <View className="rounded-[14px] border border-amber-200 bg-amber-50 p-4">
-            <Text className="text-sm leading-5 text-amber-800">Tuyến này chưa có lịch khởi hành khả dụng. Vui lòng chọn tuyến khác.</Text>
-          </View>
-        ) : (
-          <View className="gap-2">
-            {bookingOptions.availableSchedules.map((schedule) => {
-              const isSelected = selectedScheduleId === schedule.scheduleId;
-              return (
-                <Pressable
-                  key={schedule.scheduleId}
-                  onPress={() => onSelectSchedule(schedule.scheduleId)}
-                  accessibilityRole="radio"
-                  accessibilityLabel={`Lịch ${schedule.scheduleName}, ${formatDepartureDate(schedule.departureDate)}`}
-                  accessibilityState={{ selected: isSelected }}
-                  className={[
-                    'rounded-[14px] border p-4',
-                    isSelected ? 'border-[#8B4513] bg-[#8B4513]' : 'border-[#DAC2B6]/60 bg-[#F8F9FA]',
-                  ].join(' ')}
-                >
-                  <View className="flex-row items-center justify-between gap-3">
-                    <View className="flex-1">
-                      <Text className={['text-sm font-bold', isSelected ? 'text-white' : 'text-[#3A1F04]'].join(' ')}>
-                        {schedule.scheduleName}
-                      </Text>
-                      <Text className={['mt-1 text-xs font-semibold', isSelected ? 'text-white/90' : 'text-[#8B4513]'].join(' ')}>
-                        {formatDepartureDate(schedule.departureDate)}
-                      </Text>
-                      <Text className={['mt-0.5 text-xs', isSelected ? 'text-white/75' : 'text-[#877369]'].join(' ')}>
-                        Khởi hành: {schedule.departureTime.slice(0, 5)}
-                      </Text>
-                      <Text className={['mt-0.5 text-xs', isSelected ? 'text-white/75' : 'text-[#877369]'].join(' ')}>
-                        Đóng nhận đơn: {schedule.cutOffTime.slice(0, 5)}
-                      </Text>
-                    </View>
-                    {isSelected ? <Ionicons name="checkmark-circle" size={20} color="#FFC29F" /> : null}
-                  </View>
-                </Pressable>
-              );
-            })}
-          </View>
-        )}
-        {scheduleError ? <Text className="text-xs font-medium text-red-600">{scheduleError}</Text> : null}
-      </View>
-
-      {/* Stop picker */}
-      <View className="gap-2">
-        <Text className="text-[#3A1F04] text-[13px] font-bold">Điểm giao hàng</Text>
-        {bookingOptions.availableStops.length === 0 ? (
-          <View className="rounded-[14px] border border-amber-200 bg-amber-50 p-4">
-            <Text className="text-sm leading-5 text-amber-800">Tuyến này chưa có điểm giao. Vui lòng chọn tuyến khác.</Text>
-          </View>
-        ) : (
-          <View className="gap-2">
-            {bookingOptions.availableStops.map((stop) => {
-              const isSelected = selectedStopId === stop.stopId;
-              return (
-                <Pressable
-                  key={stop.stopId}
-                  onPress={() => onSelectStop(stop.stopId)}
-                  accessibilityRole="radio"
-                  accessibilityLabel={`Điểm giao ${stop.stopName}`}
-                  accessibilityState={{ selected: isSelected }}
-                  className={[
-                    'rounded-[14px] border p-4',
-                    isSelected ? 'border-[#8B4513] bg-[#8B4513]' : 'border-[#DAC2B6]/60 bg-[#F8F9FA]',
-                  ].join(' ')}
-                >
-                  <View className="flex-row items-center justify-between gap-3">
-                    <Text className={['text-sm font-bold flex-1', isSelected ? 'text-white' : 'text-[#3A1F04]'].join(' ')}>
-                      {stop.stopName}
-                    </Text>
-                    {isSelected ? <Ionicons name="checkmark-circle" size={20} color="#FFC29F" /> : null}
-                  </View>
-                </Pressable>
-              );
-            })}
-          </View>
-        )}
-        {stopError ? <Text className="text-xs font-medium text-red-600">{stopError}</Text> : null}
-      </View>
-    </>
-  );
-}
-
-// ─── Sub-components ───────────────────────────────────────────────────────────
-function SectionTitle({ title, icon }: { title: string; icon: keyof typeof Ionicons.glyphMap }) {
-  return (
-    <View className="flex-row items-center gap-2 border-b border-[#DAC2B6]/30 pb-3">
-      <Ionicons name={icon} size={18} color="#8B4513" />
-      <Text className="text-[#8B4513] text-base font-bold">{title}</Text>
-    </View>
-  );
-}
-
-function RouteOptionPicker({
-  routes,
-  selectedRouteId,
-  isLoading,
-  error,
-  onRetry,
-  onSelect,
-}: {
-  routes: RouteOptionResponse[];
-  selectedRouteId: string;
-  isLoading: boolean;
-  error: string | null;
-  onRetry: () => void;
-  onSelect: (routeId: string) => void;
-}) {
-  return (
-    <View className="gap-2">
-      <View className="flex-row items-center justify-between">
-        <Text className="text-[#3A1F04] text-[13px] font-bold">Tuyến vận chuyển</Text>
-        {isLoading ? <ActivityIndicator size="small" color="#8B4513" /> : null}
-      </View>
-
-      {error ? (
-        <View className="rounded-[14px] border border-red-200 bg-red-50 p-4">
-          <Text className="text-sm font-semibold leading-5 text-red-700">{error}</Text>
-          <Pressable onPress={onRetry} className="mt-3 self-start rounded-lg bg-[#8B4513] px-3 py-2">
-            <Text className="text-xs font-bold text-white">Tải lại tuyến</Text>
-          </Pressable>
-        </View>
-      ) : null}
-
-      {!isLoading && !error && routes.length === 0 ? (
-        <View className="rounded-[14px] border border-[#DAC2B6]/60 bg-[#F8F9FA] p-4">
-          <Text className="text-sm leading-5 text-[#877369]">Chưa có tuyến vận chuyển khả dụng. Vui lòng thử lại sau.</Text>
-        </View>
-      ) : null}
-
-      <View className="gap-3">
-        {routes.map((route) => {
-          const isSelected = selectedRouteId === route.routeId;
-          return (
-            <Pressable
-              key={route.routeId}
-              onPress={() => onSelect(route.routeId)}
-              accessibilityRole="radio"
-              accessibilityLabel={getRouteLabel(route)}
-              accessibilityHint={getRouteMeta(route)}
-              accessibilityState={{ selected: isSelected }}
-              className={[
-                'rounded-[14px] border p-4',
-                isSelected ? 'border-[#8B4513] bg-[#8B4513]' : 'border-[#DAC2B6]/60 bg-[#F8F9FA]',
-              ].join(' ')}
-            >
-              <View className="flex-row items-start justify-between gap-3">
-                <View className="flex-1">
-                  <Text className={['text-sm font-bold', isSelected ? 'text-white' : 'text-[#3A1F04]'].join(' ')}>
-                    {getRouteLabel(route)}
-                  </Text>
-                  <Text className={['mt-1 text-xs', isSelected ? 'text-white/75' : 'text-[#877369]'].join(' ')}>
-                    {getRouteMeta(route)}
-                  </Text>
-                </View>
-                {isSelected ? <Ionicons name="checkmark-circle" size={20} color="#FFC29F" /> : null}
-              </View>
-            </Pressable>
-          );
-        })}
-      </View>
-    </View>
-  );
-}
-
-function ReviewSection({
-  title,
-  rows,
-  imageUri,
-  onEdit,
-}: {
-  title: string;
-  rows: [string, string][];
-  imageUri?: string;
-  onEdit: () => void;
-}) {
-  return (
-    <View className="rounded-2xl border border-[#DAC2B6]/50 bg-white p-5">
-      <View className="flex-row items-center justify-between gap-3">
-        <Text className="flex-1 text-base font-bold text-[#3A1F04]">{title}</Text>
-        <Pressable onPress={onEdit} accessibilityRole="button" accessibilityLabel={`Chỉnh sửa ${title.toLowerCase()}`} className="min-h-10 justify-center px-2">
-          <Text className="text-sm font-bold text-[#8B4513]">Chỉnh sửa</Text>
-        </Pressable>
-      </View>
-      <View className="mt-3 gap-2.5">
-        {rows.map(([label, value]) => (
-          <View key={label} className="flex-row items-start gap-4">
-            <Text className="w-[96px] text-xs font-medium text-[#877369]">{label}</Text>
-            <Text className="flex-1 text-right text-sm font-semibold leading-5 text-[#3A1F04]">{value}</Text>
-          </View>
-        ))}
-        {imageUri ? <Image source={{ uri: imageUri }} className="mt-2 h-24 w-24 self-end rounded-xl" resizeMode="cover" /> : null}
-      </View>
-    </View>
-  );
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View className="flex-row items-center justify-between gap-4">
-      <Text className="text-[13px] text-[#877369]">{label}</Text>
-      <Text className="flex-1 text-right text-[13px] font-bold text-[#8B4513]">{value}</Text>
-    </View>
   );
 }
 
@@ -1071,46 +726,6 @@ function getCapacityWarning(weightValue: string, lengthValue: string, widthValue
     }
   }
   return null;
-}
-
-function formatCityName(city: string) {
-  switch (city.trim().toUpperCase()) {
-    case 'HCM': return 'TP.HCM';
-    case 'CAN THO': return 'Cần Thơ';
-    case 'DA NANG': return 'Đà Nẵng';
-    case 'HA NOI': return 'Hà Nội';
-    case 'DAK LAK': return 'Đắk Lắk';
-    default: return city;
-  }
-}
-
-function getRouteLabel(route: RouteOptionResponse) {
-  return `${formatCityName(route.originCity)} → ${formatCityName(route.destCity)}`;
-}
-
-function getRouteMeta(route: RouteOptionResponse) {
-  return `${route.routeCode} · Dự kiến ${route.transitTime}`;
-}
-
-function formatDepartureDate(value: string): string {
-  if (!value || typeof value !== 'string') return '—';
-  const parts = value.trim().split('-').map(Number);
-  if (parts.length !== 3 || parts.some(Number.isNaN)) return value;
-  const [year, month, day] = parts;
-  if (year < 1 || month < 1 || month > 12 || day < 1 || day > 31) return value;
-  const date = new Date(year, month - 1, day);
-  if (Number.isNaN(date.getTime()) || date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
-    return value;
-  }
-  const days = ['Chủ nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
-  const dayName = days[date.getDay()] ?? '—';
-  const formattedDay = String(day).padStart(2, '0');
-  const formattedMonth = String(month).padStart(2, '0');
-  return `${dayName}, ${formattedDay}/${formattedMonth}/${year}`;
-}
-
-function formatScheduleLabel(schedule: ScheduleOptionDto) {
-  return `${schedule.scheduleName} · ${formatDepartureDate(schedule.departureDate)} · Khởi hành ${schedule.departureTime.slice(0, 5)}`;
 }
 
 function getCreateOrderErrorMessage(error: unknown) {
@@ -1206,25 +821,4 @@ function getNextInputField(field: CreateOrderFieldKey): CreateOrderFieldKey | nu
     widthCm: 'heightCm',
   };
   return nextFields[field] ?? null;
-}
-
-function getGoodsTypeLabel(category: GoodsType) {
-  switch (category) {
-    case 'FROZEN_FRUITS_VEGGIES': return 'Thực phẩm đông lạnh';
-    case 'PHARMACEUTICALS': return 'Dược phẩm';
-    case 'MEAT_SEAFOOD': return 'Thịt / Hải sản';
-  }
-}
-
-function translateStatus(status: string) {
-  switch (status.toUpperCase()) {
-    case 'PENDING':
-    case 'PENDING_REVIEW': return 'Chờ duyệt';
-    case 'APPROVED': return 'Đã duyệt';
-    case 'LOADING': return 'Đang chuẩn bị xuất kho';
-    case 'IN_TRANSIT': return 'Đang giao';
-    case 'DELIVERED': return 'Đã giao';
-    case 'CANCELLED': return 'Đã hủy';
-    default: return status;
-  }
 }
