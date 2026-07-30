@@ -16,6 +16,10 @@ import { getCustomerAsns } from '../../services/asnApi';
 import { customerApi, CustomerOrderSummaryResponse } from '../../services/customerApi';
 import { getCustomerIdFromToken } from '../../services/jwt';
 import { useAuthStore } from '../../store/useAuthStore';
+import {
+  getCustomerOrderCategoryLabel,
+  getCustomerOrderStatusPresentation,
+} from '../../constants/customerOrderPresentation';
 
 const ASN_TAB = 'ASN';
 const ELIGIBLE_ASN_ORDER_STATUS = 'CONTRACT_SIGNED';
@@ -98,6 +102,8 @@ export default function StatusScreen() {
   };
 
   const renderOrder = ({ item }: { item: CustomerOrderSummaryResponse }) => {
+    const categoryLabel = getCustomerOrderCategoryLabel(item.category);
+
     return (
       <Pressable
         onPress={() => router.push(`/(customer)/orders/${item.orderId}` as never)}
@@ -107,9 +113,6 @@ export default function StatusScreen() {
           <View className="mb-3 flex-row items-start justify-between gap-3">
             <View className="flex-1">
               <Text className="text-lg font-bold text-[#8B4513]">{item.trackingCode}</Text>
-              <Text className="mt-1 text-[11px] font-medium text-[#877369]" numberOfLines={1}>
-                Order ID: {item.orderId}
-              </Text>
               <Text className="mt-1 text-xs text-[#877369]">{formatDate(item.createdAt)}</Text>
             </View>
             <StatusBadge status={item.status} />
@@ -125,17 +128,21 @@ export default function StatusScreen() {
                 <Text className="flex-1 font-semibold text-[#3A1F04]">{item.itemName}</Text>
               </View>
 
-              <View className="flex-row items-center gap-2">
-                <Ionicons name="grid-outline" size={16} color="#8B4513" />
-                <Text className="font-medium text-[#8B4513]">{item.category}</Text>
-              </View>
+              {categoryLabel ? (
+                <View className="flex-row items-center gap-2">
+                  <Ionicons name="grid-outline" size={16} color="#8B4513" />
+                  <Text className="font-medium text-[#8B4513]">{categoryLabel}</Text>
+                </View>
+              ) : null}
 
-              <View className="flex-row items-start gap-2">
-                <Ionicons name="location-outline" size={16} color="#877369" />
-                <Text className="flex-1 text-sm leading-5 text-[#877369]">
-                  {item.destinationAddress || 'Chưa cập nhật địa chỉ'}
-                </Text>
-              </View>
+              {item.destinationAddress ? (
+                <View className="flex-row items-start gap-2">
+                  <Ionicons name="location-outline" size={16} color="#877369" />
+                  <Text className="flex-1 text-sm leading-5 text-[#877369]">
+                    {item.destinationAddress}
+                  </Text>
+                </View>
+              ) : null}
 
               {item.routeCode ? (
                 <View className="flex-row items-center gap-2">
@@ -253,70 +260,15 @@ async function getAllEligibleAsnOrders() {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const colorClass = getStatusColor(status);
+  const presentation = getCustomerOrderStatusPresentation(status);
 
   return (
-    <View className={`rounded-full border px-2.5 py-1 ${colorClass.container}`}>
-      <Text className={`text-[10px] font-bold uppercase tracking-wider ${colorClass.text}`}>
-        {translateStatus(status)}
+    <View className={`rounded-full border px-2.5 py-1 ${presentation.containerClass}`}>
+      <Text className={`text-[10px] font-bold uppercase tracking-wider ${presentation.textClass}`}>
+        {presentation.label}
       </Text>
     </View>
   );
-}
-
-function getStatusColor(status: string) {
-  switch (status.toUpperCase()) {
-    case 'PENDING':
-    case 'PENDING_REVIEW':
-      return { container: 'bg-yellow-100 border-yellow-200', text: 'text-yellow-800' };
-    case 'QUOTING':
-      return { container: 'bg-orange-100 border-orange-200', text: 'text-orange-800' };
-    case 'CONTRACT_PENDING':
-      return { container: 'bg-amber-100 border-amber-200', text: 'text-amber-800' };
-    case 'CONTRACT_SIGNED':
-      return { container: 'bg-emerald-100 border-emerald-200', text: 'text-emerald-800' };
-    case 'ASSIGNED':
-      return { container: 'bg-blue-100 border-blue-200', text: 'text-blue-800' };
-    case 'LOADING':
-      return { container: 'bg-blue-100 border-blue-200', text: 'text-blue-800' };
-    case 'IN_TRANSIT':
-      return { container: 'bg-purple-100 border-purple-200', text: 'text-purple-800' };
-    case 'DELIVERED':
-      return { container: 'bg-green-100 border-green-200', text: 'text-green-800' };
-    case 'REJECTED':
-    case 'CANCELLED':
-      return { container: 'bg-red-100 border-red-200', text: 'text-red-800' };
-    default:
-      return { container: 'bg-gray-100 border-gray-200', text: 'text-gray-800' };
-  }
-}
-
-function translateStatus(status: string) {
-  switch (status.toUpperCase()) {
-    case 'PENDING':
-    case 'PENDING_REVIEW':
-      return 'Chờ duyệt';
-    case 'QUOTING':
-      return 'Đang báo giá';
-    case 'CONTRACT_PENDING':
-      return 'Chờ hợp đồng';
-    case 'CONTRACT_SIGNED':
-      return 'Đã ký HĐ';
-    case 'ASSIGNED':
-      return 'Đã phân xe';
-    case 'LOADING':
-      return 'Đang chuẩn bị xuất kho';
-    case 'IN_TRANSIT':
-      return 'Đang giao';
-    case 'DELIVERED':
-      return 'Đã giao';
-    case 'REJECTED':
-      return 'Từ chối';
-    case 'CANCELLED':
-      return 'Đã hủy';
-    default:
-      return status;
-  }
 }
 
 function formatDate(value?: string | null) {

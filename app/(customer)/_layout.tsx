@@ -10,10 +10,10 @@ export default function CustomerLayout() {
         header: ({ route }) => {
           const titleMap: Record<string, string> = {
             home: 'ColdChainX',
-            'create-order': 'Tạo đơn hàng',
-            status: 'Trạng thái đơn',
-            tracking: 'Giám sát đơn',
-            'chat/index': 'Trao đổi',
+            'create-order': 'Tạo yêu cầu',
+            status: 'Đơn hàng',
+            tracking: 'Giám sát',
+            'chat/index': 'Hỗ trợ',
             'chat/[orderId]': 'Tin nhắn đơn hàng',
             profile: 'Hồ sơ cá nhân',
             notifications: 'Thông báo',
@@ -27,58 +27,70 @@ export default function CustomerLayout() {
           return <CustomerHeader title={title} showBackButton={showBackButton} />;
         },
         tabBarActiveTintColor: '#8B4513',
-        tabBarInactiveTintColor: '#877369',
+        tabBarInactiveTintColor: '#6F6A66',
+        tabBarHideOnKeyboard: true,
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: '600',
+          marginTop: 2,
+        },
+        tabBarItemStyle: {
+          minHeight: 56,
+          paddingVertical: 4,
+        },
         tabBarStyle: {
           backgroundColor: '#ffffff',
           borderTopColor: 'rgba(218, 194, 182, 0.5)',
-          elevation: 20,
+          elevation: 10,
           shadowColor: '#000000',
-          shadowOffset: { width: 0, height: -10 },
-          shadowOpacity: 0.03,
-          shadowRadius: 20,
+          shadowOffset: { width: 0, height: -4 },
+          shadowOpacity: 0.04,
+          shadowRadius: 12,
         },
       }}
     >
       <Tabs.Screen
         name="home"
         options={{
-          title: 'Tổng quan',
-          tabBarIcon: ({ color }) => <Ionicons name="home-outline" size={24} color={color} />,
+          title: 'Trang chủ',
+          tabBarAccessibilityLabel: 'Trang chủ',
+          tabBarIcon: ({ color }) => <Ionicons name="home-outline" size={22} color={color} />,
         }}
       />
       <Tabs.Screen
         name="create-order"
         options={{
-          title: 'Tạo đơn',
-          tabBarIcon: ({ color }) => <Ionicons name="add-circle-outline" size={24} color={color} />,
+          href: null,
         }}
       />
       <Tabs.Screen
         name="status"
         options={{
-          title: 'Trạng thái',
-          tabBarIcon: ({ color }) => <Ionicons name="analytics-outline" size={24} color={color} />,
+          title: 'Đơn hàng',
+          tabBarAccessibilityLabel: 'Đơn hàng',
+          tabBarIcon: ({ color }) => <Ionicons name="receipt-outline" size={22} color={color} />,
         }}
       />
       <Tabs.Screen
         name="tracking"
         options={{
           title: 'Giám sát',
-          tabBarIcon: ({ color }) => <Ionicons name="locate-outline" size={24} color={color} />,
+          tabBarAccessibilityLabel: 'Giám sát',
+          tabBarIcon: ({ color }) => <Ionicons name="locate-outline" size={22} color={color} />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Cá nhân',
-          tabBarIcon: ({ color }) => <Ionicons name="person-outline" size={24} color={color} />,
+          tabBarAccessibilityLabel: 'Cá nhân',
+          tabBarIcon: ({ color }) => <Ionicons name="person-outline" size={22} color={color} />,
         }}
       />
       <Tabs.Screen
         name="chat/index"
         options={{
-          title: 'Trao đổi',
-          tabBarIcon: ({ color }) => <Ionicons name="chatbubbles-outline" size={24} color={color} />,
+          href: null,
         }}
       />
       <Tabs.Screen

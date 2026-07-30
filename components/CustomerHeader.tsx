@@ -16,7 +16,10 @@ export function CustomerHeader({ title, showBackButton = false }: CustomerHeader
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const accessToken = useAuthStore((state) => state.token);
+  const fullName = useAuthStore((state) => state.fullName ?? state.user?.fullName ?? null);
   const [unreadCount, setUnreadCount] = useState(0);
+  const isHome = title === 'ColdChainX';
+  const displayName = fullName?.trim() || 'bạn';
 
   const fetchUnreadCount = useCallback(async () => {
     if (!accessToken) {
@@ -48,41 +51,80 @@ export function CustomerHeader({ title, showBackButton = false }: CustomerHeader
   return (
     <View
       style={{ paddingTop: insets.top }}
-      className="bg-[#3A1F04] w-full flex-col z-50 shadow-sm border-b border-[#DAC2B6]/10"
+      className="w-full border-b border-[#DAC2B6]/30 bg-white"
     >
-      <View className="flex-row items-center justify-between h-[60px] px-5">
+      <View className="h-[64px] flex-row items-center justify-between px-5">
         {showBackButton ? (
           <Pressable
             onPress={() => router.back()}
-            className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 active:bg-white/20 transition-colors"
+            accessibilityRole="button"
+            accessibilityLabel="Quay lại"
+            accessibilityHint="Trở về màn hình trước"
+            className="h-11 w-11 items-center justify-center rounded-full bg-[#F8F3EF]"
           >
-            <Ionicons name="chevron-back" size={24} color="#FFC29F" />
+            <Ionicons name="chevron-back" size={22} color="#8B4513" />
           </Pressable>
         ) : (
-          <View className="w-10 h-10" /> // Spacer for alignment
+          <View className="h-11 w-11" />
         )}
 
-        <Text
-          className={`flex-1 text-center text-[#FFC29F] tracking-tight ${
-            title === 'ColdChainX' ? 'font-serif italic font-bold text-[26px]' : 'font-bold text-xl'
-          }`}
-        >
-          {title}
-        </Text>
+        {isHome ? (
+          <View className="flex-1 px-2">
+            <Text className="text-xs font-semibold text-[#877369]">Xin chào,</Text>
+            <Text className="mt-0.5 text-xl font-bold text-[#3A1F04]" numberOfLines={1}>
+              {displayName}
+            </Text>
+          </View>
+        ) : (
+          <Text className="flex-1 px-2 text-center text-lg font-bold text-[#3A1F04]" numberOfLines={1}>
+            {title}
+          </Text>
+        )}
 
-        <Pressable
-          onPress={() => router.push('/(customer)/notifications' as never)}
-          className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 active:bg-white/20 transition-colors"
-        >
-          <Ionicons name="notifications-outline" size={21} color="#FFFFFF" />
-          {unreadCount > 0 ? (
-            <View className="absolute right-1 top-1 min-w-[18px] h-[18px] items-center justify-center rounded-full bg-[#FF4D4F] px-1">
-              <Text className="text-[10px] font-bold text-white">
-                {unreadCount > 99 ? '99+' : unreadCount}
-              </Text>
-            </View>
+        <View className="flex-row items-center gap-1">
+          {isHome ? (
+            <Pressable
+              onPress={() => router.push('/(customer)/chat' as never)}
+              accessibilityRole="button"
+              accessibilityLabel="Hỗ trợ và trao đổi"
+              accessibilityHint="Mở danh sách hội thoại theo đơn hàng"
+              className="h-11 w-11 items-center justify-center rounded-full bg-[#F8F3EF]"
+              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+            >
+              <Ionicons name="chatbubble-ellipses-outline" size={20} color="#8B4513" />
+            </Pressable>
           ) : null}
-        </Pressable>
+
+          <Pressable
+            onPress={() => router.push('/(customer)/notifications' as never)}
+            accessibilityRole="button"
+            accessibilityLabel={unreadCount > 0 ? `Thông báo, ${unreadCount} chưa đọc` : 'Thông báo'}
+            accessibilityHint="Mở trung tâm thông báo"
+            className="relative h-11 w-11 items-center justify-center rounded-full bg-[#F8F3EF]"
+            style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+          >
+            <Ionicons name="notifications-outline" size={21} color="#8B4513" />
+            {unreadCount > 0 ? (
+              <View className="absolute right-1 top-1 min-w-[18px] h-[18px] items-center justify-center rounded-full bg-[#C2410C] px-1">
+                <Text className="text-[10px] font-bold text-white">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </Text>
+              </View>
+            ) : null}
+          </Pressable>
+
+          {isHome ? (
+            <Pressable
+              onPress={() => router.push('/(customer)/profile' as never)}
+              accessibilityRole="button"
+              accessibilityLabel="Mở hồ sơ cá nhân"
+              className="h-11 w-11 items-center justify-center rounded-full bg-[#3A1F04]"
+              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+            >
+              <Ionicons name="person-outline" size={20} color="#FFFFFF" />
+            </Pressable>
+          ) : null}
+        </View>
       </View>
     </View>
   );

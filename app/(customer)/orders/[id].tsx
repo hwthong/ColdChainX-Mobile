@@ -24,6 +24,10 @@ import {
 } from '../../../services/appendixApi';
 import { customerApi } from '../../../services/customerApi';
 import {
+  getCustomerOrderCategoryLabel,
+  getCustomerOrderStatusPresentation,
+} from '../../../constants/customerOrderPresentation';
+import {
   ContractInfoResponse,
   getContractByOrder,
   SignedContractFile,
@@ -993,100 +997,15 @@ function InfoRow({ label, value, strong = false }: { label: string; value: strin
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const styles = getStatusColor(status);
+  const presentation = getCustomerOrderStatusPresentation(status);
 
   return (
-    <View className={`rounded-full border px-2.5 py-1 ${styles.container}`}>
-      <Text className={`text-[10px] font-bold uppercase tracking-wider ${styles.text}`}>
-        {translateStatus(status)}
+    <View className={`rounded-full border px-2.5 py-1 ${presentation.containerClass}`}>
+      <Text className={`text-[10px] font-bold uppercase tracking-wider ${presentation.textClass}`}>
+        {presentation.label}
       </Text>
     </View>
   );
-}
-
-function getStatusColor(status: string) {
-  switch (status.toUpperCase()) {
-    case 'PENDING':
-    case 'PENDING_REVIEW':
-      return { container: 'bg-yellow-100 border-yellow-200', text: 'text-yellow-800' };
-    case 'QUOTING':
-    case 'SENT':
-      return { container: 'bg-orange-100 border-orange-200', text: 'text-orange-800' };
-    case 'CONTRACT_PENDING':
-      return { container: 'bg-amber-100 border-amber-200', text: 'text-amber-800' };
-    case 'PENDING_CUSTOMER_SIGNATURE':
-      return { container: 'bg-orange-100 border-orange-200', text: 'text-orange-800' };
-    case 'PENDING_SALES_VERIFICATION':
-      return { container: 'bg-blue-100 border-blue-200', text: 'text-blue-800' };
-    case 'ASSIGNED':
-      return { container: 'bg-blue-100 border-blue-200', text: 'text-blue-800' };
-    case 'DISCREPANCY_HOLD':
-      return { container: 'bg-amber-100 border-amber-200', text: 'text-amber-800' };
-    case 'RETURN_PENDING':
-      return { container: 'bg-red-100 border-red-200', text: 'text-red-800' };
-    case 'LOADING':
-      return { container: 'bg-blue-100 border-blue-200', text: 'text-blue-800' };
-    case 'IN_TRANSIT':
-      return { container: 'bg-purple-100 border-purple-200', text: 'text-purple-800' };
-    case 'ACCEPTED':
-    case 'ACTIVE':
-    case 'CONTRACT_SIGNED':
-    case 'EXECUTED':
-    case 'RECEIVING':
-    case 'DELIVERED':
-      return { container: 'bg-green-100 border-green-200', text: 'text-green-800' };
-    case 'REJECTED':
-    case 'CANCELLED':
-      return { container: 'bg-red-100 border-red-200', text: 'text-red-800' };
-    default:
-      return { container: 'bg-gray-100 border-gray-200', text: 'text-gray-800' };
-  }
-}
-
-function translateStatus(status: string) {
-  switch (status.toUpperCase()) {
-    case 'PENDING':
-    case 'PENDING_REVIEW':
-      return 'Chờ duyệt';
-    case 'QUOTING':
-      return 'Đang báo giá';
-    case 'SENT':
-      return 'Đã gửi';
-    case 'CONTRACT_PENDING':
-      return 'Chờ hợp đồng';
-    case 'DISCREPANCY_HOLD':
-      return 'Chờ xử lý sai lệch';
-    case 'RETURN_PENDING':
-      return 'Chờ hoàn trả';
-    case 'PENDING_CUSTOMER_SIGNATURE':
-      return 'Waiting signature';
-    case 'PENDING_SALES_VERIFICATION':
-      return 'Waiting Sales verify';
-    case 'ACTIVE':
-      return 'Verified';
-    case 'CONTRACT_SIGNED':
-      return 'Contract signed';
-    case 'EXECUTED':
-      return 'Đã xử lý';
-    case 'RECEIVING':
-      return 'Đang nhập kho';
-    case 'ASSIGNED':
-      return 'Đã phân xe';
-    case 'LOADING':
-      return 'Đang chuẩn bị xuất kho';
-    case 'IN_TRANSIT':
-      return 'Đang giao';
-    case 'ACCEPTED':
-      return 'Đã chấp nhận';
-    case 'DELIVERED':
-      return 'Đã giao';
-    case 'REJECTED':
-      return 'Từ chối';
-    case 'CANCELLED':
-      return 'Đã hủy';
-    default:
-      return status;
-  }
 }
 
 function isAcceptableQuote(status: string) {
@@ -1192,16 +1111,7 @@ function formatTemperature(value: string | number) {
 }
 
 function formatCategory(category: string) {
-  switch (category) {
-    case 'FROZEN_FRUITS_VEGGIES':
-      return 'Thực phẩm đông lạnh';
-    case 'PHARMACEUTICALS':
-      return 'Dược phẩm';
-    case 'MEAT_SEAFOOD':
-      return 'Thịt / Hải sản';
-    default:
-      return category;
-  }
+  return getCustomerOrderCategoryLabel(category) ?? 'Chưa phân loại';
 }
 
 function hasCoordinates(order: OrderResponse) {
