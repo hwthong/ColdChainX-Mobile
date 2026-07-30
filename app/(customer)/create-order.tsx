@@ -25,6 +25,7 @@ import { AppToast, ToastType } from '../../components/AppToast';
 import { GoodsType, GoodsTypeSelector } from '../../components/GoodsTypeSelector';
 import { getPackagingTypeLabel, PackagingTypeSelector } from '../../components/PackagingTypeSelector';
 import { TemperatureSelector } from '../../components/TemperatureSelector';
+import { AddressAutocompleteField } from '../../features/customer/create-order/components/AddressAutocompleteField';
 import { CreateOrderStepProgress } from '../../features/customer/create-order/CreateOrderStepProgress';
 import { mapCreateOrderRequest } from '../../features/customer/create-order/createOrderMapper';
 import {
@@ -635,7 +636,23 @@ export default function CreateOrderScreen() {
                 <Text className="text-sm leading-5 text-[#877369]">Chọn tuyến vận chuyển để xem lịch và điểm giao.</Text>
               </View>
             )}
-            {renderField('destAddressText', 'Địa chỉ giao hàng cụ thể', 'Ví dụ: 201B Nguyễn Chí Thanh, Quận 5, TP.HCM', destAddressText, setDestAddressText)}
+            <View ref={(node) => { fieldRefs.current.destAddressText = node; }}>
+              <AddressAutocompleteField
+                ref={(node) => { inputRefs.current.destAddressText = node; }}
+                value={destAddressText}
+                error={errors.destAddressText}
+                onChangeText={(value) => {
+                  setHasUserEditedForm(true);
+                  setDestAddressText(value);
+                  if (errors.destAddressText) setErrors((current) => ({ ...current, destAddressText: undefined }));
+                }}
+                onSelectAddress={(address) => {
+                  setHasUserEditedForm(true);
+                  setDestAddressText(address);
+                  setErrors((current) => ({ ...current, destAddressText: undefined }));
+                }}
+              />
+            </View>
           </View>
         ) : null}
 
