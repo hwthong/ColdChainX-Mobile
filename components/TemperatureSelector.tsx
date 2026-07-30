@@ -47,7 +47,9 @@ export function TemperatureSelector({ temperature, setTemperature, error }: Temp
           <Pressable
             onPress={decrease}
             disabled={!canDecrease}
+            accessibilityRole="button"
             accessibilityLabel="Giảm nhiệt độ"
+            accessibilityState={{ disabled: !canDecrease }}
             className={[
               'w-12 h-12 rounded-full bg-[#F8F9FA] border border-[#DAC2B6]/50 items-center justify-center active:bg-[#F2EFEA]',
               !canDecrease ? 'opacity-40' : '',
@@ -59,7 +61,9 @@ export function TemperatureSelector({ temperature, setTemperature, error }: Temp
           <Pressable
             onPress={increase}
             disabled={!canIncrease}
+            accessibilityRole="button"
             accessibilityLabel="Tăng nhiệt độ"
+            accessibilityState={{ disabled: !canIncrease }}
             className={[
               'w-12 h-12 rounded-full bg-[#F8F9FA] border border-[#DAC2B6]/50 items-center justify-center active:bg-[#F2EFEA]',
               !canIncrease ? 'opacity-40' : '',

@@ -21,6 +21,13 @@ export type CreateOrderFieldKey =
   | 'documentImage';
 
 export type CreateOrderValidationErrors = Partial<Record<CreateOrderFieldKey, string>>;
+export type CreateOrderStep = 1 | 2 | 3 | 4;
+
+export const CREATE_ORDER_STEP_FIELDS: Record<Exclude<CreateOrderStep, 4>, CreateOrderFieldKey[]> = {
+  1: ['routeId', 'scheduleId', 'dropoffStopId', 'destAddressText'],
+  2: ['itemName', 'category', 'tempCondition', 'expectedWeightKg', 'quantity'],
+  3: ['packagingType', 'lengthCm', 'widthCm', 'heightCm', 'documentImage'],
+};
 
 export type DocumentImage = {
   uri: string;
@@ -105,6 +112,22 @@ export function validateCreateOrderForm(
   if (!values.documentImage) errors.documentImage = 'Vui lòng chọn ảnh lô hàng.';
 
   return errors;
+}
+
+export function validateCreateOrderStep(
+  step: Exclude<CreateOrderStep, 4>,
+  values: CreateOrderFormValues,
+  activeRoutes: RouteOptionResponse[],
+  bookingOptions: RouteBookingOptionsDto | null
+): CreateOrderValidationErrors {
+  const allErrors = validateCreateOrderForm(values, activeRoutes, bookingOptions);
+  const stepErrors: CreateOrderValidationErrors = {};
+
+  CREATE_ORDER_STEP_FIELDS[step].forEach((field) => {
+    if (allErrors[field]) stepErrors[field] = allErrors[field];
+  });
+
+  return stepErrors;
 }
 
 export function parseCreateOrderDecimal(value: string) {

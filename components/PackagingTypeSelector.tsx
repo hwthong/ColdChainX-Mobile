@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
 
-const PACKAGING_OPTIONS = [
+export const PACKAGING_OPTIONS = [
   { label: 'Thùng carton', value: 'Carton Box' },
   { label: 'Thùng xốp giữ nhiệt', value: 'Foam Box' },
   { label: 'Thùng nhựa', value: 'Plastic Box' },
@@ -9,6 +9,10 @@ const PACKAGING_OPTIONS = [
   { label: 'Thùng', value: 'Thùng' },
   { label: 'Bao', value: 'Bao' },
 ];
+
+export function getPackagingTypeLabel(value: string) {
+  return PACKAGING_OPTIONS.find((option) => option.value === value)?.label ?? value;
+}
 
 interface PackagingTypeSelectorProps {
   selectedTypes: string[];
@@ -32,6 +36,9 @@ export function PackagingTypeSelector({ selectedTypes, onChange }: PackagingType
           <Pressable
             key={option.value}
             onPress={() => toggleOption(option.value)}
+            accessibilityRole="checkbox"
+            accessibilityLabel={option.label}
+            accessibilityState={{ checked: isSelected }}
             className={[
               'px-4 py-2.5 rounded-full border',
               isSelected

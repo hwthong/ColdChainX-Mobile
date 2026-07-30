@@ -15,19 +15,24 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppToast, ToastType } from '../../components/AppToast';
 import { GoodsType, GoodsTypeSelector } from '../../components/GoodsTypeSelector';
-import { PackagingTypeSelector } from '../../components/PackagingTypeSelector';
+import { getPackagingTypeLabel, PackagingTypeSelector } from '../../components/PackagingTypeSelector';
 import { TemperatureSelector } from '../../components/TemperatureSelector';
+import { CreateOrderStepProgress } from '../../features/customer/create-order/CreateOrderStepProgress';
 import { mapCreateOrderRequest } from '../../features/customer/create-order/createOrderMapper';
 import {
+  CREATE_ORDER_STEP_FIELDS,
   CreateOrderFieldKey,
   CreateOrderFormValues,
+  CreateOrderStep,
   CreateOrderValidationErrors,
   DocumentImage,
   parseCreateOrderDecimal,
   validateCreateOrderForm,
+  validateCreateOrderStep,
 } from '../../features/customer/create-order/createOrderValidation';
 import { ApiClientError, getApiErrorMessage } from '../../services/apiClient';
 import { createOrder } from '../../services/orderApi';
@@ -47,9 +52,18 @@ type SuccessData = {
   documentUrl?: string | null;
 };
 
+const STEP_DETAILS: Record<CreateOrderStep, { title: string; subtitle: string }> = {
+  1: { title: 'Tuyến và lịch vận chuyển', subtitle: 'Chọn tuyến, lịch và điểm giao phù hợp.' },
+  2: { title: 'Thông tin hàng hóa', subtitle: 'Khai báo loại hàng và điều kiện bảo quản.' },
+  3: { title: 'Đóng gói và hình ảnh', subtitle: 'Bổ sung quy cách kiện hàng và ảnh thực tế.' },
+  4: { title: 'Kiểm tra và gửi yêu cầu', subtitle: 'Xác nhận lại thông tin trước khi gửi.' },
+};
+
 export default function CreateOrderScreen() {
   const router = useRouter();
   const accessToken = useAuthStore((state) => state.token);
+  const insets = useSafeAreaInsets();
+  const scrollViewRef = useRef<ScrollView | null>(null);
 
   // — Goods info —
   const [category, setCategory] = useState<GoodsType>('FROZEN_FRUITS_VEGGIES');
@@ -90,6 +104,7 @@ export default function CreateOrderScreen() {
   });
   const [isLoading, setIsLoading] = useState(false);
   const [successData, setSuccessData] = useState<SuccessData | null>(null);
+  const [currentStep, setCurrentStep] = useState<CreateOrderStep>(1);
 
   const selectedRoute = routeOptions.find((r) => r.routeId === selectedRouteId) ?? null;
   const selectedSchedule = bookingOptions?.availableSchedules.find((s) => s.scheduleId === selectedScheduleId) ?? null;
@@ -189,6 +204,10 @@ export default function CreateOrderScreen() {
     currentSelectedRouteIdRef.current = selectedRouteId;
   }, [selectedRouteId]);
 
+  useEffect(() => {
+    scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+  }, [currentStep]);
+
   const handleRouteSelect = (routeId: string) => {
     if (routeId !== selectedRouteId) {
       currentBookingRouteIdRef.current = '';
@@ -213,6 +232,37 @@ export default function CreateOrderScreen() {
     setToastVisible(true);
   };
 
+  const setStepErrors = (step: Exclude<CreateOrderStep, 4>, nextStepErrors: CreateOrderValidationErrors) => {
+    setErrors((current) => {
+      const nextErrors = { ...current };
+      CREATE_ORDER_STEP_FIELDS[step].forEach((field) => delete nextErrors[field]);
+      return { ...nextErrors, ...nextStepErrors };
+    });
+  };
+
+  const handleContinue = () => {
+    if (currentStep === 4) {
+      void handleSubmit();
+      return;
+    }
+    if (currentStep === 1 && (isLoadingRoutes || isLoadingBooking)) {
+      showToast('warning', 'Vui lòng đợi hệ thống tải xong thông tin tuyến và lịch vận chuyển.', 'Đang tải dữ liệu');
+      return;
+    }
+
+    const nextStepErrors = validateCreateOrderStep(currentStep, formValues, routeOptions, bookingOptions);
+    setStepErrors(currentStep, nextStepErrors);
+    if (Object.keys(nextStepErrors).length > 0) return;
+
+    setCurrentStep((step) => (step + 1) as CreateOrderStep);
+  };
+
+  const handleBack = () => {
+    if (currentStep > 1) setCurrentStep((step) => (step - 1) as CreateOrderStep);
+  };
+
+  const goToStep = (step: CreateOrderStep) => setCurrentStep(step);
+
   // ─── Submit ─────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     if (__DEV__) console.log('[CreateOrder] submit pressed');
@@ -226,7 +276,7 @@ export default function CreateOrderScreen() {
     setErrors(nextErrors);
 
     if (Object.keys(nextErrors).length > 0) {
-      showToast('error', 'Vui lòng kiểm tra lại thông tin bắt buộc.', 'Lỗi nhập liệu');
+      setCurrentStep(getFirstInvalidStep(nextErrors));
       return;
     }
 
@@ -278,6 +328,11 @@ export default function CreateOrderScreen() {
         errorMessage = getCreateOrderErrorMessage(error);
       }
 
+      const serverErrorField = getCreateOrderServerErrorField(error);
+      if (serverErrorField) {
+        setErrors((current) => ({ ...current, [serverErrorField]: errorMessage }));
+        setCurrentStep(getFirstInvalidStep({ [serverErrorField]: errorMessage }));
+      }
       showToast('error', errorMessage, 'Lỗi tạo đơn');
     } finally {
       setIsLoading(false);
@@ -333,6 +388,11 @@ export default function CreateOrderScreen() {
     setErrors((current) => ({ ...current, documentImage: undefined }));
   };
 
+  const removeDocumentImage = () => {
+    setDocumentImage(null);
+    setErrors((current) => ({ ...current, documentImage: undefined }));
+  };
+
   // ─── Reset ───────────────────────────────────────────────────────────────────
   const resetForm = () => {
     setCategory('FROZEN_FRUITS_VEGGIES');
@@ -368,7 +428,7 @@ export default function CreateOrderScreen() {
     keyboardType: 'default' | 'numeric' = 'default'
   ) => (
     <View className="gap-1.5">
-      <Text className="text-[#3A1F04] text-[13px] font-bold">{label}</Text>
+      <Text className="text-[#3A1F04] text-[13px] font-bold">{label} <Text className="text-red-600">*</Text></Text>
       <TextInput
         className={[
           'min-h-[52px] rounded-[14px] border bg-[#F8F9FA] px-4 text-[14px] font-medium text-[#3A1F04]',
@@ -394,10 +454,11 @@ export default function CreateOrderScreen() {
       className="flex-1 bg-[#F5F2F0]"
     >
       <ScrollView
+        ref={scrollViewRef}
         className="flex-1"
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ padding: 20, paddingBottom: 128, gap: 18 }}
+        contentContainerStyle={{ padding: 20, paddingBottom: 144 + insets.bottom, gap: 18 }}
       >
         <AppToast
           visible={toastVisible}
@@ -407,221 +468,115 @@ export default function CreateOrderScreen() {
           onClose={() => setToastVisible(false)}
         />
 
-        {/* ─ Tuyến giao dự kiến summary card ─ */}
-        <View className="rounded-2xl border border-[#DAC2B6]/50 bg-white p-5 shadow-sm gap-4">
-          <View className="flex-row items-center justify-between">
-            <View>
-              <Text className="text-[#8B4513] text-base font-bold">Tuyến giao dự kiến</Text>
-              <Text className="text-[#877369] text-xs font-medium mt-1">
-                Hệ thống sẽ xác thực địa chỉ và tọa độ sau khi gửi yêu cầu.
-              </Text>
+        <CreateOrderStepProgress currentStep={currentStep} totalSteps={4} {...STEP_DETAILS[currentStep]} />
+
+        {currentStep === 1 ? (
+          <View className="gap-4 rounded-2xl border border-[#DAC2B6]/50 bg-white p-5">
+            <SectionTitle title="Tuyến và lịch" icon="navigate-outline" />
+            <View className="rounded-xl bg-[#F8F3EF] p-4">
+              <Text className="text-sm font-bold text-[#3A1F04]">Điểm lấy hàng</Text>
+              <Text className="mt-1 text-sm leading-5 text-[#877369]">Hub ColdChainX sẽ được xác nhận sau khi yêu cầu được duyệt.</Text>
             </View>
-            <View className="h-10 w-10 items-center justify-center rounded-full bg-[#8B4513]/10">
-              <Ionicons name="map-outline" size={20} color="#8B4513" />
-            </View>
+            <RouteOptionPicker routes={routeOptions} selectedRouteId={selectedRouteId} isLoading={isLoadingRoutes} error={routeError} onRetry={fetchRoutes} onSelect={handleRouteSelect} />
+            {errors.routeId ? <Text className="text-xs font-medium text-red-600">{errors.routeId}</Text> : null}
+            {selectedRouteId ? (
+              <BookingOptionsPicker
+                bookingOptions={bookingOptions}
+                isLoading={isLoadingBooking}
+                error={bookingError}
+                selectedScheduleId={selectedScheduleId}
+                selectedStopId={selectedStopId}
+                scheduleError={errors.scheduleId}
+                stopError={errors.dropoffStopId}
+                onRetry={() => fetchBookingOptions(selectedRouteId)}
+                onSelectSchedule={(scheduleId) => { setSelectedScheduleId(scheduleId); setErrors((current) => ({ ...current, scheduleId: undefined })); }}
+                onSelectStop={(stopId) => { setSelectedStopId(stopId); setErrors((current) => ({ ...current, dropoffStopId: undefined })); }}
+              />
+            ) : (
+              <View className="rounded-xl border border-dashed border-[#DAC2B6] bg-[#F8F9FA] p-4">
+                <Text className="text-sm leading-5 text-[#877369]">Chọn tuyến vận chuyển để xem lịch và điểm giao.</Text>
+              </View>
+            )}
+            {renderField('destAddressText', 'Địa chỉ giao hàng cụ thể', 'Ví dụ: 201B Nguyễn Chí Thanh, Quận 5, TP.HCM', destAddressText, setDestAddressText)}
           </View>
+        ) : null}
 
-          <View className="gap-3">
-            <RouteRow
-              icon="cube-outline"
-              color="#8B4513"
-              label="Điểm lấy hàng / Hub tiếp nhận"
-              value="Hub ColdChainX sẽ được xác nhận sau khi yêu cầu được duyệt"
-            />
-            <View className="h-6 w-px bg-[#DAC2B6] ml-5" />
-            <RouteRow
-              icon="git-branch-outline"
-              color="#8B4513"
-              label="Tuyến vận chuyển"
-              value={selectedRoute ? getRouteLabel(selectedRoute) : 'Chưa chọn tuyến vận chuyển'}
-            />
-            <View className="h-6 w-px bg-[#DAC2B6] ml-5" />
-            <RouteRow
-              icon="calendar-outline"
-              color="#5B6EBC"
-              label="Lịch khởi hành"
-              value={selectedSchedule ? formatScheduleLabel(selectedSchedule) : 'Chưa chọn lịch'}
-            />
-            <View className="h-6 w-px bg-[#DAC2B6] ml-5" />
-            <RouteRow
-              icon="pin-outline"
-              color="#B91C1C"
-              label="Điểm giao hàng"
-              value={selectedStop ? selectedStop.stopName : 'Chưa chọn điểm giao'}
-            />
-            <View className="h-6 w-px bg-[#DAC2B6] ml-5" />
-            <RouteRow
-              icon="location-sharp"
-              color="#006E0A"
-              label="Địa chỉ giao hàng cụ thể"
-              value={destAddressText.trim() || 'Chưa nhập địa chỉ giao hàng'}
-            />
-          </View>
-        </View>
-
-        {/* ─ Section: Giao hàng ─ */}
-        <View className="rounded-2xl border border-[#DAC2B6]/50 bg-white p-5 shadow-sm gap-4">
-          <SectionTitle title="Giao hàng" icon="navigate-outline" />
-
-          {/* Điểm lấy hàng (readonly) */}
-          <View className="rounded-[14px] border border-[#DAC2B6]/60 bg-[#F8F9FA] p-4">
-            <Text className="text-[#3A1F04] text-[13px] font-bold">Điểm lấy hàng / Hub tiếp nhận</Text>
-            <Text className="mt-2 text-sm leading-5 text-[#877369]">
-              Hub ColdChainX sẽ được xác nhận sau khi yêu cầu được duyệt
-            </Text>
-          </View>
-
-          {/* Chọn tuyến */}
-          <RouteOptionPicker
-            routes={routeOptions}
-            selectedRouteId={selectedRouteId}
-            isLoading={isLoadingRoutes}
-            error={routeError}
-            onRetry={fetchRoutes}
-            onSelect={handleRouteSelect}
-          />
-          {errors.routeId ? <Text className="text-xs font-medium text-red-600">{errors.routeId}</Text> : null}
-
-          {/* Chọn lịch khởi hành */}
-          {selectedRouteId ? (
-            <BookingOptionsPicker
-              bookingOptions={bookingOptions}
-              isLoading={isLoadingBooking}
-              error={bookingError}
-              selectedScheduleId={selectedScheduleId}
-              selectedStopId={selectedStopId}
-              scheduleError={errors.scheduleId}
-              stopError={errors.dropoffStopId}
-              onRetry={() => fetchBookingOptions(selectedRouteId)}
-              onSelectSchedule={(scheduleId) => {
-                setSelectedScheduleId(scheduleId);
-                setErrors((current) => ({ ...current, scheduleId: undefined }));
-              }}
-              onSelectStop={(stopId) => {
-                setSelectedStopId(stopId);
-                setErrors((current) => ({ ...current, dropoffStopId: undefined }));
-              }}
-            />
-          ) : null}
-
-          {/* Địa chỉ giao hàng cụ thể */}
-          {renderField(
-            'destAddressText',
-            'Địa chỉ giao hàng cụ thể',
-            'Ví dụ: 201B Nguyễn Chí Thanh, Quận 5, TP.HCM',
-            destAddressText,
-            setDestAddressText
-          )}
-        </View>
-
-        {/* ─ Section: Thông tin hàng hóa ─ */}
-        <View className="rounded-2xl border border-[#DAC2B6]/50 bg-white p-5 shadow-sm gap-4">
-          <SectionTitle title="Thông tin hàng hóa" icon="cube-outline" />
-
-          {renderField('itemName', 'Tên hàng hóa', 'Ví dụ: Nho Mỹ, Vaccine Pfizer, Cá hồi...', itemName, setItemName)}
-
-          <View className="flex-row gap-3">
-            <View className="flex-1">
-              {renderField('expectedWeightKg', 'Khối lượng dự kiến KG', 'Ví dụ: 12.5', expectedWeightKg, setExpectedWeightKg, 'numeric')}
-            </View>
-            <View className="w-[118px]">
-              {renderField('quantity', 'Số lượng kiện', '1', quantity, setQuantity, 'numeric')}
-            </View>
-          </View>
-
-          <View className="gap-2">
-            <Text className="text-[#3A1F04] text-[13px] font-bold">Loại bao bì đóng gói</Text>
-            <Text className="text-xs text-[#877369]">Chọn một hoặc nhiều loại bao bì phù hợp với lô hàng.</Text>
-            <PackagingTypeSelector
-              selectedTypes={packagingType}
-              onChange={(selected) => {
-                setPackagingType(selected);
-                if (errors.packagingType) setErrors((current) => ({ ...current, packagingType: undefined }));
-              }}
-            />
-            {errors.packagingType ? <Text className="text-xs font-medium text-red-600">{errors.packagingType}</Text> : null}
-          </View>
-
-          <View className="gap-2">
-            <Text className="text-[#3A1F04] text-[13px] font-bold">Kích thước kiện hàng</Text>
-            <View className="flex-row gap-2">
-              <View className="flex-1">{renderField('lengthCm', 'Dài cm', 'Dài', lengthCm, setLengthCm, 'numeric')}</View>
-              <View className="flex-1">{renderField('widthCm', 'Rộng cm', 'Rộng', widthCm, setWidthCm, 'numeric')}</View>
-              <View className="flex-1">{renderField('heightCm', 'Cao cm', 'Cao', heightCm, setHeightCm, 'numeric')}</View>
-            </View>
-          </View>
-
-          {capacityWarning ? (
-            <View className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-              <View className="flex-row items-start gap-2">
-                <Ionicons name="warning-outline" size={18} color="#b45309" />
-                <Text className="flex-1 text-sm font-semibold leading-5 text-amber-800">{capacityWarning}</Text>
+        {currentStep === 2 ? (
+          <View className="gap-4">
+            <View className="rounded-2xl border border-[#DAC2B6]/50 bg-white p-5">
+              <SectionTitle title="Thông tin cơ bản" icon="cube-outline" />
+              <View className="mt-4 gap-4">
+                {renderField('itemName', 'Tên hàng hóa', 'Ví dụ: Nho Mỹ, vaccine, cá hồi...', itemName, setItemName)}
+                <View className="flex-row gap-3">
+                  <View className="flex-1">{renderField('expectedWeightKg', 'Khối lượng dự kiến (kg)', 'Ví dụ: 12.5', expectedWeightKg, setExpectedWeightKg, 'numeric')}</View>
+                  <View className="w-[118px]">{renderField('quantity', 'Số kiện', 'Ví dụ: 1', quantity, setQuantity, 'numeric')}</View>
+                </View>
               </View>
             </View>
-          ) : null}
+            <GoodsTypeSelector value={category} onChange={(value) => { setCategory(value); setErrors((current) => ({ ...current, category: undefined })); }} />
+            {errors.category ? <Text className="-mt-3 text-xs font-medium text-red-600">{errors.category}</Text> : null}
+            <TemperatureSelector temperature={tempCondition} error={errors.tempCondition} setTemperature={(temperature) => { setTempCondition(temperature); setErrors((current) => ({ ...current, tempCondition: undefined })); }} />
+          </View>
+        ) : null}
 
-          <View className="gap-2">
-            <Text className="text-[#3A1F04] text-[13px] font-bold">Ảnh lô hàng</Text>
-            <Pressable
-              onPress={openImagePicker}
-              className={[
-                'min-h-[148px] w-full overflow-hidden rounded-[14px] border-2 border-dashed bg-[#F8F9FA]',
-                errors.documentImage ? 'border-red-300' : 'border-[#DAC2B6]/70',
-              ].join(' ')}
-            >
+        {currentStep === 3 ? (
+          <View className="gap-4">
+            <View className="rounded-2xl border border-[#DAC2B6]/50 bg-white p-5">
+              <SectionTitle title="Đóng gói" icon="archive-outline" />
+              <View className="mt-4 gap-4">
+                <View className="gap-2">
+                  <Text className="text-[13px] font-bold text-[#3A1F04]">Loại bao bì <Text className="text-red-600">*</Text></Text>
+                  <Text className="text-xs text-[#877369]">Chọn một hoặc nhiều loại bao bì phù hợp với lô hàng.</Text>
+                  <PackagingTypeSelector selectedTypes={packagingType} onChange={(selected) => { setPackagingType(selected); setErrors((current) => ({ ...current, packagingType: undefined })); }} />
+                  {errors.packagingType ? <Text className="text-xs font-medium text-red-600">{errors.packagingType}</Text> : null}
+                </View>
+                <View className="gap-2">
+                  <Text className="text-[13px] font-bold text-[#3A1F04]">Kích thước kiện hàng <Text className="text-red-600">*</Text></Text>
+                  <View className="flex-row gap-2">
+                    <View className="flex-1">{renderField('lengthCm', 'Dài (cm)', 'Dài', lengthCm, setLengthCm, 'numeric')}</View>
+                    <View className="flex-1">{renderField('widthCm', 'Rộng (cm)', 'Rộng', widthCm, setWidthCm, 'numeric')}</View>
+                    <View className="flex-1">{renderField('heightCm', 'Cao (cm)', 'Cao', heightCm, setHeightCm, 'numeric')}</View>
+                  </View>
+                </View>
+              </View>
+            </View>
+            {capacityWarning ? <View className="rounded-2xl border border-amber-200 bg-amber-50 p-4"><View className="flex-row items-start gap-2"><Ionicons name="warning-outline" size={18} color="#b45309" /><Text className="flex-1 text-sm font-semibold leading-5 text-amber-800">{capacityWarning}</Text></View></View> : null}
+            <View className="gap-3 rounded-2xl border border-[#DAC2B6]/50 bg-white p-5">
+              <SectionTitle title="Ảnh lô hàng" icon="camera-outline" />
               {documentImage ? (
-                <View>
-                  <Image source={{ uri: documentImage.uri }} className="h-36 w-full" resizeMode="cover" />
-                  <View className="flex-row items-center gap-2 px-4 py-3">
-                    <Ionicons name="checkmark-circle" size={18} color="#006E0A" />
-                    <Text className="text-[#006E0A] text-sm font-bold">Đã chọn ảnh lô hàng</Text>
+                <View className="gap-3">
+                  <Image source={{ uri: documentImage.uri }} className="h-44 w-full rounded-xl" resizeMode="cover" />
+                  <View className="flex-row gap-3">
+                    <Pressable onPress={openImagePicker} accessibilityRole="button" accessibilityLabel="Thay ảnh lô hàng" className="min-h-11 flex-1 items-center justify-center rounded-xl bg-[#F8F3EF]"><Text className="text-sm font-bold text-[#8B4513]">Thay ảnh</Text></Pressable>
+                    <Pressable onPress={removeDocumentImage} accessibilityRole="button" accessibilityLabel="Xóa ảnh lô hàng" className="min-h-11 flex-1 items-center justify-center rounded-xl border border-[#DAC2B6]"><Text className="text-sm font-bold text-[#3A1F04]">Xóa ảnh</Text></Pressable>
                   </View>
                 </View>
               ) : (
-                <View className="min-h-[148px] items-center justify-center px-5">
-                  <View className="h-12 w-12 items-center justify-center rounded-full bg-[#8B4513]/10">
-                    <Ionicons name="camera-outline" size={26} color="#8B4513" />
-                  </View>
-                  <Text className="mt-3 text-center text-sm font-bold text-[#3A1F04]">Chụp hoặc tải ảnh kiện hàng</Text>
-                  <Text className="mt-1 text-center text-xs leading-5 text-[#877369]">Chỉ chọn ảnh, không chọn video.</Text>
-                </View>
+                <Pressable onPress={openImagePicker} accessibilityRole="button" accessibilityLabel="Thêm ảnh lô hàng" accessibilityHint="Chụp ảnh hoặc chọn ảnh rõ kiện hàng" className={['min-h-[148px] items-center justify-center rounded-xl border-2 border-dashed px-5', errors.documentImage ? 'border-red-300 bg-red-50' : 'border-[#DAC2B6] bg-[#F8F9FA]'].join(' ')}>
+                  <View className="h-12 w-12 items-center justify-center rounded-full bg-[#8B4513]/10"><Ionicons name="camera-outline" size={26} color="#8B4513" /></View>
+                  <Text className="mt-3 text-center text-sm font-bold text-[#3A1F04]">Thêm ảnh lô hàng</Text>
+                  <Text className="mt-1 text-center text-xs leading-5 text-[#877369]">Ảnh rõ kiện hàng, chỉ chọn ảnh và không chọn video.</Text>
+                </Pressable>
               )}
-            </Pressable>
-            {errors.documentImage ? <Text className="text-xs font-medium text-red-600">{errors.documentImage}</Text> : null}
+              {errors.documentImage ? <Text className="text-xs font-medium text-red-600">{errors.documentImage}</Text> : null}
+            </View>
           </View>
-        </View>
+        ) : null}
 
-        <GoodsTypeSelector value={category} onChange={setCategory} />
-        {errors.category ? <Text className="-mt-3 text-xs font-medium text-red-600">{errors.category}</Text> : null}
-
-        <TemperatureSelector
-          temperature={tempCondition}
-          error={errors.tempCondition}
-          setTemperature={(temperature) => {
-            setTempCondition(temperature);
-            if (errors.tempCondition) setErrors((current) => ({ ...current, tempCondition: undefined }));
-          }}
-        />
-
-        <Text className="pb-4 text-center text-[10px] font-medium uppercase tracking-widest text-[#877369]">
-          ColdChainX - Giữ trọn tinh hoa di sản
-        </Text>
+        {currentStep === 4 ? (
+          <View className="gap-3">
+            <ReviewSection title="Tuyến và lịch" onEdit={() => goToStep(1)} rows={[['Tuyến', selectedRoute ? getRouteLabel(selectedRoute) : '—'], ['Lịch', selectedSchedule ? formatScheduleLabel(selectedSchedule) : '—'], ['Điểm giao', selectedStop?.stopName || '—'], ['Địa chỉ', destAddressText || '—']]} />
+            <ReviewSection title="Hàng hóa" onEdit={() => goToStep(2)} rows={[['Tên hàng', itemName || '—'], ['Loại hàng', getGoodsTypeLabel(category)], ['Khối lượng', expectedWeightKg ? `${expectedWeightKg} kg` : '—'], ['Số kiện', quantity ? `${quantity} kiện` : '—'], ['Nhiệt độ', `${tempCondition}°C`]]} />
+            <ReviewSection title="Đóng gói và hình ảnh" onEdit={() => goToStep(3)} rows={[['Bao bì', packagingType.length ? packagingType.map(getPackagingTypeLabel).join(', ') : '—'], ['Kích thước', lengthCm && widthCm && heightCm ? `${lengthCm} × ${widthCm} × ${heightCm} cm` : '—'], ['Ảnh lô hàng', documentImage ? 'Đã chọn ảnh' : 'Chưa chọn ảnh']]} imageUri={documentImage?.uri} />
+          </View>
+        ) : null}
       </ScrollView>
 
-      {/* Submit button */}
-      <View className="absolute bottom-0 inset-x-0 z-30 justify-end bg-[#F5F2F0]/95 px-5 pb-8 pt-4">
-        <Pressable
-          onPress={handleSubmit}
-          disabled={isLoading}
-          className={[
-            'h-14 w-full flex-row items-center justify-center gap-2 rounded-[16px] bg-[#8B4513] shadow-md active:opacity-80',
-            isLoading ? 'opacity-70' : '',
-          ].join(' ')}
-        >
+      <View className="absolute bottom-0 inset-x-0 z-30 flex-row gap-3 border-t border-[#DAC2B6]/50 bg-[#F5F2F0] px-5 pt-4" style={{ paddingBottom: Math.max(insets.bottom, 16) }}>
+        {currentStep > 1 ? <Pressable onPress={handleBack} disabled={isLoading} accessibilityRole="button" accessibilityLabel="Quay lại bước trước" className="min-h-14 items-center justify-center rounded-2xl border border-[#8B4513] px-5"><Text className="text-base font-bold text-[#8B4513]">Quay lại</Text></Pressable> : null}
+        <Pressable onPress={handleContinue} disabled={isLoading} accessibilityRole="button" accessibilityLabel={currentStep === 4 ? 'Gửi yêu cầu vận chuyển' : 'Tiếp tục'} accessibilityState={{ disabled: isLoading }} className={['min-h-14 flex-1 flex-row items-center justify-center gap-2 rounded-2xl bg-[#8B4513]', isLoading ? 'opacity-70' : ''].join(' ')}>
           {isLoading ? <ActivityIndicator color="#FFC29F" /> : null}
-          <Text className="text-[17px] font-bold tracking-wide text-[#FFC29F]">
-            {isLoading ? 'ĐANG GỬI YÊU CẦU...' : 'LÊN ĐƠN GIAO HÀNG'}
-          </Text>
+          <Text className="text-base font-bold text-white">{isLoading ? 'Đang gửi yêu cầu...' : currentStep === 4 ? 'Gửi yêu cầu vận chuyển' : 'Tiếp tục'}</Text>
         </Pressable>
       </View>
 
@@ -740,9 +695,12 @@ function BookingOptionsPicker({
                 <Pressable
                   key={schedule.scheduleId}
                   onPress={() => onSelectSchedule(schedule.scheduleId)}
+                  accessibilityRole="radio"
+                  accessibilityLabel={`Lịch ${schedule.scheduleName}, ${formatDepartureDate(schedule.departureDate)}`}
+                  accessibilityState={{ selected: isSelected }}
                   className={[
                     'rounded-[14px] border p-4',
-                    isSelected ? 'border-[#5B6EBC] bg-[#5B6EBC]' : 'border-[#DAC2B6]/60 bg-[#F8F9FA]',
+                    isSelected ? 'border-[#8B4513] bg-[#8B4513]' : 'border-[#DAC2B6]/60 bg-[#F8F9FA]',
                   ].join(' ')}
                 >
                   <View className="flex-row items-center justify-between gap-3">
@@ -750,7 +708,7 @@ function BookingOptionsPicker({
                       <Text className={['text-sm font-bold', isSelected ? 'text-white' : 'text-[#3A1F04]'].join(' ')}>
                         {schedule.scheduleName}
                       </Text>
-                      <Text className={['mt-1 text-xs font-semibold', isSelected ? 'text-white/90' : 'text-[#5B6EBC]'].join(' ')}>
+                      <Text className={['mt-1 text-xs font-semibold', isSelected ? 'text-white/90' : 'text-[#8B4513]'].join(' ')}>
                         {formatDepartureDate(schedule.departureDate)}
                       </Text>
                       <Text className={['mt-0.5 text-xs', isSelected ? 'text-white/75' : 'text-[#877369]'].join(' ')}>
@@ -760,7 +718,7 @@ function BookingOptionsPicker({
                         Đóng nhận đơn: {schedule.cutOffTime.slice(0, 5)}
                       </Text>
                     </View>
-                    {isSelected ? <Ionicons name="checkmark-circle" size={20} color="#D4E0FF" /> : null}
+                    {isSelected ? <Ionicons name="checkmark-circle" size={20} color="#FFC29F" /> : null}
                   </View>
                 </Pressable>
               );
@@ -785,16 +743,19 @@ function BookingOptionsPicker({
                 <Pressable
                   key={stop.stopId}
                   onPress={() => onSelectStop(stop.stopId)}
+                  accessibilityRole="radio"
+                  accessibilityLabel={`Điểm giao ${stop.stopName}`}
+                  accessibilityState={{ selected: isSelected }}
                   className={[
                     'rounded-[14px] border p-4',
-                    isSelected ? 'border-[#B91C1C] bg-[#B91C1C]' : 'border-[#DAC2B6]/60 bg-[#F8F9FA]',
+                    isSelected ? 'border-[#8B4513] bg-[#8B4513]' : 'border-[#DAC2B6]/60 bg-[#F8F9FA]',
                   ].join(' ')}
                 >
                   <View className="flex-row items-center justify-between gap-3">
                     <Text className={['text-sm font-bold flex-1', isSelected ? 'text-white' : 'text-[#3A1F04]'].join(' ')}>
                       {stop.stopName}
                     </Text>
-                    {isSelected ? <Ionicons name="checkmark-circle" size={20} color="#FEC9C9" /> : null}
+                    {isSelected ? <Ionicons name="checkmark-circle" size={20} color="#FFC29F" /> : null}
                   </View>
                 </Pressable>
               );
@@ -861,6 +822,10 @@ function RouteOptionPicker({
             <Pressable
               key={route.routeId}
               onPress={() => onSelect(route.routeId)}
+              accessibilityRole="radio"
+              accessibilityLabel={getRouteLabel(route)}
+              accessibilityHint={getRouteMeta(route)}
+              accessibilityState={{ selected: isSelected }}
               className={[
                 'rounded-[14px] border p-4',
                 isSelected ? 'border-[#8B4513] bg-[#8B4513]' : 'border-[#DAC2B6]/60 bg-[#F8F9FA]',
@@ -885,25 +850,33 @@ function RouteOptionPicker({
   );
 }
 
-function RouteRow({
-  icon,
-  color,
-  label,
-  value,
+function ReviewSection({
+  title,
+  rows,
+  imageUri,
+  onEdit,
 }: {
-  icon: keyof typeof Ionicons.glyphMap;
-  color: string;
-  label: string;
-  value: string;
+  title: string;
+  rows: [string, string][];
+  imageUri?: string;
+  onEdit: () => void;
 }) {
   return (
-    <View className="flex-row items-start gap-3">
-      <View className="h-10 w-10 items-center justify-center rounded-full bg-[#F8F9FA]">
-        <Ionicons name={icon} size={18} color={color} />
+    <View className="rounded-2xl border border-[#DAC2B6]/50 bg-white p-5">
+      <View className="flex-row items-center justify-between gap-3">
+        <Text className="flex-1 text-base font-bold text-[#3A1F04]">{title}</Text>
+        <Pressable onPress={onEdit} accessibilityRole="button" accessibilityLabel={`Chỉnh sửa ${title.toLowerCase()}`} className="min-h-10 justify-center px-2">
+          <Text className="text-sm font-bold text-[#8B4513]">Chỉnh sửa</Text>
+        </Pressable>
       </View>
-      <View className="flex-1">
-        <Text className="text-xs font-bold uppercase tracking-wide text-[#877369]">{label}</Text>
-        <Text className="mt-1 text-sm font-semibold leading-5 text-[#3A1F04]">{value}</Text>
+      <View className="mt-3 gap-2.5">
+        {rows.map(([label, value]) => (
+          <View key={label} className="flex-row items-start gap-4">
+            <Text className="w-[96px] text-xs font-medium text-[#877369]">{label}</Text>
+            <Text className="flex-1 text-right text-sm font-semibold leading-5 text-[#3A1F04]">{value}</Text>
+          </View>
+        ))}
+        {imageUri ? <Image source={{ uri: imageUri }} className="mt-2 h-24 w-24 self-end rounded-xl" resizeMode="cover" /> : null}
       </View>
     </View>
   );
@@ -1008,6 +981,30 @@ function getCreateOrderErrorMessage(error: unknown) {
   }
 
   return 'Không thể tạo yêu cầu vận chuyển. Vui lòng kiểm tra lại thông tin.';
+}
+
+function getCreateOrderServerErrorField(error: unknown): CreateOrderFieldKey | null {
+  const technicalMessage = getApiErrorMessage(error).toLowerCase();
+  if (technicalMessage.includes('route') && technicalMessage.includes('active')) return 'routeId';
+  if (technicalMessage.includes('schedule')) return 'scheduleId';
+  if (technicalMessage.includes('dropoff') || technicalMessage.includes('stop')) return 'dropoffStopId';
+  if (technicalMessage.includes('temperature') || technicalMessage.includes('temp_condition')) return 'tempCondition';
+  return null;
+}
+
+function getFirstInvalidStep(errors: CreateOrderValidationErrors): CreateOrderStep {
+  for (const step of [1, 2, 3] as const) {
+    if (CREATE_ORDER_STEP_FIELDS[step].some((field) => errors[field])) return step;
+  }
+  return 4;
+}
+
+function getGoodsTypeLabel(category: GoodsType) {
+  switch (category) {
+    case 'FROZEN_FRUITS_VEGGIES': return 'Thực phẩm đông lạnh';
+    case 'PHARMACEUTICALS': return 'Dược phẩm';
+    case 'MEAT_SEAFOOD': return 'Thịt / Hải sản';
+  }
 }
 
 function translateStatus(status: string) {

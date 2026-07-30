@@ -31,6 +31,9 @@ export function GoodsTypeSelector({ value, onChange }: GoodsTypeSelectorProps) {
             <Pressable
               key={type.id}
               onPress={() => onChange(type.id)}
+              accessibilityRole="radio"
+              accessibilityLabel={type.label}
+              accessibilityState={{ selected: isActive }}
               className={[
                 'min-h-[66px] w-full rounded-2xl border-[1.5px] px-4 py-3 flex-row items-center gap-3',
                 isActive ? 'border-[#8B4513] bg-[#8B4513]' : 'border-[#DAC2B6]/50 bg-[#F8F9FA]',
@@ -50,7 +53,7 @@ export function GoodsTypeSelector({ value, onChange }: GoodsTypeSelectorProps) {
                   {type.label}
                 </Text>
                 <Text className={['mt-1 text-[11px]', isActive ? 'text-white/70' : 'text-[#877369]'].join(' ')}>
-                  {type.id}
+                  Phù hợp với vận chuyển lạnh
                 </Text>
               </View>
 
