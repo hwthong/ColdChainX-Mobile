@@ -4,8 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 
 import { getApiErrorMessage } from '../../services/apiClient';
-import { getCustomerIdFromToken, getUserIdFromToken } from '../../services/jwt';
-import { getUserNotifications } from '../../services/notificationApi';
+import { getCustomerIdFromToken } from '../../services/jwt';
 import { getCustomerAsns } from '../../services/asnApi';
 import { useAuthStore } from '../../store/useAuthStore';
 
@@ -14,34 +13,9 @@ export default function CustomerHomeScreen() {
   const logout = useAuthStore((state) => state.logout);
   const accessToken = useAuthStore((state) => state.token);
   const fullName = useAuthStore((state) => state.fullName ?? state.user?.fullName ?? null);
-  const storedUserId = useAuthStore((state) => state.userId ?? state.user?.userId ?? null);
   const storedCustomerId = useAuthStore((state) => state.customerId ?? state.user?.customerId ?? null);
-  const userId = storedUserId ?? (accessToken ? getUserIdFromToken(accessToken) : null);
   const customerId = storedCustomerId ?? (accessToken ? getCustomerIdFromToken(accessToken) : null);
-  const [unreadCount, setUnreadCount] = useState(0);
   const [scheduleCount, setScheduleCount] = useState(0);
-
-  const fetchUnreadCount = useCallback(async () => {
-    if (!accessToken || !userId) {
-      setUnreadCount(0);
-      return;
-    }
-
-    try {
-      const response = await getUserNotifications(accessToken, userId, {
-        unreadOnly: true,
-        pageNumber: 1,
-        pageSize: 10,
-      });
-      if (response.success && response.data) {
-        setUnreadCount(response.data.totalRecords);
-      }
-    } catch (error) {
-      console.error('[CustomerHome] Failed to load unread notifications', {
-        message: getApiErrorMessage(error),
-      });
-    }
-  }, [accessToken, userId]);
 
   const fetchScheduleCount = useCallback(async () => {
     if (!accessToken || !customerId) {
@@ -55,17 +29,18 @@ export default function CustomerHomeScreen() {
         setScheduleCount(response.data.length);
       }
     } catch (error) {
-      console.error('[CustomerHome] Failed to load ASN schedules', {
-        message: getApiErrorMessage(error),
-      });
+      if (__DEV__) {
+        console.warn('[CustomerHome] Failed to load ASN schedules', {
+          message: getApiErrorMessage(error),
+        });
+      }
     }
   }, [accessToken, customerId]);
 
   useFocusEffect(
     useCallback(() => {
-      fetchUnreadCount();
       fetchScheduleCount();
-    }, [fetchScheduleCount, fetchUnreadCount])
+    }, [fetchScheduleCount])
   );
 
   return (
@@ -116,8 +91,7 @@ export default function CustomerHomeScreen() {
         <QuickAction
           icon="notifications-outline"
           title="Notifications"
-          subtitle={unreadCount > 0 ? `${unreadCount} chưa đọc` : 'Cập nhật mới'}
-          badge={unreadCount}
+          subtitle="Cập nhật mới"
           onPress={() => router.push('/(customer)/notifications' as never)}
         />
         <QuickAction

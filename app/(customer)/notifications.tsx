@@ -12,7 +12,6 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 import { getApiErrorMessage } from '../../services/apiClient';
-import { getUserIdFromToken } from '../../services/jwt';
 import {
   getNotificationById,
   getUserNotifications,
@@ -25,8 +24,6 @@ import { useAuthStore } from '../../store/useAuthStore';
 export default function NotificationsScreen() {
   const router = useRouter();
   const accessToken = useAuthStore((state) => state.token);
-  const storedUserId = useAuthStore((state) => state.userId ?? state.user?.userId ?? null);
-  const userId = storedUserId ?? (accessToken ? getUserIdFromToken(accessToken) : null);
 
   const [notifications, setNotifications] = useState<NotificationResponse[]>([]);
   const [selectedNotification, setSelectedNotification] = useState<NotificationResponse | null>(null);
@@ -38,8 +35,8 @@ export default function NotificationsScreen() {
   const unreadCount = notifications.filter((notification) => !isNotificationRead(notification)).length;
 
   const fetchNotifications = useCallback(async () => {
-    if (!accessToken || !userId) {
-      setError('Không tìm thấy mã người dùng. Vui lòng đăng xuất và đăng nhập lại.');
+    if (!accessToken) {
+      setError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
       setNotifications([]);
       setIsLoading(false);
       setIsRefreshing(false);
@@ -48,7 +45,7 @@ export default function NotificationsScreen() {
 
     try {
       setError(null);
-      const response = await getUserNotifications(accessToken, userId, {
+      const response = await getUserNotifications(accessToken, {
         unreadOnly: false,
         pageNumber: 1,
         pageSize: 20,
@@ -65,7 +62,7 @@ export default function NotificationsScreen() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [accessToken, userId]);
+  }, [accessToken]);
 
   useFocusEffect(
     useCallback(() => {
@@ -119,14 +116,14 @@ export default function NotificationsScreen() {
   };
 
   const handleMarkAllRead = async () => {
-    if (!accessToken || !userId) {
-      setError('Không tìm thấy mã người dùng. Vui lòng đăng xuất và đăng nhập lại.');
+    if (!accessToken) {
+      setError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
       return;
     }
 
     setIsMarkingAll(true);
     try {
-      const response = await markAllNotificationsRead(accessToken, userId);
+      const response = await markAllNotificationsRead(accessToken);
       if (!response.success) {
         throw new Error(response.message || 'Không thể đánh dấu tất cả thông báo.');
       }

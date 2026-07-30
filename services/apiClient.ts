@@ -1,7 +1,7 @@
 const DEFAULT_API_BASE_URL = 'https://coldchainx.onrender.com';
 
 export const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_BASE_URL?.trim().replace(/\/+$/, '') || DEFAULT_API_BASE_URL;
+  normalizeApiBaseUrl(process.env.EXPO_PUBLIC_API_BASE_URL) || DEFAULT_API_BASE_URL;
 
 type ApiRequestOptions = {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -38,6 +38,8 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     requestHeaders['Content-Type'] = 'application/json';
   }
 
+  const authorization = requestHeaders.Authorization ?? '';
+
   const requestBody = isFormData
     ? (options.body as BodyInit)
     : options.body === undefined
@@ -50,6 +52,8 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
       endpoint: normalizedPath,
       finalRequestUrl,
       method,
+      authorizationHeaderExists: authorization.length > 0,
+      authorizationHeaderHasBearerPrefix: /^Bearer\s+\S+$/.test(authorization),
     });
   }
 
@@ -206,6 +210,26 @@ function getValidationMessage(errors: unknown): string | null {
 
 function getString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function normalizeApiBaseUrl(configuredUrl?: string) {
+  const value = configuredUrl?.trim().replace(/\/+$/, '');
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const url = new URL(value);
+    // The deployed sslip.io endpoint redirects HTTP to HTTPS. Start with HTTPS so
+    // protected requests do not rely on redirect behavior for Authorization headers.
+    if (url.protocol === 'http:' && url.hostname.endsWith('.sslip.io')) {
+      url.protocol = 'https:';
+    }
+
+    return url.toString().replace(/\/+$/, '');
+  } catch {
+    return value;
+  }
 }
 
 function summarizeResponseBody(data: unknown) {

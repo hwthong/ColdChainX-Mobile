@@ -31,6 +31,10 @@ export interface NotificationListResult {
   pageSize?: number;
 }
 
+export interface UnreadNotificationCount {
+  unreadCount: number;
+}
+
 export interface NotificationQueryOptions {
   unreadOnly?: boolean;
   pageNumber?: number;
@@ -56,15 +60,21 @@ interface ApiResponse<T> {
 
 export async function getUserNotifications(
   accessToken: string,
-  userId: string,
   options: NotificationQueryOptions = {}
 ) {
-  const unreadOnly = options.unreadOnly ?? false;
   const pageNumber = options.pageNumber ?? 1;
   const pageSize = options.pageSize ?? 10;
+  const query = new URLSearchParams({
+    pageNumber: String(pageNumber),
+    pageSize: String(pageSize),
+  });
+
+  if (options.unreadOnly) {
+    query.set('isRead', 'false');
+  }
 
   const response = await apiRequest<ApiResponse<PagedNotificationResponse | NotificationResponse[]>>(
-    `/api/notifications/users/${userId}?unreadOnly=${unreadOnly}&pageNumber=${pageNumber}&pageSize=${pageSize}`,
+    `/api/notifications?${query.toString()}`,
     {
       method: 'GET',
       headers: getAuthHeaders(accessToken),
@@ -89,6 +99,13 @@ export async function getNotificationById(accessToken: string, notificationId: s
   };
 }
 
+export function getUnreadNotificationCount(accessToken: string) {
+  return apiRequest<ApiResponse<UnreadNotificationCount>>('/api/notifications/unread-count', {
+    method: 'GET',
+    headers: getAuthHeaders(accessToken),
+  });
+}
+
 export function markNotificationRead(accessToken: string, notificationId: string) {
   return apiRequest<ApiResponse<boolean>>(`/api/notifications/${notificationId}/read`, {
     method: 'PUT',
@@ -96,8 +113,8 @@ export function markNotificationRead(accessToken: string, notificationId: string
   });
 }
 
-export function markAllNotificationsRead(accessToken: string, userId: string) {
-  return apiRequest<ApiResponse<boolean>>(`/api/notifications/users/${userId}/read-all`, {
+export function markAllNotificationsRead(accessToken: string) {
+  return apiRequest<ApiResponse<boolean>>('/api/notifications/read-all', {
     method: 'PUT',
     headers: getAuthHeaders(accessToken),
   });

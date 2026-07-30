@@ -4,8 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 
-import { getUserNotifications } from '../services/notificationApi';
-import { getUserIdFromToken } from '../services/jwt';
+import { getUnreadNotificationCount } from '../services/notificationApi';
 import { useAuthStore } from '../store/useAuthStore';
 
 interface CustomerHeaderProps {
@@ -17,32 +16,28 @@ export function CustomerHeader({ title, showBackButton = false }: CustomerHeader
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const accessToken = useAuthStore((state) => state.token);
-  const storedUserId = useAuthStore((state) => state.userId ?? state.user?.userId ?? null);
-  const userId = storedUserId ?? (accessToken ? getUserIdFromToken(accessToken) : null);
   const [unreadCount, setUnreadCount] = useState(0);
 
   const fetchUnreadCount = useCallback(async () => {
-    if (!accessToken || !userId) {
+    if (!accessToken) {
       setUnreadCount(0);
       return;
     }
 
     try {
-      const response = await getUserNotifications(accessToken, userId, {
-        unreadOnly: true,
-        pageNumber: 1,
-        pageSize: 10,
-      });
+      const response = await getUnreadNotificationCount(accessToken);
 
       if (response.success && response.data) {
-        setUnreadCount(response.data.totalRecords);
+        setUnreadCount(response.data.unreadCount);
       }
     } catch (error) {
-      console.error('[CustomerHeader] Failed to load unread notifications', {
-        message: error instanceof Error ? error.message : 'Unknown error',
-      });
+      if (__DEV__) {
+        console.warn('[CustomerHeader] Failed to load unread notifications', {
+          message: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
     }
-  }, [accessToken, userId]);
+  }, [accessToken]);
 
   useFocusEffect(
     useCallback(() => {
