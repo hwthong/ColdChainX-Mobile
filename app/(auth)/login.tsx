@@ -15,6 +15,7 @@ import { AuthBackground } from '../../components/AuthBackground';
 import { ApiClientError, getApiErrorMessage } from '../../services/apiClient';
 import {
   getMobileRoleFromBackend,
+  hasValidGoogleLoginPayload,
   login as loginApi,
   logout as logoutApi,
   googleLogin,
@@ -70,28 +71,33 @@ export default function LoginScreen() {
 
       const response = await googleLogin(idToken);
 
-      const authData = response.data;
-      if (!authData?.accessToken) {
-        throw new Error('Phản hồi đăng nhập thiếu accessToken.');
+      if (!response.success) {
+        throw new Error(response.message ?? 'Đăng nhập Google không thành công. Vui lòng thử lại.');
       }
 
-      const backendRole = authData.role ?? getRoleFromToken(authData.accessToken);
+      if (!hasValidGoogleLoginPayload(response)) {
+        throw new Error('Máy chủ trả về phiên đăng nhập không hợp lệ. Vui lòng thử lại.');
+      }
+
+      const authData = response.data;
+
+      const backendRole = authData.user.role ?? getRoleFromToken(authData.token);
       const appRole = getMobileRoleFromBackend(backendRole);
       if (!appRole) {
         throw new Error(UNSUPPORTED_MOBILE_ROLE_ERROR);
       }
 
       saveAuth({
-        token: authData.accessToken,
+        token: authData.token,
         refreshToken: authData.refreshToken,
-        accessTokenExpiresAt: authData.accessTokenExpiresAt,
+        accessTokenExpiresAt: authData.expiresAt ?? null,
         role: appRole,
         user: {
-          userId: authData.userId,
-          customerId: authData.customerId,
-          warehouseId: authData.warehouseId,
-          fullName: authData.fullName,
-          email: authData.email ?? '',
+          userId: authData.user.userId,
+          customerId: authData.user.customerId,
+          warehouseId: authData.user.warehouseId,
+          fullName: authData.user.fullName ?? authData.user.email ?? '',
+          email: authData.user.email ?? '',
           backendRole: backendRole ?? appRole,
         },
       });

@@ -6,6 +6,11 @@ export interface GoogleAuthResult {
   playServicesUnavailable?: boolean;
 }
 
+type GoogleSigninErrorDetails = {
+  code?: string;
+  message: string;
+};
+
 interface GoogleSignInModule {
   GoogleSignin: {
     configure: (options?: { webClientId?: string }) => void;
@@ -69,7 +74,7 @@ export function configureGoogleSignin(webClientId?: string): boolean {
     isConfigured = true;
     return true;
   } catch (error) {
-    console.error('[GoogleAuth] Failed to configure GoogleSignin:', error);
+    logGoogleSigninError(error);
     return false;
   }
 }
@@ -106,6 +111,34 @@ export async function performGoogleSignIn(webClientId?: string): Promise<GoogleA
     if (errCode === module.statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
       return { idToken: null, playServicesUnavailable: true };
     }
+
+    logGoogleSigninError(error);
     throw error;
   }
+}
+
+function logGoogleSigninError(error: unknown) {
+  if (!__DEV__) {
+    return;
+  }
+
+  const { code, message } = getGoogleSigninErrorDetails(error);
+  console.warn('[GoogleSignIn]', { code, message });
+}
+
+function getGoogleSigninErrorDetails(error: unknown): GoogleSigninErrorDetails {
+  const candidate = error as { code?: unknown; message?: unknown } | null;
+  const code = typeof candidate?.code === 'string' || typeof candidate?.code === 'number'
+    ? String(candidate.code)
+    : undefined;
+  const rawMessage = typeof candidate?.message === 'string'
+    ? candidate.message
+    : 'Google Sign-In failed.';
+
+  return {
+    code,
+    message: rawMessage
+      .replace(/\b(id_?token|access_?token|refresh_?token|serverAuthCode|authorization)\b\s*[:=]\s*\S+/gi, '$1=[redacted]')
+      .slice(0, 300),
+  };
 }

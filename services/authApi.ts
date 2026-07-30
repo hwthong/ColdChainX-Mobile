@@ -50,6 +50,25 @@ export type AuthUserDto = {
   accessTokenExpiresAt: string;
 };
 
+export type BackendRoleValue = BackendRole | number | string | null | undefined;
+
+export type GoogleLoginUserDto = {
+  userId: string;
+  customerId?: string | null;
+  driverId?: string | null;
+  warehouseId?: string | null;
+  fullName?: string | null;
+  email?: string | null;
+  role?: BackendRoleValue;
+};
+
+export type GoogleLoginPayload = {
+  token: string;
+  refreshToken: string;
+  expiresAt?: string | null;
+  user: GoogleLoginUserDto;
+};
+
 export type UpdateProfilePayload = {
   fullName?: string | null;
   phoneNumber?: string | null;
@@ -109,11 +128,26 @@ export interface GoogleLoginRequest {
   idToken: string;
 }
 
-export function googleLogin(idToken: string) {
-  return apiRequest<ApiResponse<AuthUserDto>>('/api/auth/google-login', {
+export async function googleLogin(idToken: string) {
+  const response = await apiRequest<ApiResponse<GoogleLoginPayload>>('/api/auth/google-login', {
     method: 'POST',
     body: { idToken },
   });
+
+  logGoogleLoginResponseShape(response);
+  return response;
+}
+
+export function hasValidGoogleLoginPayload(
+  response: ApiResponse<GoogleLoginPayload>
+): response is ApiResponse<GoogleLoginPayload> & { success: true; data: GoogleLoginPayload } {
+  const payload = response.data;
+
+  return response.success === true &&
+    isRecord(payload) &&
+    isNonEmptyString(payload.token) &&
+    isNonEmptyString(payload.refreshToken) &&
+    isRecord(payload.user);
 }
 
 export function refreshTokens(refreshToken: string) {
@@ -159,11 +193,11 @@ export function deleteUser(accessToken: string, userId: string) {
   });
 }
 
-export function mapBackendRoleToAppRole(role: AuthUserDto['role']): UserRole | null {
+export function mapBackendRoleToAppRole(role: BackendRoleValue): UserRole | null {
   return getMobileRoleFromBackend(role);
 }
 
-export function getMobileRoleFromBackend(role: AuthUserDto['role']): UserRole | null {
+export function getMobileRoleFromBackend(role: BackendRoleValue): UserRole | null {
   const normalizedRole = normalizeBackendRole(role);
 
   if (normalizedRole === 'DRIVER' || normalizedRole === String(BackendRole.Driver)) {
@@ -194,6 +228,26 @@ function getAuthHeaders(accessToken: string) {
   };
 }
 
-function normalizeBackendRole(role: AuthUserDto['role']) {
+function normalizeBackendRole(role: BackendRoleValue) {
   return String(role ?? '').trim().toUpperCase();
+}
+
+function logGoogleLoginResponseShape(response: ApiResponse<GoogleLoginPayload>) {
+  if (!__DEV__) {
+    return;
+  }
+
+  console.log('[GoogleLogin] response shape', {
+    success: response?.success,
+    topLevelKeys: Object.keys(response ?? {}),
+    dataKeys: isRecord(response?.data) ? Object.keys(response.data) : [],
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
 }
