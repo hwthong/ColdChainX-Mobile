@@ -20,6 +20,15 @@ import { AppToast, ToastType } from '../../components/AppToast';
 import { GoodsType, GoodsTypeSelector } from '../../components/GoodsTypeSelector';
 import { PackagingTypeSelector } from '../../components/PackagingTypeSelector';
 import { TemperatureSelector } from '../../components/TemperatureSelector';
+import { mapCreateOrderRequest } from '../../features/customer/create-order/createOrderMapper';
+import {
+  CreateOrderFieldKey,
+  CreateOrderFormValues,
+  CreateOrderValidationErrors,
+  DocumentImage,
+  parseCreateOrderDecimal,
+  validateCreateOrderForm,
+} from '../../features/customer/create-order/createOrderValidation';
 import { ApiClientError, getApiErrorMessage } from '../../services/apiClient';
 import { createOrder } from '../../services/orderApi';
 import {
@@ -31,40 +40,12 @@ import {
 } from '../../services/routeApi';
 import { useAuthStore } from '../../store/useAuthStore';
 
-type FieldKey =
-  | 'itemName'
-  | 'category'
-  | 'tempCondition'
-  | 'expectedWeightKg'
-  | 'quantity'
-  | 'packagingType'
-  | 'lengthCm'
-  | 'widthCm'
-  | 'heightCm'
-  | 'destAddressText'
-  | 'routeId'
-  | 'scheduleId'
-  | 'dropoffStopId'
-  | 'documentImage';
-
-type ValidationErrors = Partial<Record<FieldKey, string>>;
-
-type DocumentImage = {
-  uri: string;
-  mimeType?: string | null;
-  fileName?: string | null;
-};
-
 type SuccessData = {
   orderId: string;
   trackingCode: string;
   status: string;
   documentUrl?: string | null;
 };
-
-const REQUIRED_ERROR = 'Vui lòng nhập thông tin này.';
-const PACKAGING_TYPE_ERROR =
-  'Loại bao bì không hợp lệ. Vui lòng chọn một trong các loại bao bì được hỗ trợ.';
 
 export default function CreateOrderScreen() {
   const router = useRouter();
@@ -98,9 +79,10 @@ export default function CreateOrderScreen() {
   const [isLoadingBooking, setIsLoadingBooking] = useState(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
   const currentBookingRouteIdRef = useRef<string>('');
+  const currentSelectedRouteIdRef = useRef<string>('');
 
   // — UI state —
-  const [errors, setErrors] = useState<ValidationErrors>({});
+  const [errors, setErrors] = useState<CreateOrderValidationErrors>({});
   const [toastVisible, setToastVisible] = useState(false);
   const [toastConfig, setToastConfig] = useState<{ type: ToastType; title?: string; message: string }>({
     type: 'info',
@@ -113,6 +95,22 @@ export default function CreateOrderScreen() {
   const selectedSchedule = bookingOptions?.availableSchedules.find((s) => s.scheduleId === selectedScheduleId) ?? null;
   const selectedStop = bookingOptions?.availableStops.find((s) => s.stopId === selectedStopId) ?? null;
   const capacityWarning = getCapacityWarning(expectedWeightKg, lengthCm, widthCm, heightCm, quantity);
+  const formValues: CreateOrderFormValues = {
+    itemName,
+    category,
+    tempCondition,
+    expectedWeightKg,
+    quantity,
+    packagingType,
+    lengthCm,
+    widthCm,
+    heightCm,
+    destAddressText,
+    routeId: selectedRouteId,
+    scheduleId: selectedScheduleId,
+    dropoffStopId: selectedStopId,
+    documentImage,
+  };
 
   // ─── Fetch route list ────────────────────────────────────────────────────────
   const fetchRoutes = useCallback(async () => {
@@ -121,11 +119,18 @@ export default function CreateOrderScreen() {
     try {
       const response = await getRouteOptions();
       if (response.success && response.data) {
-        const activeRoutes = response.data.filter((r) => r.status?.toUpperCase() !== 'INACTIVE');
+        const activeRoutes = response.data.filter((route) => route.status?.trim().toUpperCase() === 'ACTIVE');
         setRouteOptions(activeRoutes);
-        // Auto-select if only 1 route
-        if (activeRoutes.length === 1) {
-          setSelectedRouteId(activeRoutes[0].routeId);
+        const currentRouteId = currentSelectedRouteIdRef.current;
+        if (!activeRoutes.some((route) => route.routeId === currentRouteId)) {
+          const nextRouteId = activeRoutes.length === 1 ? activeRoutes[0].routeId : '';
+          currentBookingRouteIdRef.current = '';
+          currentSelectedRouteIdRef.current = nextRouteId;
+          setBookingOptions(null);
+          setSelectedScheduleId('');
+          setSelectedStopId('');
+          setIsLoadingBooking(false);
+          setSelectedRouteId(nextRouteId);
         }
       } else {
         setRouteError(response.message || 'Không thể tải danh sách tuyến vận chuyển.');
@@ -180,40 +185,32 @@ export default function CreateOrderScreen() {
     }
   }, [selectedRouteId, fetchBookingOptions]);
 
+  useEffect(() => {
+    currentSelectedRouteIdRef.current = selectedRouteId;
+  }, [selectedRouteId]);
+
+  const handleRouteSelect = (routeId: string) => {
+    if (routeId !== selectedRouteId) {
+      currentBookingRouteIdRef.current = '';
+      currentSelectedRouteIdRef.current = routeId;
+      setSelectedRouteId(routeId);
+      setSelectedScheduleId('');
+      setSelectedStopId('');
+      setBookingOptions(null);
+      setBookingError(null);
+      setIsLoadingBooking(false);
+    }
+    setErrors((current) => ({
+      ...current,
+      routeId: undefined,
+      scheduleId: undefined,
+      dropoffStopId: undefined,
+    }));
+  };
+
   const showToast = (type: ToastType, message: string, title?: string) => {
     setToastConfig({ type, message, title });
     setToastVisible(true);
-  };
-
-  // ─── Validation ─────────────────────────────────────────────────────────────
-  const validateForm = (): ValidationErrors => {
-    const nextErrors: ValidationErrors = {};
-    if (!itemName.trim()) nextErrors.itemName = REQUIRED_ERROR;
-    if (!category) nextErrors.category = 'Vui lòng chọn phân loại hàng hóa.';
-    if (!Number.isFinite(tempCondition)) nextErrors.tempCondition = 'Vui lòng chọn nhiệt độ yêu cầu.';
-    if (!isPositiveNumber(expectedWeightKg)) nextErrors.expectedWeightKg = 'Khối lượng phải lớn hơn 0.';
-    if (!isPositiveInteger(quantity)) nextErrors.quantity = 'Số lượng kiện phải từ 1 trở lên.';
-    if (packagingType.length === 0) nextErrors.packagingType = 'Vui lòng chọn ít nhất một loại bao bì đóng gói.';
-    if (!isPositiveNumber(lengthCm)) nextErrors.lengthCm = 'Chiều dài phải lớn hơn 0.';
-    if (!isPositiveNumber(widthCm)) nextErrors.widthCm = 'Chiều rộng phải lớn hơn 0.';
-    if (!isPositiveNumber(heightCm)) nextErrors.heightCm = 'Chiều cao phải lớn hơn 0.';
-    if (destAddressText.trim().length < 5) {
-      nextErrors.destAddressText = 'Địa chỉ giao hàng cần ít nhất 5 ký tự.';
-    }
-    if (!selectedRouteId) nextErrors.routeId = 'Vui lòng chọn tuyến vận chuyển.';
-    if (!selectedScheduleId) nextErrors.scheduleId = 'Vui lòng chọn lịch vận chuyển.';
-    if (!selectedStopId) nextErrors.dropoffStopId = 'Vui lòng chọn điểm giao hàng.';
-    if (selectedScheduleId && (!bookingOptions || !bookingOptions.availableSchedules.some(s => s.scheduleId === selectedScheduleId))) {
-      nextErrors.scheduleId = 'Lịch vận chuyển không còn hợp lệ hoặc không thuộc tuyến đã chọn.';
-    }
-    if (selectedStopId && (!bookingOptions || !bookingOptions.availableStops.some(s => s.stopId === selectedStopId))) {
-      nextErrors.dropoffStopId = 'Điểm giao hàng không hợp lệ hoặc không thuộc tuyến đã chọn.';
-    }
-    if (bookingOptions && bookingOptions.routeId !== selectedRouteId) {
-      nextErrors.routeId = 'Thông tin tuyến vận chuyển đang được cập nhật.';
-    }
-    if (!documentImage) nextErrors.documentImage = 'Vui lòng chọn ảnh lô hàng.';
-    return nextErrors;
   };
 
   // ─── Submit ─────────────────────────────────────────────────────────────────
@@ -225,7 +222,7 @@ export default function CreateOrderScreen() {
       return;
     }
 
-    const nextErrors = validateForm();
+    const nextErrors = validateCreateOrderForm(formValues, routeOptions, bookingOptions);
     setErrors(nextErrors);
 
     if (Object.keys(nextErrors).length > 0) {
@@ -255,25 +252,7 @@ export default function CreateOrderScreen() {
 
     setIsLoading(true);
     try {
-      const response = await createOrder(accessToken, {
-        itemName: itemName.trim(),
-        category,
-        tempCondition,
-        expectedWeightKg: parseDecimal(expectedWeightKg),
-        quantity: parseInt(quantity, 10),
-        packagingType: packagingType.join(', '),
-        lengthCm: parseDecimal(lengthCm),
-        widthCm: parseDecimal(widthCm),
-        heightCm: parseDecimal(heightCm),
-        destAddressText: destAddressText.trim(),
-        scheduleId: selectedScheduleId,
-        dropoffStopId: selectedStopId,
-        cargoPhoto: {
-          uri: documentImage.uri,
-          mimeType: documentImage.mimeType || 'image/jpeg',
-          fileName: documentImage.fileName || 'cargo.jpg',
-        },
-      });
+      const response = await createOrder(accessToken, mapCreateOrderRequest({ ...formValues, documentImage }));
 
       if (!response.success) {
         throw new Error(response.message || 'Tạo đơn thất bại.');
@@ -288,24 +267,15 @@ export default function CreateOrderScreen() {
     } catch (error) {
       if (__DEV__) console.error('[CreateOrder] create order failed', error);
 
-      let errorMessage = 'Không thể tạo đơn lúc này. Vui lòng thử lại sau.';
+      let errorMessage = 'Không thể tạo yêu cầu vận chuyển. Vui lòng kiểm tra lại thông tin.';
       if (error instanceof ApiClientError) {
         if (error.status === 401) {
           errorMessage = 'Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.';
-        } else if (error.status === 400) {
-          errorMessage = error.message;
-          if (errorMessage.toLowerCase().includes('goong')) {
-            errorMessage = 'Không thể xác thực địa chỉ giao hàng. Vui lòng nhập địa chỉ rõ hơn hoặc thử lại sau.';
-          }
         } else {
-          errorMessage = getApiErrorMessage(error);
+          errorMessage = getCreateOrderErrorMessage(error);
         }
-      } else if (error instanceof Error) {
-        errorMessage = error.message;
-      }
-
-      if (isPackagingTypeError(errorMessage)) {
-        errorMessage = PACKAGING_TYPE_ERROR;
+      } else {
+        errorMessage = getCreateOrderErrorMessage(error);
       }
 
       showToast('error', errorMessage, 'Lỗi tạo đơn');
@@ -378,7 +348,11 @@ export default function CreateOrderScreen() {
     setSelectedRouteId('');
     setSelectedScheduleId('');
     setSelectedStopId('');
+    currentBookingRouteIdRef.current = '';
+    currentSelectedRouteIdRef.current = '';
     setBookingOptions(null);
+    setBookingError(null);
+    setIsLoadingBooking(false);
     setDocumentImage(null);
     setErrors({});
     setSuccessData(null);
@@ -386,7 +360,7 @@ export default function CreateOrderScreen() {
 
   // ─── Text field helper ───────────────────────────────────────────────────────
   const renderField = (
-    field: FieldKey,
+    field: CreateOrderFieldKey,
     label: string,
     placeholder: string,
     value: string,
@@ -504,15 +478,7 @@ export default function CreateOrderScreen() {
             isLoading={isLoadingRoutes}
             error={routeError}
             onRetry={fetchRoutes}
-            onSelect={(routeId) => {
-              if (routeId !== selectedRouteId) {
-                setSelectedRouteId(routeId);
-                setSelectedScheduleId('');
-                setSelectedStopId('');
-                setBookingOptions(null);
-              }
-              setErrors((current) => ({ ...current, routeId: undefined }));
-            }}
+            onSelect={handleRouteSelect}
           />
           {errors.routeId ? <Text className="text-xs font-medium text-red-600">{errors.routeId}</Text> : null}
 
@@ -628,7 +594,14 @@ export default function CreateOrderScreen() {
         <GoodsTypeSelector value={category} onChange={setCategory} />
         {errors.category ? <Text className="-mt-3 text-xs font-medium text-red-600">{errors.category}</Text> : null}
 
-        <TemperatureSelector temperature={tempCondition} setTemperature={setTempCondition} />
+        <TemperatureSelector
+          temperature={tempCondition}
+          error={errors.tempCondition}
+          setTemperature={(temperature) => {
+            setTempCondition(temperature);
+            if (errors.tempCondition) setErrors((current) => ({ ...current, tempCondition: undefined }));
+          }}
+        />
 
         <Text className="pb-4 text-center text-[10px] font-medium uppercase tracking-widest text-[#877369]">
           ColdChainX - Giữ trọn tinh hoa di sản
@@ -946,15 +919,11 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function parseDecimal(value: string) {
-  return Number(value.trim().replace(',', '.'));
-}
-
 function getCapacityWarning(weightValue: string, lengthValue: string, widthValue: string, heightValue: string, quantityValue: string) {
-  const weightKg = parseDecimal(weightValue);
-  const lengthCm = parseDecimal(lengthValue);
-  const widthCm = parseDecimal(widthValue);
-  const heightCm = parseDecimal(heightValue);
+  const weightKg = parseCreateOrderDecimal(weightValue);
+  const lengthCm = parseCreateOrderDecimal(lengthValue);
+  const widthCm = parseCreateOrderDecimal(widthValue);
+  const heightCm = parseCreateOrderDecimal(heightValue);
   const qty = Number(quantityValue.trim());
 
   if (Number.isFinite(weightKg) && weightKg > 1500) {
@@ -1012,19 +981,33 @@ function formatScheduleLabel(schedule: ScheduleOptionDto) {
   return `${schedule.scheduleName} · ${formatDepartureDate(schedule.departureDate)} · Khởi hành ${schedule.departureTime.slice(0, 5)}`;
 }
 
-function isPositiveNumber(value: string) {
-  const parsed = parseDecimal(value);
-  return Number.isFinite(parsed) && parsed > 0;
-}
+function getCreateOrderErrorMessage(error: unknown) {
+  const technicalMessage = getApiErrorMessage(error).toLowerCase();
 
-function isPositiveInteger(value: string) {
-  const parsed = Number(value.trim());
-  return Number.isInteger(parsed) && parsed >= 1;
-}
+  if (
+    technicalMessage.includes('network') ||
+    technicalMessage.includes('failed to fetch') ||
+    technicalMessage.includes('cannot reach')
+  ) {
+    return 'Không thể kết nối máy chủ. Vui lòng thử lại.';
+  }
+  if (technicalMessage.includes('route') && technicalMessage.includes('active')) {
+    return 'Tuyến vận chuyển hiện không khả dụng.';
+  }
+  if (technicalMessage.includes('schedule')) {
+    return 'Lịch vận chuyển không còn khả dụng.';
+  }
+  if (technicalMessage.includes('dropoff') || technicalMessage.includes('stop')) {
+    return 'Điểm giao hàng không hợp lệ.';
+  }
+  if (technicalMessage.includes('temperature') || technicalMessage.includes('temp_condition')) {
+    return 'Nhiệt độ bảo quản không hợp lệ.';
+  }
+  if (technicalMessage.includes('goong')) {
+    return 'Không thể xác thực địa chỉ giao hàng. Vui lòng nhập địa chỉ rõ hơn hoặc thử lại sau.';
+  }
 
-function isPackagingTypeError(message: string) {
-  const normalized = message.toLowerCase();
-  return normalized.includes('packaging_type') || normalized.includes('packaging type');
+  return 'Không thể tạo yêu cầu vận chuyển. Vui lòng kiểm tra lại thông tin.';
 }
 
 function translateStatus(status: string) {

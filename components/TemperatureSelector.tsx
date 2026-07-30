@@ -5,11 +5,17 @@ import { Ionicons } from '@expo/vector-icons';
 interface TemperatureSelectorProps {
   temperature: number;
   setTemperature: (temp: number) => void;
+  error?: string;
 }
 
-export function TemperatureSelector({ temperature, setTemperature }: TemperatureSelectorProps) {
-  const decrease = () => setTemperature(temperature - 1);
-  const increase = () => setTemperature(temperature + 1);
+const MIN_TEMPERATURE_CELSIUS = -18;
+const MAX_TEMPERATURE_CELSIUS = -5;
+
+export function TemperatureSelector({ temperature, setTemperature, error }: TemperatureSelectorProps) {
+  const canDecrease = temperature > MIN_TEMPERATURE_CELSIUS;
+  const canIncrease = temperature < MAX_TEMPERATURE_CELSIUS;
+  const decrease = () => setTemperature(Math.max(MIN_TEMPERATURE_CELSIUS, temperature - 1));
+  const increase = () => setTemperature(Math.min(MAX_TEMPERATURE_CELSIUS, temperature + 1));
 
   return (
     <View className="bg-white rounded-2xl p-5 shadow-sm border border-[#DAC2B6]/50 gap-4">
@@ -40,23 +46,37 @@ export function TemperatureSelector({ temperature, setTemperature }: Temperature
         <View className="flex-row items-center justify-center gap-6 w-full">
           <Pressable
             onPress={decrease}
-            className="w-12 h-12 rounded-full bg-[#F8F9FA] border border-[#DAC2B6]/50 items-center justify-center active:bg-[#F2EFEA]"
+            disabled={!canDecrease}
+            accessibilityLabel="Giảm nhiệt độ"
+            className={[
+              'w-12 h-12 rounded-full bg-[#F8F9FA] border border-[#DAC2B6]/50 items-center justify-center active:bg-[#F2EFEA]',
+              !canDecrease ? 'opacity-40' : '',
+            ].join(' ')}
           >
             <Ionicons name="remove" size={24} color="#8B4513" />
           </Pressable>
 
           <Pressable
             onPress={increase}
-            className="w-12 h-12 rounded-full bg-[#F8F9FA] border border-[#DAC2B6]/50 items-center justify-center active:bg-[#F2EFEA]"
+            disabled={!canIncrease}
+            accessibilityLabel="Tăng nhiệt độ"
+            className={[
+              'w-12 h-12 rounded-full bg-[#F8F9FA] border border-[#DAC2B6]/50 items-center justify-center active:bg-[#F2EFEA]',
+              !canIncrease ? 'opacity-40' : '',
+            ].join(' ')}
           >
             <Ionicons name="add" size={24} color="#8B4513" />
           </Pressable>
         </View>
       </View>
 
+      <Text className="text-center text-xs font-semibold text-[#877369]">
+        Phạm vi cho phép: -18°C đến -5°C
+      </Text>
       <Text className="text-center text-xs leading-5 text-[#877369]">
         Nhiệt độ này sẽ được dùng để kiểm soát chuỗi lạnh trong quá trình vận chuyển.
       </Text>
+      {error ? <Text className="text-center text-xs font-medium text-red-600">{error}</Text> : null}
     </View>
   );
 }
