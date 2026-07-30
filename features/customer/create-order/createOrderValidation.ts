@@ -52,6 +52,35 @@ export type CreateOrderFormValues = {
   documentImage: DocumentImage | null;
 };
 
+const INITIAL_CREATE_ORDER_VALUES: Omit<CreateOrderFormValues, 'routeId' | 'scheduleId' | 'dropoffStopId' | 'documentImage'> = {
+  itemName: '',
+  category: 'FROZEN_FRUITS_VEGGIES',
+  tempCondition: -6,
+  expectedWeightKg: '',
+  quantity: '1',
+  packagingType: [],
+  lengthCm: '',
+  widthCm: '',
+  heightCm: '',
+  destAddressText: '',
+};
+
+export function isCreateOrderFormDirty(values: CreateOrderFormValues) {
+  return (
+    values.itemName !== INITIAL_CREATE_ORDER_VALUES.itemName ||
+    values.category !== INITIAL_CREATE_ORDER_VALUES.category ||
+    values.tempCondition !== INITIAL_CREATE_ORDER_VALUES.tempCondition ||
+    values.expectedWeightKg !== INITIAL_CREATE_ORDER_VALUES.expectedWeightKg ||
+    values.quantity !== INITIAL_CREATE_ORDER_VALUES.quantity ||
+    values.packagingType.length > 0 ||
+    values.lengthCm !== INITIAL_CREATE_ORDER_VALUES.lengthCm ||
+    values.widthCm !== INITIAL_CREATE_ORDER_VALUES.widthCm ||
+    values.heightCm !== INITIAL_CREATE_ORDER_VALUES.heightCm ||
+    values.destAddressText !== INITIAL_CREATE_ORDER_VALUES.destAddressText ||
+    Boolean(values.routeId || values.scheduleId || values.dropoffStopId || values.documentImage)
+  );
+}
+
 const REQUIRED_ERROR = 'Vui lòng nhập thông tin này.';
 const SUPPORTED_CATEGORIES: GoodsType[] = [
   'MEAT_SEAFOOD',

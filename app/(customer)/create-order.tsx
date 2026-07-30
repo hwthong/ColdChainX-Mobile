@@ -2,8 +2,11 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -11,10 +14,11 @@ import {
   Text,
   TextInput,
   View,
+  findNodeHandle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppToast, ToastType } from '../../components/AppToast';
@@ -30,6 +34,7 @@ import {
   CreateOrderStep,
   CreateOrderValidationErrors,
   DocumentImage,
+  isCreateOrderFormDirty,
   parseCreateOrderDecimal,
   validateCreateOrderForm,
   validateCreateOrderStep,
@@ -61,9 +66,14 @@ const STEP_DETAILS: Record<CreateOrderStep, { title: string; subtitle: string }>
 
 export default function CreateOrderScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const accessToken = useAuthStore((state) => state.token);
   const insets = useSafeAreaInsets();
   const scrollViewRef = useRef<ScrollView | null>(null);
+  const fieldRefs = useRef<Partial<Record<CreateOrderFieldKey, View | null>>>({});
+  const inputRefs = useRef<Partial<Record<CreateOrderFieldKey, TextInput | null>>>({});
+  const pendingErrorFieldRef = useRef<CreateOrderFieldKey | null>(null);
+  const allowExitRef = useRef(false);
 
   // — Goods info —
   const [category, setCategory] = useState<GoodsType>('FROZEN_FRUITS_VEGGIES');
@@ -105,6 +115,7 @@ export default function CreateOrderScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [successData, setSuccessData] = useState<SuccessData | null>(null);
   const [currentStep, setCurrentStep] = useState<CreateOrderStep>(1);
+  const [hasUserEditedForm, setHasUserEditedForm] = useState(false);
 
   const selectedRoute = routeOptions.find((r) => r.routeId === selectedRouteId) ?? null;
   const selectedSchedule = bookingOptions?.availableSchedules.find((s) => s.scheduleId === selectedScheduleId) ?? null;
@@ -126,6 +137,7 @@ export default function CreateOrderScreen() {
     dropoffStopId: selectedStopId,
     documentImage,
   };
+  const isFormDirty = hasUserEditedForm && isCreateOrderFormDirty(formValues);
 
   // ─── Fetch route list ────────────────────────────────────────────────────────
   const fetchRoutes = useCallback(async () => {
@@ -208,7 +220,32 @@ export default function CreateOrderScreen() {
     scrollViewRef.current?.scrollTo({ y: 0, animated: true });
   }, [currentStep]);
 
+  const scrollToErrorField = useCallback((field: CreateOrderFieldKey) => {
+    requestAnimationFrame(() => {
+      const fieldNode = fieldRefs.current[field];
+      const scrollHandle = findNodeHandle(scrollViewRef.current);
+      if (!fieldNode || !scrollHandle) return;
+
+      fieldNode.measureLayout(
+        scrollHandle,
+        (_x, y) => {
+          scrollViewRef.current?.scrollTo({ y: Math.max(y - 16, 0), animated: true });
+          inputRefs.current[field]?.focus();
+        },
+        () => undefined
+      );
+    });
+  }, []);
+
+  useEffect(() => {
+    const field = pendingErrorFieldRef.current;
+    if (!field) return;
+    pendingErrorFieldRef.current = null;
+    scrollToErrorField(field);
+  }, [currentStep, errors, scrollToErrorField]);
+
   const handleRouteSelect = (routeId: string) => {
+    setHasUserEditedForm(true);
     if (routeId !== selectedRouteId) {
       currentBookingRouteIdRef.current = '';
       currentSelectedRouteIdRef.current = routeId;
@@ -240,7 +277,12 @@ export default function CreateOrderScreen() {
     });
   };
 
+  const requestFirstErrorFocus = (nextErrors: CreateOrderValidationErrors) => {
+    pendingErrorFieldRef.current = getFirstInvalidField(nextErrors);
+  };
+
   const handleContinue = () => {
+    Keyboard.dismiss();
     if (currentStep === 4) {
       void handleSubmit();
       return;
@@ -252,19 +294,78 @@ export default function CreateOrderScreen() {
 
     const nextStepErrors = validateCreateOrderStep(currentStep, formValues, routeOptions, bookingOptions);
     setStepErrors(currentStep, nextStepErrors);
-    if (Object.keys(nextStepErrors).length > 0) return;
+    if (Object.keys(nextStepErrors).length > 0) {
+      requestFirstErrorFocus(nextStepErrors);
+      return;
+    }
 
     setCurrentStep((step) => (step + 1) as CreateOrderStep);
   };
 
-  const handleBack = () => {
+  const handleBack = useCallback(() => {
+    Keyboard.dismiss();
     if (currentStep > 1) setCurrentStep((step) => (step - 1) as CreateOrderStep);
-  };
+  }, [currentStep]);
+
+  const confirmLeaveCreateOrder = useCallback((onLeave: () => void) => {
+    Alert.alert(
+      'Rời khỏi trang tạo đơn?',
+      'Thông tin bạn đã nhập sẽ không được lưu.',
+      [
+        { text: 'Tiếp tục nhập', style: 'cancel' },
+        { text: 'Rời khỏi', style: 'destructive', onPress: onLeave },
+      ]
+    );
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      const handleHardwareBack = () => {
+        if (currentStep > 1) {
+          handleBack();
+          return true;
+        }
+        if (!isFormDirty || successData) return false;
+
+        confirmLeaveCreateOrder(() => {
+          allowExitRef.current = true;
+          router.back();
+        });
+        return true;
+      };
+
+      const hardwareSubscription = BackHandler.addEventListener('hardwareBackPress', handleHardwareBack);
+      const unsubscribeBeforeRemove = navigation.addListener('beforeRemove', (event) => {
+        if (allowExitRef.current) {
+          allowExitRef.current = false;
+          return;
+        }
+        if (currentStep > 1) {
+          event.preventDefault();
+          handleBack();
+          return;
+        }
+        if (!isFormDirty || successData) return;
+
+        event.preventDefault();
+        confirmLeaveCreateOrder(() => {
+          allowExitRef.current = true;
+          navigation.dispatch(event.data.action);
+        });
+      });
+
+      return () => {
+        hardwareSubscription.remove();
+        unsubscribeBeforeRemove();
+      };
+    }, [confirmLeaveCreateOrder, currentStep, handleBack, isFormDirty, navigation, router, successData])
+  );
 
   const goToStep = (step: CreateOrderStep) => setCurrentStep(step);
 
   // ─── Submit ─────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
+    Keyboard.dismiss();
     if (__DEV__) console.log('[CreateOrder] submit pressed');
 
     if (isLoadingBooking || isLoadingRoutes) {
@@ -276,6 +377,7 @@ export default function CreateOrderScreen() {
     setErrors(nextErrors);
 
     if (Object.keys(nextErrors).length > 0) {
+      requestFirstErrorFocus(nextErrors);
       setCurrentStep(getFirstInvalidStep(nextErrors));
       return;
     }
@@ -330,6 +432,7 @@ export default function CreateOrderScreen() {
 
       const serverErrorField = getCreateOrderServerErrorField(error);
       if (serverErrorField) {
+        requestFirstErrorFocus({ [serverErrorField]: errorMessage });
         setErrors((current) => ({ ...current, [serverErrorField]: errorMessage }));
         setCurrentStep(getFirstInvalidStep({ [serverErrorField]: errorMessage }));
       }
@@ -351,7 +454,7 @@ export default function CreateOrderScreen() {
   const selectImageFromLibrary = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      showToast('warning', 'Vui lòng cấp quyền truy cập thư viện ảnh để tải ảnh kiện hàng.');
+      handleImagePermissionDenied(permission, 'thư viện ảnh');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -365,7 +468,7 @@ export default function CreateOrderScreen() {
   const captureImage = async () => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
-      showToast('warning', 'Vui lòng cấp quyền camera để chụp ảnh kiện hàng.');
+      handleImagePermissionDenied(permission, 'camera');
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
@@ -374,6 +477,21 @@ export default function CreateOrderScreen() {
       quality: 0.8,
     });
     handleImageResult(result);
+  };
+
+  const handleImagePermissionDenied = (permission: { canAskAgain: boolean }, source: string) => {
+    if (!permission.canAskAgain) {
+      Alert.alert(
+        'Cần quyền truy cập',
+        `Vui lòng mở Cài đặt để cấp quyền ${source} trước khi thêm ảnh lô hàng.`,
+        [
+          { text: 'Để sau', style: 'cancel' },
+          { text: 'Mở Cài đặt', onPress: () => void Linking.openSettings() },
+        ]
+      );
+      return;
+    }
+    showToast('warning', `Vui lòng cấp quyền ${source} để thêm ảnh lô hàng.`);
   };
 
   const handleImageResult = (result: ImagePicker.ImagePickerResult) => {
@@ -385,11 +503,13 @@ export default function CreateOrderScreen() {
       return;
     }
     setDocumentImage({ uri: asset.uri, mimeType: asset.mimeType || 'image/jpeg', fileName: asset.fileName || 'cargo.jpg' });
+    setHasUserEditedForm(true);
     setErrors((current) => ({ ...current, documentImage: undefined }));
   };
 
   const removeDocumentImage = () => {
     setDocumentImage(null);
+    setHasUserEditedForm(true);
     setErrors((current) => ({ ...current, documentImage: undefined }));
   };
 
@@ -416,6 +536,8 @@ export default function CreateOrderScreen() {
     setDocumentImage(null);
     setErrors({});
     setSuccessData(null);
+    setCurrentStep(1);
+    setHasUserEditedForm(false);
   };
 
   // ─── Text field helper ───────────────────────────────────────────────────────
@@ -427,23 +549,35 @@ export default function CreateOrderScreen() {
     onChangeText: (text: string) => void,
     keyboardType: 'default' | 'numeric' = 'default'
   ) => (
-    <View className="gap-1.5">
+    <View ref={(node) => { fieldRefs.current[field] = node; }} className="gap-1.5">
       <Text className="text-[#3A1F04] text-[13px] font-bold">{label} <Text className="text-red-600">*</Text></Text>
       <TextInput
+        ref={(node) => { inputRefs.current[field] = node; }}
         className={[
           'min-h-[52px] rounded-[14px] border bg-[#F8F9FA] px-4 text-[14px] font-medium text-[#3A1F04]',
           errors[field] ? 'border-red-300' : 'border-[#DAC2B6]/60',
         ].join(' ')}
         placeholder={placeholder}
         placeholderTextColor="#877369"
+        accessibilityLabel={`${label}, bắt buộc`}
+        accessibilityHint={errors[field] || undefined}
+        accessibilityState={{ disabled: false }}
         value={value}
-        onChangeText={(text) => {
-          onChangeText(text);
+          onChangeText={(text) => {
+            onChangeText(text);
+            setHasUserEditedForm(true);
           if (errors[field]) setErrors((current) => ({ ...current, [field]: undefined }));
         }}
         keyboardType={keyboardType}
+        returnKeyType={getNextInputField(field) ? 'next' : 'done'}
+        blurOnSubmit={!getNextInputField(field)}
+        onSubmitEditing={() => {
+          const nextField = getNextInputField(field);
+          if (nextField) inputRefs.current[nextField]?.focus();
+          else Keyboard.dismiss();
+        }}
       />
-      {errors[field] ? <Text className="text-xs font-medium text-red-600">{errors[field]}</Text> : null}
+      {errors[field] ? <Text accessibilityLiveRegion="polite" className="text-xs font-medium text-red-600">{errors[field]}</Text> : null}
     </View>
   );
 
@@ -477,21 +611,25 @@ export default function CreateOrderScreen() {
               <Text className="text-sm font-bold text-[#3A1F04]">Điểm lấy hàng</Text>
               <Text className="mt-1 text-sm leading-5 text-[#877369]">Hub ColdChainX sẽ được xác nhận sau khi yêu cầu được duyệt.</Text>
             </View>
-            <RouteOptionPicker routes={routeOptions} selectedRouteId={selectedRouteId} isLoading={isLoadingRoutes} error={routeError} onRetry={fetchRoutes} onSelect={handleRouteSelect} />
-            {errors.routeId ? <Text className="text-xs font-medium text-red-600">{errors.routeId}</Text> : null}
+            <View ref={(node) => { fieldRefs.current.routeId = node; }}>
+              <RouteOptionPicker routes={routeOptions} selectedRouteId={selectedRouteId} isLoading={isLoadingRoutes} error={routeError} onRetry={fetchRoutes} onSelect={handleRouteSelect} />
+              {errors.routeId ? <Text accessibilityLiveRegion="polite" className="text-xs font-medium text-red-600">{errors.routeId}</Text> : null}
+            </View>
             {selectedRouteId ? (
-              <BookingOptionsPicker
-                bookingOptions={bookingOptions}
-                isLoading={isLoadingBooking}
-                error={bookingError}
-                selectedScheduleId={selectedScheduleId}
-                selectedStopId={selectedStopId}
-                scheduleError={errors.scheduleId}
-                stopError={errors.dropoffStopId}
-                onRetry={() => fetchBookingOptions(selectedRouteId)}
-                onSelectSchedule={(scheduleId) => { setSelectedScheduleId(scheduleId); setErrors((current) => ({ ...current, scheduleId: undefined })); }}
-                onSelectStop={(stopId) => { setSelectedStopId(stopId); setErrors((current) => ({ ...current, dropoffStopId: undefined })); }}
-              />
+              <View ref={(node) => { fieldRefs.current.scheduleId = node; fieldRefs.current.dropoffStopId = node; }}>
+                <BookingOptionsPicker
+                  bookingOptions={bookingOptions}
+                  isLoading={isLoadingBooking}
+                  error={bookingError}
+                  selectedScheduleId={selectedScheduleId}
+                  selectedStopId={selectedStopId}
+                  scheduleError={errors.scheduleId}
+                  stopError={errors.dropoffStopId}
+                  onRetry={() => fetchBookingOptions(selectedRouteId)}
+                  onSelectSchedule={(scheduleId) => { setHasUserEditedForm(true); setSelectedScheduleId(scheduleId); setErrors((current) => ({ ...current, scheduleId: undefined })); }}
+                  onSelectStop={(stopId) => { setHasUserEditedForm(true); setSelectedStopId(stopId); setErrors((current) => ({ ...current, dropoffStopId: undefined })); }}
+                />
+              </View>
             ) : (
               <View className="rounded-xl border border-dashed border-[#DAC2B6] bg-[#F8F9FA] p-4">
                 <Text className="text-sm leading-5 text-[#877369]">Chọn tuyến vận chuyển để xem lịch và điểm giao.</Text>
@@ -513,9 +651,13 @@ export default function CreateOrderScreen() {
                 </View>
               </View>
             </View>
-            <GoodsTypeSelector value={category} onChange={(value) => { setCategory(value); setErrors((current) => ({ ...current, category: undefined })); }} />
-            {errors.category ? <Text className="-mt-3 text-xs font-medium text-red-600">{errors.category}</Text> : null}
-            <TemperatureSelector temperature={tempCondition} error={errors.tempCondition} setTemperature={(temperature) => { setTempCondition(temperature); setErrors((current) => ({ ...current, tempCondition: undefined })); }} />
+            <View ref={(node) => { fieldRefs.current.category = node; }}>
+              <GoodsTypeSelector value={category} onChange={(value) => { setHasUserEditedForm(true); setCategory(value); setErrors((current) => ({ ...current, category: undefined })); }} />
+              {errors.category ? <Text accessibilityLiveRegion="polite" className="mt-2 text-xs font-medium text-red-600">{errors.category}</Text> : null}
+            </View>
+            <View ref={(node) => { fieldRefs.current.tempCondition = node; }}>
+              <TemperatureSelector temperature={tempCondition} error={errors.tempCondition} setTemperature={(temperature) => { setHasUserEditedForm(true); setTempCondition(temperature); setErrors((current) => ({ ...current, tempCondition: undefined })); }} />
+            </View>
           </View>
         ) : null}
 
@@ -524,10 +666,10 @@ export default function CreateOrderScreen() {
             <View className="rounded-2xl border border-[#DAC2B6]/50 bg-white p-5">
               <SectionTitle title="Đóng gói" icon="archive-outline" />
               <View className="mt-4 gap-4">
-                <View className="gap-2">
+                <View ref={(node) => { fieldRefs.current.packagingType = node; }} className="gap-2">
                   <Text className="text-[13px] font-bold text-[#3A1F04]">Loại bao bì <Text className="text-red-600">*</Text></Text>
                   <Text className="text-xs text-[#877369]">Chọn một hoặc nhiều loại bao bì phù hợp với lô hàng.</Text>
-                  <PackagingTypeSelector selectedTypes={packagingType} onChange={(selected) => { setPackagingType(selected); setErrors((current) => ({ ...current, packagingType: undefined })); }} />
+                  <PackagingTypeSelector selectedTypes={packagingType} onChange={(selected) => { setHasUserEditedForm(true); setPackagingType(selected); setErrors((current) => ({ ...current, packagingType: undefined })); }} />
                   {errors.packagingType ? <Text className="text-xs font-medium text-red-600">{errors.packagingType}</Text> : null}
                 </View>
                 <View className="gap-2">
@@ -541,7 +683,7 @@ export default function CreateOrderScreen() {
               </View>
             </View>
             {capacityWarning ? <View className="rounded-2xl border border-amber-200 bg-amber-50 p-4"><View className="flex-row items-start gap-2"><Ionicons name="warning-outline" size={18} color="#b45309" /><Text className="flex-1 text-sm font-semibold leading-5 text-amber-800">{capacityWarning}</Text></View></View> : null}
-            <View className="gap-3 rounded-2xl border border-[#DAC2B6]/50 bg-white p-5">
+            <View ref={(node) => { fieldRefs.current.documentImage = node; }} className="gap-3 rounded-2xl border border-[#DAC2B6]/50 bg-white p-5">
               <SectionTitle title="Ảnh lô hàng" icon="camera-outline" />
               {documentImage ? (
                 <View className="gap-3">
@@ -976,8 +1118,29 @@ function getCreateOrderErrorMessage(error: unknown) {
   if (technicalMessage.includes('temperature') || technicalMessage.includes('temp_condition')) {
     return 'Nhiệt độ bảo quản không hợp lệ.';
   }
-  if (technicalMessage.includes('goong')) {
+  if (technicalMessage.includes('address') || technicalMessage.includes('goong')) {
     return 'Không thể xác thực địa chỉ giao hàng. Vui lòng nhập địa chỉ rõ hơn hoặc thử lại sau.';
+  }
+  if (technicalMessage.includes('item') || technicalMessage.includes('hàng hóa')) {
+    return 'Tên hàng hóa không hợp lệ.';
+  }
+  if (technicalMessage.includes('category')) {
+    return 'Phân loại hàng hóa không hợp lệ.';
+  }
+  if (technicalMessage.includes('weight')) {
+    return 'Khối lượng hàng hóa không hợp lệ.';
+  }
+  if (technicalMessage.includes('quantity')) {
+    return 'Số lượng kiện không hợp lệ.';
+  }
+  if (technicalMessage.includes('packaging') || technicalMessage.includes('package')) {
+    return 'Loại bao bì không hợp lệ.';
+  }
+  if (technicalMessage.includes('length') || technicalMessage.includes('width') || technicalMessage.includes('height') || technicalMessage.includes('dimension')) {
+    return 'Kích thước kiện hàng không hợp lệ.';
+  }
+  if (technicalMessage.includes('photo') || technicalMessage.includes('image') || technicalMessage.includes('cargo')) {
+    return 'Ảnh lô hàng không hợp lệ.';
   }
 
   return 'Không thể tạo yêu cầu vận chuyển. Vui lòng kiểm tra lại thông tin.';
@@ -988,7 +1151,17 @@ function getCreateOrderServerErrorField(error: unknown): CreateOrderFieldKey | n
   if (technicalMessage.includes('route') && technicalMessage.includes('active')) return 'routeId';
   if (technicalMessage.includes('schedule')) return 'scheduleId';
   if (technicalMessage.includes('dropoff') || technicalMessage.includes('stop')) return 'dropoffStopId';
+  if (technicalMessage.includes('address') || technicalMessage.includes('goong')) return 'destAddressText';
+  if (technicalMessage.includes('item') || technicalMessage.includes('hàng hóa')) return 'itemName';
+  if (technicalMessage.includes('category')) return 'category';
   if (technicalMessage.includes('temperature') || technicalMessage.includes('temp_condition')) return 'tempCondition';
+  if (technicalMessage.includes('weight')) return 'expectedWeightKg';
+  if (technicalMessage.includes('quantity')) return 'quantity';
+  if (technicalMessage.includes('packaging') || technicalMessage.includes('package')) return 'packagingType';
+  if (technicalMessage.includes('length')) return 'lengthCm';
+  if (technicalMessage.includes('width')) return 'widthCm';
+  if (technicalMessage.includes('height') || technicalMessage.includes('dimension')) return 'heightCm';
+  if (technicalMessage.includes('photo') || technicalMessage.includes('image') || technicalMessage.includes('cargo')) return 'documentImage';
   return null;
 }
 
@@ -997,6 +1170,25 @@ function getFirstInvalidStep(errors: CreateOrderValidationErrors): CreateOrderSt
     if (CREATE_ORDER_STEP_FIELDS[step].some((field) => errors[field])) return step;
   }
   return 4;
+}
+
+function getFirstInvalidField(errors: CreateOrderValidationErrors): CreateOrderFieldKey | null {
+  for (const step of [1, 2, 3] as const) {
+    const field = CREATE_ORDER_STEP_FIELDS[step].find((candidate) => errors[candidate]);
+    if (field) return field;
+  }
+  return null;
+}
+
+function getNextInputField(field: CreateOrderFieldKey): CreateOrderFieldKey | null {
+  const nextFields: Partial<Record<CreateOrderFieldKey, CreateOrderFieldKey>> = {
+    destAddressText: 'itemName',
+    itemName: 'expectedWeightKg',
+    expectedWeightKg: 'quantity',
+    lengthCm: 'widthCm',
+    widthCm: 'heightCm',
+  };
+  return nextFields[field] ?? null;
 }
 
 function getGoodsTypeLabel(category: GoodsType) {
