@@ -60,7 +60,7 @@ export default function DriverTripIncidentScreen() {
       }
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       return { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
-    } catch (e) {
+    } catch {
       Alert.alert('Lỗi', 'Không thể lấy vị trí hiện tại. Bạn có thể thử lại.');
       return null;
     } finally {

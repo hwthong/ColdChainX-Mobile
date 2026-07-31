@@ -10,7 +10,7 @@ import {
   getTripAlerts, getTripRoute, getTripTemperatureChart, getTripTracking,
   SmartAlert, TemperatureChart as TemperatureChartData, TripTracking,
 } from '../../../services/monitoringApi';
-import { OptimizedTripStopDto, TripRouteResponse } from '../../../services/trackingApi';
+import { TripRouteResponse } from '../../../services/trackingApi';
 import { getIncidents, IncidentResponse } from '../../../services/incidentApi';
 import { driverApi, DriverTripDetailResponseDto, DriverTripStopDto } from '../../../services/driverApi';
 import { useAuthStore } from '../../../store/useAuthStore';
@@ -110,7 +110,7 @@ export default function DriverTripDetailScreen() {
       } else {
         setActiveIncident(null);
       }
-    } catch (error) {
+    } catch {
       // It's okay to fail silently for this secondary info
     }
   }, [token, tripId]);

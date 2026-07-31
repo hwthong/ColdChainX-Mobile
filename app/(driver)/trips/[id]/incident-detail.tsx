@@ -33,7 +33,6 @@ const SEVERITY: Record<string, string> = {
 
 export default function DriverIncidentDetailScreen() {
   const params = useLocalSearchParams<{ id?: string | string[]; incidentId?: string | string[] }>();
-  const tripId = Array.isArray(params.id) ? params.id[0] : params.id;
   const incidentId = Array.isArray(params.incidentId) ? params.incidentId[0] : params.incidentId;
   const router = useRouter();
   const token = useAuthStore((state) => state.token);
@@ -142,7 +141,7 @@ export default function DriverIncidentDetailScreen() {
           } else {
             Alert.alert('Lỗi', res.message || 'Bạn không có quyền hoặc có lỗi xảy ra.');
           }
-        } catch (e: any) {
+        } catch {
           Alert.alert('Lỗi', 'Bạn không có quyền xác nhận sang hàng hoặc máy chủ bị lỗi.');
         } finally {
           setActionLoading(false);

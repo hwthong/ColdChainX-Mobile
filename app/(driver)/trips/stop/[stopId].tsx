@@ -1,8 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
-import * as Location from 'expo-location';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -19,7 +18,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppButton } from '../../../../components/AppButton';
 import { AppInput } from '../../../../components/AppInput';
 import { ApiClientError } from '../../../../services/apiClient';
-import { deliveryApi } from '../../../../services/deliveryApi';
+import {
+  ApplySealResponse,
+  CutSealResponse,
+  DeliveryUploadFile,
+  EpodResponse,
+  PaymentQrResponse,
+  VerifyQrPaymentResponse,
+  deliveryApi,
+} from '../../../../services/deliveryApi';
 import {
   driverApi,
   DriverTripStopDto,
@@ -37,13 +44,14 @@ import {
 } from '../../../../services/trackingApi';
 import { useAuthStore } from '../../../../store/useAuthStore';
 
-type ScreenStep = 'ORDERS' | 'SIGNATURE' | 'COD';
+type ScreenStep = 'ORDERS' | 'SIGNATURE' | 'PAYMENT';
 
 type StopOrder = {
   orderId: string;
   trackingCode: string;
   itemName: string;
   category?: string | null;
+  customerId?: string | null;
   status: string;
   lpns: TripRouteLpnDto[];
 };
@@ -69,21 +77,26 @@ export default function StopDetailScreen() {
   }>();
   const stopId = firstParam(params.stopId);
   const tripId = firstParam(params.tripId);
-  const router = useRouter();
   const token = useAuthStore((state) => state.token);
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [driverStop, setDriverStop] = useState<DriverTripStopDto | null>(null);
+  const [tripStops, setTripStops] = useState<DriverTripStopDto[]>([]);
   const [orders, setOrders] = useState<StopOrder[]>([]);
   const [step, setStep] = useState<ScreenStep>('ORDERS');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [isGettingLocation, setIsGettingLocation] = useState(false);
-  const [receiverName, setReceiverName] = useState('');
+  const [checkinProofAsset, setCheckinProofAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [signatureAsset, setSignatureAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [handoverPhotoAsset, setHandoverPhotoAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [paymentProofAsset, setPaymentProofAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [epodId, setEpodId] = useState('');
-  const [codAmountDue, setCodAmountDue] = useState(0);
+  const [epod, setEpod] = useState<EpodResponse | null>(null);
+  const [paymentQr, setPaymentQr] = useState<PaymentQrResponse | null>(null);
+  const [paymentVerification, setPaymentVerification] = useState<VerifyQrPaymentResponse | null>(null);
+  const [cutSeal, setCutSeal] = useState<CutSealResponse | null>(null);
+  const [appliedSeal, setAppliedSeal] = useState<ApplySealResponse | null>(null);
   const [newSealCode, setNewSealCode] = useState('');
 
   const selectedOrder = useMemo(
@@ -94,6 +107,16 @@ export default function StopDetailScreen() {
   const stopStatus = driverStop?.status?.toUpperCase() || 'UNKNOWN';
   const hasCheckedIn = stopStatus === 'ARRIVED';
   const hasDeparted = stopStatus === 'DEPARTED';
+  const hasRemainingStops = tripStops.some(
+    (stop) => stop.stopSequence > (driverStop?.stopSequence ?? Number.MAX_SAFE_INTEGER)
+      && stop.status?.toUpperCase() !== 'DEPARTED'
+  );
+  const deliveryActionState = getDriverDeliveryActionState({
+    hasCheckedIn,
+    allOrdersHandedOver,
+    hasRemainingStops,
+    hasAppliedSeal: Boolean(appliedSeal),
+  });
 
   const loadData = useCallback(async (showSpinner = true) => {
     if (!token || !tripId || !stopId) {
@@ -163,12 +186,14 @@ export default function StopDetailScreen() {
           trackingCode: order.trackingCode || routeOrder?.trackingCode || order.orderId.slice(0, 8),
           itemName: order.itemName || routeOrder?.itemName || 'Đơn hàng',
           category: order.category || routeOrder?.category,
+          customerId: order.customerId,
           status: order.status,
           lpns: routeLpns.filter((lpn) => lpn.orderId === order.orderId),
         };
       });
 
       setDriverStop(currentStop);
+      setTripStops(tripDetail.stops);
       setOrders(nextOrders);
       setSelectedOrderId((current) =>
         current && nextOrders.some((order) => order.orderId === current) ? current : null
@@ -189,42 +214,21 @@ export default function StopDetailScreen() {
   );
 
   const handleCheckIn = async () => {
-    if (!stopId) return;
-
-    const permission = await getForegroundLocationPermission();
-    if (!permission) return;
-
-    setIsGettingLocation(true);
-    let currentLocation: Location.LocationObject;
-    try {
-      currentLocation = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
-    } catch {
-      Alert.alert(
-        'Không lấy được GPS',
-        'Hãy bật dịch vụ vị trí, kiểm tra GPS của thiết bị rồi thử lại. Trên Android Emulator, hãy đặt vị trí trong Extended controls > Location.'
-      );
-      setIsGettingLocation(false);
+    if (!stopId || !checkinProofAsset) {
+      Alert.alert('Thiếu ảnh xác nhận', 'Vui lòng thêm ảnh xác nhận trước khi check-in.');
       return;
     }
-    setIsGettingLocation(false);
 
     try {
       setIsProcessing(true);
-      await deliveryApi.checkInStop(stopId, {
-        latitude: currentLocation.coords.latitude,
-        longitude: currentLocation.coords.longitude,
-      });
+      await deliveryApi.checkInStop(stopId, toDeliveryUploadFile(checkinProofAsset, 'checkin-proof.jpg'));
       const reloaded = await loadData(false);
       Alert.alert(
-        'Check-in thành công',
-        reloaded
-          ? 'Bạn đã đến điểm giao hàng.'
-          : 'Check-in đã được ghi nhận nhưng chưa tải lại được dữ liệu Stop.'
+        'Đã xác nhận đến điểm giao',
+        reloaded ? 'Stop đã được cập nhật.' : 'Yêu cầu đã được ghi nhận. Vui lòng tải lại để xem trạng thái mới.'
       );
     } catch (error) {
-      Alert.alert('Không thể Check-in', formatActionError(error, 'CHECK_IN'));
+      Alert.alert('Không thể xác nhận đến điểm giao', formatActionError(error, 'CHECK_IN'));
       if (isAlreadyCheckedInError(error)) {
         await loadData(false);
       }
@@ -235,30 +239,23 @@ export default function StopDetailScreen() {
 
   const startHandover = (order: StopOrder) => {
     setSelectedOrderId(order.orderId);
-    setReceiverName('');
     setSignatureAsset(null);
-    setStep('ORDERS');
-  };
-
-  const continueToSignature = () => {
-    if (!selectedOrder) {
-      Alert.alert('Chưa chọn Order', 'Hãy chọn một Order cần bàn giao.');
-      return;
-    }
-    if (!receiverName.trim()) {
-      Alert.alert('Thiếu thông tin', 'Vui lòng nhập tên người nhận.');
-      return;
-    }
-    setSignatureAsset(null);
+    setHandoverPhotoAsset(null);
+    setEpod(null);
+    setPaymentQr(null);
+    setPaymentVerification(null);
     setStep('SIGNATURE');
   };
 
-  const pickSignatureImage = async () => {
+  const pickImage = async (
+    onSelected: (asset: ImagePicker.ImagePickerAsset) => void,
+    description: string
+  ) => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
       Alert.alert(
         'Chưa có quyền ảnh',
-        'Vui lòng cấp quyền thư viện ảnh để chọn ảnh chữ ký thật của người nhận.'
+        `Vui lòng cấp quyền thư viện ảnh để chọn ${description}.`
       );
       return;
     }
@@ -269,30 +266,45 @@ export default function StopDetailScreen() {
       quality: 0.9,
     });
     if (!result.canceled && result.assets[0]) {
-      setSignatureAsset(result.assets[0]);
+      onSelected(result.assets[0]);
     }
   };
 
   const handleHandoverConfirm = async () => {
-    if (!stopId || !selectedOrder || !signatureAsset) {
+    if (!stopId || !tripId || !selectedOrder || !signatureAsset) {
       Alert.alert('Thiếu chữ ký', 'Vui lòng chọn ảnh chữ ký thật của người nhận.');
+      return;
+    }
+    if (!selectedOrder.customerId) {
+      Alert.alert('Thiếu dữ liệu đơn hàng', 'Không xác định được khách hàng của đơn để xác nhận bàn giao. Vui lòng tải lại.');
       return;
     }
 
     try {
       setIsProcessing(true);
-      const formData = new FormData();
-      formData.append('OrderId', selectedOrder.orderId);
-      formData.append('ReceiverName', receiverName.trim());
-      formData.append('SignatureFile', {
-        uri: signatureAsset.uri,
-        name: signatureAsset.fileName || 'receiver-signature.jpg',
-        type: signatureAsset.mimeType || 'image/jpeg',
-      } as unknown as Blob);
-
-      const result = await deliveryApi.confirmHandover(stopId, formData);
+      const result = await deliveryApi.confirmHandover(stopId, {
+        tripId,
+        customerId: selectedOrder.customerId,
+        signatureFile: toDeliveryUploadFile(signatureAsset, 'receiver-signature.jpg'),
+        handoverPhotoFile: handoverPhotoAsset
+          ? toDeliveryUploadFile(handoverPhotoAsset, 'handover-proof.jpg')
+          : undefined,
+      });
       setEpodId(result.epodId);
-      setCodAmountDue(result.codAmountDue);
+      setEpod({
+        epodId: result.epodId,
+        orderId: selectedOrder.orderId,
+        status: 'HANDOVER_CONFIRMED',
+        codAmount: result.codAmountDue,
+        paymentStatus: result.codAmountDue > 0 ? 'AWAITING_PAYMENT' : null,
+        handoverPdfUrl: result.handoverPdfUrl || null,
+      });
+
+      try {
+        setEpod(await deliveryApi.getEpodByOrderId(selectedOrder.orderId));
+      } catch {
+        // Handover succeeded; keep its response visible and allow the driver to retry ePOD later.
+      }
 
       const reloaded = await loadData(false);
       if (!reloaded) {
@@ -302,17 +314,10 @@ export default function StopDetailScreen() {
         );
       }
 
-      if (result.codAmountDue > 0) {
-        setStep('COD');
-      } else {
-        resetOrderForm();
-        Alert.alert('Bàn giao thành công', 'Order đã được Backend xác nhận bàn giao.');
-      }
+      setStep('PAYMENT');
     } catch (error) {
       Alert.alert('Không thể bàn giao', formatActionError(error, 'HANDOVER'));
       await loadData(false);
-      setSignatureAsset(null);
-      setStep('ORDERS');
     } finally {
       setIsProcessing(false);
     }
@@ -320,78 +325,99 @@ export default function StopDetailScreen() {
 
   const resetOrderForm = () => {
     setSelectedOrderId(null);
-    setReceiverName('');
     setSignatureAsset(null);
+    setHandoverPhotoAsset(null);
+    setPaymentQr(null);
+    setPaymentVerification(null);
     setStep('ORDERS');
   };
 
-  const handleCodPayment = async (method: 'CASH' | 'QR') => {
+  const handleGetPaymentQr = async () => {
     if (!epodId) {
-      Alert.alert('Thiếu e-POD', 'Không tìm thấy e-POD để ghi nhận COD.');
+      Alert.alert('Thiếu ePOD', 'Không tìm thấy ePOD để lấy thông tin thanh toán.');
       return;
     }
 
     try {
       setIsProcessing(true);
-      const formData = new FormData();
-      formData.append('PaymentMethod', method);
-      formData.append('CodAmountPaid', codAmountDue.toString());
-
-      await deliveryApi.recordCodPayment(epodId, formData);
-      const reloaded = await loadData(false);
-      resetOrderForm();
-      Alert.alert(
-        'Đã ghi nhận COD',
-        reloaded
-          ? 'Thanh toán COD đã được Backend ghi nhận.'
-          : 'COD đã được ghi nhận nhưng chưa tải lại được dữ liệu Order.'
-      );
+      setPaymentQr(await deliveryApi.getPaymentQr(epodId));
     } catch (error) {
-      Alert.alert('Không thể ghi nhận COD', formatActionError(error, 'COD'));
+      Alert.alert('Không thể lấy mã thanh toán', formatActionError(error, 'PAYMENT'));
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const handleDeparture = async () => {
-    if (!stopId || !tripId) return;
-    if (!allOrdersHandedOver) {
-      Alert.alert(
-        'Chưa thể rời đi',
-        'Vẫn còn Order chưa được Backend xác nhận bàn giao.'
-      );
+  const handleVerifyPayment = async () => {
+    if (!epodId) {
+      Alert.alert('Thiếu ePOD', 'Không tìm thấy ePOD để gửi bằng chứng thanh toán.');
+      return;
+    }
+    if (!paymentProofAsset) {
+      Alert.alert('Thiếu ảnh thanh toán', 'Vui lòng thêm ảnh biên lai trước khi gửi xác minh.');
       return;
     }
 
     try {
       setIsProcessing(true);
-      const result = await deliveryApi.departStop(stopId, {
-        newSealCode: newSealCode.trim() || undefined,
-      });
-
-      if (result.tripCompleted) {
-        Alert.alert('Hoàn tất', 'Chuyến đi đã hoàn thành.', [
-          {
-            text: 'OK',
-            onPress: () => router.replace('/(driver)/trips' as never),
-          },
-        ]);
-      } else {
-        Alert.alert('Đã rời điểm dừng', 'Hãy tiếp tục đến Stop tiếp theo.', [
-          {
-            text: 'OK',
-            onPress: () => router.replace({
-              pathname: '/(driver)/trips/[id]',
-              params: { id: tripId },
-            } as never),
-          },
-        ]);
+      setPaymentVerification(await deliveryApi.verifyQrPayment(
+        epodId,
+        toDeliveryUploadFile(paymentProofAsset, 'payment-proof.jpg')
+      ));
+      if (selectedOrder) {
+        try {
+          setEpod(await deliveryApi.getEpodByOrderId(selectedOrder.orderId));
+        } catch {
+          // The verification response is still enough to inform the driver of a pending review.
+        }
       }
     } catch (error) {
-      Alert.alert('Không thể rời đi', formatActionError(error, 'DEPART'));
-      await loadData(false);
+      Alert.alert('Không thể gửi xác minh thanh toán', formatActionError(error, 'PAYMENT'));
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const handleCutSeal = async () => {
+    if (!stopId || !tripId) return;
+    try {
+      setIsProcessing(true);
+      setCutSeal(await deliveryApi.cutSeal(tripId, stopId));
+    } catch (error) {
+      Alert.alert('Không thể cắt seal', formatActionError(error, 'CUT_SEAL'));
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleApplySeal = async () => {
+    const sealCode = newSealCode.trim();
+    if (!tripId || !sealCode) {
+      Alert.alert('Thiếu mã seal', 'Vui lòng nhập mã seal mới trước khi xác nhận.');
+      return;
+    }
+    try {
+      setIsProcessing(true);
+      setAppliedSeal(await deliveryApi.applySeal(tripId, sealCode));
+      setNewSealCode('');
+    } catch (error) {
+      Alert.alert('Không thể kẹp seal mới', formatActionError(error, 'APPLY_SEAL'));
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const openExternalUrl = async (url?: string | null) => {
+    if (!url) return;
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (!supported) {
+        Alert.alert('Không thể mở liên kết', 'Liên kết này không thể mở trên thiết bị hiện tại.');
+        return;
+      }
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert('Không thể mở liên kết', 'Vui lòng thử lại sau.');
     }
   };
 
@@ -437,18 +463,21 @@ export default function StopDetailScreen() {
           <View className="mt-10 items-center">
             <Ionicons name="location" size={64} color="#8B4513" />
             <Text className="mb-6 mt-4 text-center text-base text-amber-900">
-              Check-in sử dụng vị trí GPS hiện tại và Backend sẽ kiểm tra geofence 200 m.
+              Thêm ảnh xác nhận. Vị trí check-in được Backend đối chiếu từ thiết bị IoT của xe.
             </Text>
-            {isGettingLocation ? (
-              <Text className="mb-3 text-sm font-semibold text-amber-800">
-                Đang lấy vị trí GPS hiện tại...
-              </Text>
-            ) : null}
+            <ProofPicker
+              asset={checkinProofAsset}
+              emptyLabel="Chưa có ảnh xác nhận đến điểm giao"
+              chooseLabel={checkinProofAsset ? 'Chọn lại ảnh xác nhận' : 'Thêm ảnh xác nhận'}
+              disabled={isProcessing}
+              onPick={() => void pickImage(setCheckinProofAsset, 'ảnh xác nhận đến điểm giao')}
+            />
             <View className="w-full">
               <AppButton
-                label="Check-in ngay"
+                label="Xác nhận đã đến"
                 onPress={() => void handleCheckIn()}
-                loading={isGettingLocation || isProcessing}
+                loading={isProcessing}
+                disabled={!checkinProofAsset}
               />
             </View>
           </View>
@@ -458,29 +487,26 @@ export default function StopDetailScreen() {
               Chữ ký người nhận
             </Text>
             <Text className="mb-4 text-sm text-amber-700">
-              Order {selectedOrder.trackingCode} · Người nhận: {receiverName}
+              Đơn {selectedOrder.trackingCode}
             </Text>
             <View className="rounded-2xl border border-amber-200 bg-white p-4">
-              {signatureAsset ? (
-                <Image
-                  source={{ uri: signatureAsset.uri }}
-                  className="mb-4 h-52 w-full rounded-xl bg-amber-50"
-                  resizeMode="contain"
-                />
-              ) : (
-                <View className="mb-4 h-52 items-center justify-center rounded-xl bg-amber-50">
-                  <Ionicons name="image-outline" size={48} color="#92400E" />
-                  <Text className="mt-3 text-center text-sm text-amber-800">
-                    Chưa chọn ảnh chữ ký thật của người nhận.
-                  </Text>
-                </View>
-              )}
-              <AppButton
-                label={signatureAsset ? 'Chọn lại ảnh chữ ký' : 'Chọn ảnh chữ ký'}
-                variant="secondary"
+              <ProofPicker
+                asset={signatureAsset}
+                emptyLabel="Chưa có ảnh chữ ký người nhận"
+                chooseLabel={signatureAsset ? 'Chọn lại ảnh chữ ký' : 'Thêm ảnh chữ ký'}
                 disabled={isProcessing}
-                onPress={() => void pickSignatureImage()}
+                onPick={() => void pickImage(setSignatureAsset, 'ảnh chữ ký người nhận')}
               />
+              <View className="mt-4">
+                <ProofPicker
+                  asset={handoverPhotoAsset}
+                  emptyLabel="Ảnh bàn giao (không bắt buộc)"
+                  chooseLabel={handoverPhotoAsset ? 'Chọn lại ảnh bàn giao' : 'Thêm ảnh bàn giao'}
+                  disabled={isProcessing}
+                  compact
+                  onPick={() => void pickImage(setHandoverPhotoAsset, 'ảnh bàn giao')}
+                />
+              </View>
               <View className="mt-3">
                 <AppButton
                   label="Xác nhận bàn giao"
@@ -495,35 +521,32 @@ export default function StopDetailScreen() {
                 label="Quay lại"
                 variant="secondary"
                 disabled={isProcessing}
-                onPress={() => setStep('ORDERS')}
+                onPress={resetOrderForm}
               />
             </View>
           </View>
-        ) : step === 'COD' && selectedOrder ? (
-          <View className="mt-8 items-center">
-            <Ionicons name="cash-outline" size={64} color="#15803d" />
-            <Text className="mt-3 text-lg font-bold text-green-800">
-              Thu hộ COD · {selectedOrder.trackingCode}
-            </Text>
-            <Text className="mb-6 mt-2 text-3xl font-bold text-green-900">
-              {codAmountDue.toLocaleString('vi-VN')} ₫
-            </Text>
-            <View className="w-full gap-3">
-              <AppButton
-                label="Thu tiền mặt"
-                onPress={() => void handleCodPayment('CASH')}
-                loading={isProcessing}
-              />
-              <AppButton
-                label="Khách quét QR"
-                onPress={() => void handleCodPayment('QR')}
-                loading={isProcessing}
-                variant="secondary"
-              />
-            </View>
-          </View>
+        ) : step === 'PAYMENT' && selectedOrder && epod ? (
+          <PaymentPanel
+            order={selectedOrder}
+            epod={epod}
+            paymentQr={paymentQr}
+            paymentVerification={paymentVerification}
+            proofAsset={paymentProofAsset}
+            processing={isProcessing}
+            onGetQr={() => void handleGetPaymentQr()}
+            onPickProof={() => void pickImage(setPaymentProofAsset, 'ảnh biên lai thanh toán')}
+            onVerify={() => void handleVerifyPayment()}
+            onOpenUrl={(url) => void openExternalUrl(url)}
+            onDone={resetOrderForm}
+          />
         ) : (
           <View>
+            <DeliveryNotice
+              icon="navigate-outline"
+              title={deliveryActionState.title}
+              detail={deliveryActionState.detail}
+              tone="neutral"
+            />
             <Text className="mb-4 text-lg font-bold text-amber-950">
               Order tại Stop
             </Text>
@@ -546,35 +569,33 @@ export default function StopDetailScreen() {
               />
             ))}
 
-            {selectedOrder && !isHandoverConfirmed(selectedOrder) ? (
-              <View className="mt-5 rounded-2xl border border-amber-200 bg-white p-4">
-                <Text className="mb-3 font-bold text-amber-950">
-                  Bàn giao Order {selectedOrder.trackingCode}
-                </Text>
-                <AppInput
-                  label="Tên người nhận hàng"
-                  value={receiverName}
-                  onChangeText={setReceiverName}
-                  placeholder="Nhập tên người nhận..."
-                />
-                <View className="mt-4 gap-3">
+            {!cutSeal ? (
+              <View className="mt-6 rounded-2xl border border-amber-200 bg-white p-4">
+                <View className="flex-row items-center gap-3">
+                  <Ionicons name="cut-outline" size={24} color="#92400E" />
+                  <View className="flex-1">
+                    <Text className="font-bold text-amber-950">Cắt seal để dỡ hàng</Text>
+                    <Text className="mt-1 text-sm text-amber-700">
+                      Chỉ thực hiện khi xe đã tới điểm giao và seal còn đang áp dụng.
+                    </Text>
+                  </View>
+                </View>
+                <View className="mt-4">
                   <AppButton
-                    label="Tiếp tục ký nhận"
-                    onPress={continueToSignature}
-                    disabled={isProcessing}
-                  />
-                  <AppButton
-                    label="Hủy chọn"
-                    variant="secondary"
-                    onPress={() => {
-                      setSelectedOrderId(null);
-                      setReceiverName('');
-                      setSignatureAsset(null);
-                    }}
+                    label="Cắt seal"
+                    onPress={() => void handleCutSeal()}
+                    loading={isProcessing}
                   />
                 </View>
               </View>
-            ) : null}
+            ) : (
+              <DeliveryNotice
+                icon="checkmark-circle"
+                title="Seal đã được cắt"
+                detail={cutSeal.aiAlertingMuted ? 'Theo dõi AI/IoT đã được tạm dừng theo phản hồi của hệ thống.' : 'Bạn có thể tiếp tục bàn giao các đơn tại điểm này.'}
+                tone="success"
+              />
+            )}
 
             <View className="mt-8 border-t border-amber-200 pt-6">
               <Ionicons
@@ -589,22 +610,46 @@ export default function StopDetailScreen() {
                   : 'Còn Order chưa bàn giao'}
               </Text>
               <Text className="mb-5 mt-2 text-center text-sm text-amber-700">
-                Chỉ có thể rời đi khi Backend đã xác nhận bàn giao toàn bộ Order tại Stop.
+                {allOrdersHandedOver
+                  ? hasRemainingStops
+                    ? 'Nếu còn điểm dừng tiếp theo, hãy kẹp seal mới trước khi tiếp tục.'
+                    : 'Bàn giao đã hoàn tất. Chức năng xác nhận rời điểm dừng đang chờ Backend cung cấp endpoint.'
+                  : 'Hoàn tất bàn giao tất cả đơn tại điểm dừng này trước khi thực hiện bước tiếp theo.'}
               </Text>
-              <AppInput
-                label="Mã chì mới (không bắt buộc)"
-                value={newSealCode}
-                onChangeText={setNewSealCode}
-                placeholder="Nhập mã chì..."
-              />
-              <View className="mt-5">
-                <AppButton
-                  label="Xác nhận rời đi"
-                  onPress={() => void handleDeparture()}
-                  loading={isProcessing}
-                  disabled={!allOrdersHandedOver}
+              {allOrdersHandedOver && hasRemainingStops && !appliedSeal ? (
+                <View className="rounded-2xl border border-amber-200 bg-white p-4">
+                  <AppInput
+                    label="Mã seal mới"
+                    value={newSealCode}
+                    onChangeText={setNewSealCode}
+                    placeholder="Nhập hoặc quét mã seal..."
+                  />
+                  <View className="mt-4">
+                    <AppButton
+                      label="Kẹp seal mới"
+                      onPress={() => void handleApplySeal()}
+                      loading={isProcessing}
+                      disabled={!newSealCode.trim()}
+                    />
+                  </View>
+                </View>
+              ) : null}
+              {appliedSeal ? (
+                <DeliveryNotice
+                  icon="shield-checkmark"
+                  title="Đã kẹp seal mới"
+                  detail={appliedSeal.aiAlertingRestored ? 'Theo dõi AI/IoT đã được khôi phục.' : 'Seal mới đã được hệ thống ghi nhận.'}
+                  tone="success"
                 />
-              </View>
+              ) : null}
+              {allOrdersHandedOver ? (
+                <DeliveryNotice
+                  icon="information-circle-outline"
+                  title="Chưa thể xác nhận rời điểm dừng"
+                  detail="BLOCKED_BY_BACKEND: Backend chưa có Controller endpoint cho thao tác Depart Stop."
+                  tone="neutral"
+                />
+              ) : null}
             </View>
           </View>
         )}
@@ -691,6 +736,159 @@ function OrderCard({
   );
 }
 
+function ProofPicker({
+  asset,
+  emptyLabel,
+  chooseLabel,
+  disabled,
+  compact = false,
+  onPick,
+}: {
+  asset: ImagePicker.ImagePickerAsset | null;
+  emptyLabel: string;
+  chooseLabel: string;
+  disabled: boolean;
+  compact?: boolean;
+  onPick: () => void;
+}) {
+  return (
+    <View>
+      {asset ? (
+        <Image
+          source={{ uri: asset.uri }}
+          className={`${compact ? 'h-32' : 'h-52'} mb-3 w-full rounded-xl bg-amber-50`}
+          resizeMode="contain"
+        />
+      ) : (
+        <View className={`${compact ? 'h-28' : 'h-52'} mb-3 items-center justify-center rounded-xl bg-amber-50 px-5`}>
+          <Ionicons name="image-outline" size={compact ? 32 : 48} color="#92400E" />
+          <Text className="mt-3 text-center text-sm text-amber-800">{emptyLabel}</Text>
+        </View>
+      )}
+      <AppButton label={chooseLabel} variant="secondary" disabled={disabled} onPress={onPick} />
+    </View>
+  );
+}
+
+function PaymentPanel({
+  order,
+  epod,
+  paymentQr,
+  paymentVerification,
+  proofAsset,
+  processing,
+  onGetQr,
+  onPickProof,
+  onVerify,
+  onOpenUrl,
+  onDone,
+}: {
+  order: StopOrder;
+  epod: EpodResponse;
+  paymentQr: PaymentQrResponse | null;
+  paymentVerification: VerifyQrPaymentResponse | null;
+  proofAsset: ImagePicker.ImagePickerAsset | null;
+  processing: boolean;
+  onGetQr: () => void;
+  onPickProof: () => void;
+  onVerify: () => void;
+  onOpenUrl: (url?: string | null) => void;
+  onDone: () => void;
+}) {
+  const amount = paymentQr?.codAmountDue ?? epod.codAmount ?? 0;
+  const paymentStatus = paymentVerification?.currentPaymentStatus || paymentQr?.paymentStatus || epod.paymentStatus;
+  const hasCod = amount > 0;
+
+  return (
+    <View>
+      <Text className="mb-1 text-lg font-bold text-amber-950">ePOD đã tạo</Text>
+      <Text className="mb-4 text-sm text-amber-700">Đơn {order.trackingCode} đã được Backend xác nhận bàn giao.</Text>
+      <View className="rounded-2xl border border-green-200 bg-green-50 p-4">
+        <Text className="font-bold text-green-900">{getEpodStatusLabel(epod.status)}</Text>
+        <Text className="mt-2 text-sm text-green-800">{getPaymentStatusLabel(paymentStatus)}</Text>
+        {epod.handoverPdfUrl ? (
+          <Pressable className="mt-3" onPress={() => onOpenUrl(epod.handoverPdfUrl)}>
+            <Text className="font-bold text-amber-800">Mở biên bản bàn giao</Text>
+          </Pressable>
+        ) : null}
+      </View>
+
+      {!hasCod ? (
+        <View className="mt-5">
+          <AppButton label="Hoàn tất" onPress={onDone} disabled={processing} />
+        </View>
+      ) : (
+        <View className="mt-5 rounded-2xl border border-amber-200 bg-white p-4">
+          <Text className="text-sm text-amber-700">Số tiền cần thanh toán</Text>
+          <Text className="mt-1 text-2xl font-bold text-amber-950">{formatCurrency(amount)}</Text>
+          {!paymentQr ? (
+            <View className="mt-4">
+              <AppButton label="Lấy mã thanh toán QR" onPress={onGetQr} loading={processing} />
+            </View>
+          ) : (
+            <View className="mt-4">
+              {paymentQr.qrCodeUrl ? (
+                <Image source={{ uri: paymentQr.qrCodeUrl }} className="h-52 w-full rounded-xl bg-amber-50" resizeMode="contain" />
+              ) : null}
+              {paymentQr.checkoutUrl ? (
+                <View className="mt-3">
+                  <AppButton label="Mở trang thanh toán" variant="secondary" onPress={() => onOpenUrl(paymentQr.checkoutUrl)} disabled={processing} />
+                </View>
+              ) : null}
+              <View className="mt-4">
+                <ProofPicker
+                  asset={proofAsset}
+                  emptyLabel="Thêm ảnh biên lai sau khi khách thanh toán"
+                  chooseLabel={proofAsset ? 'Chọn lại ảnh biên lai' : 'Thêm ảnh biên lai'}
+                  disabled={processing}
+                  compact
+                  onPick={onPickProof}
+                />
+              </View>
+              <View className="mt-4">
+                <AppButton label="Gửi xác minh thanh toán" onPress={onVerify} loading={processing} disabled={!proofAsset} />
+              </View>
+            </View>
+          )}
+          {paymentVerification ? (
+            <Text className="mt-4 text-sm text-amber-800">
+              {paymentVerification.isConfirmedBySystem ? 'Thanh toán đã được hệ thống ghi nhận.' : 'Bằng chứng thanh toán đã được gửi và đang chờ xác minh.'}
+            </Text>
+          ) : null}
+          <View className="mt-4">
+            <AppButton label="Quay lại danh sách đơn" variant="secondary" onPress={onDone} disabled={processing} />
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
+function DeliveryNotice({
+  icon,
+  title,
+  detail,
+  tone,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  detail: string;
+  tone: 'success' | 'neutral';
+}) {
+  const color = tone === 'success' ? '#15803d' : '#92400E';
+  return (
+    <View className={`mt-5 rounded-2xl border p-4 ${tone === 'success' ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}>
+      <View className="flex-row gap-3">
+        <Ionicons name={icon} size={24} color={color} />
+        <View className="flex-1">
+          <Text className={tone === 'success' ? 'font-bold text-green-900' : 'font-bold text-amber-950'}>{title}</Text>
+          <Text className={`mt-1 text-sm ${tone === 'success' ? 'text-green-800' : 'text-amber-800'}`}>{detail}</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 async function loadOrderDetails(
   token: string,
   routeOrders: TripRouteOrderDto[]
@@ -712,38 +910,6 @@ async function loadOrderDetails(
     }
     return response.data;
   });
-}
-
-async function getForegroundLocationPermission() {
-  let permission: Location.LocationPermissionResponse;
-  try {
-    permission = await Location.getForegroundPermissionsAsync();
-    if (permission.status !== Location.PermissionStatus.GRANTED && permission.canAskAgain) {
-      permission = await Location.requestForegroundPermissionsAsync();
-    }
-  } catch {
-    Alert.alert(
-      'Không kiểm tra được quyền vị trí',
-      'Thiết bị không thể kiểm tra quyền GPS. Vui lòng thử lại.'
-    );
-    return false;
-  }
-
-  if (permission.status === Location.PermissionStatus.GRANTED) return true;
-
-  Alert.alert(
-    'Chưa có quyền vị trí',
-    permission.canAskAgain
-      ? 'Vui lòng cấp quyền vị trí khi dùng ứng dụng để Check-in.'
-      : 'Quyền vị trí đã bị từ chối. Hãy mở Cài đặt của ứng dụng và bật quyền Vị trí.',
-    permission.canAskAgain
-      ? [{ text: 'Đã hiểu' }]
-      : [
-          { text: 'Để sau', style: 'cancel' },
-          { text: 'Mở Cài đặt', onPress: () => void Linking.openSettings() },
-        ]
-  );
-  return false;
 }
 
 function resolveBoundaryPoint(
@@ -814,7 +980,7 @@ function isAlreadyCheckedInError(error: unknown) {
 
 function formatActionError(
   error: unknown,
-  action: 'LOAD' | 'CHECK_IN' | 'HANDOVER' | 'COD' | 'DEPART'
+  action: 'LOAD' | 'CHECK_IN' | 'CUT_SEAL' | 'HANDOVER' | 'PAYMENT' | 'APPLY_SEAL'
 ) {
   if (error instanceof ApiClientError) {
     if (error.status === undefined) {
@@ -826,21 +992,37 @@ function formatActionError(
     if (error.status === 403) {
       return 'Bạn không có quyền thực hiện thao tác này.';
     }
-    if (error.status === 404) {
-      return action === 'HANDOVER'
-        ? 'Không tìm thấy Stop hoặc Order cần bàn giao.'
-        : 'Không tìm thấy Trip hoặc Stop được yêu cầu.';
-    }
+    if (error.status === 404) return action === 'HANDOVER'
+      ? 'Không tìm thấy dữ liệu bàn giao. Vui lòng tải lại điểm dừng.'
+      : 'Không tìm thấy dữ liệu cần xử lý. Vui lòng tải lại.';
 
     const message = error.message.toLowerCase();
-    if (action === 'CHECK_IN' && /distance|geofence|200|meter|metre|radius/.test(message)) {
-      return 'Bạn đang ngoài phạm vi Check-in 200 m của điểm giao hàng.';
+    if (action === 'CHECK_IN' && /proof|image|photo/.test(message)) {
+      return 'Vui lòng thêm ảnh xác nhận trước khi check-in.';
+    }
+    if (action === 'CHECK_IN' && /distance|geofence|meter|metre|radius/.test(message)) {
+      return 'Xe chưa ở trong phạm vi điểm giao hàng.';
+    }
+    if (action === 'CHECK_IN' && /iot|telemetry|gps|location/.test(message)) {
+      return 'Chưa nhận được vị trí xe từ thiết bị IoT. Vui lòng thử lại.';
     }
     if (action === 'CHECK_IN' && /already|check.?in/.test(message)) {
-      return 'Stop này đã được Check-in trước đó.';
+      return 'Điểm giao này đã được xác nhận đến.';
     }
-    if (action === 'DEPART' && /handover|confirm|order/.test(message)) {
-      return 'Vẫn còn Order chưa được xác nhận bàn giao nên chưa thể rời đi.';
+    if (action === 'CUT_SEAL' && /seal.*(cut|removed)|already.*seal/.test(message)) {
+      return 'Seal đã được cắt trước đó hoặc không còn seal hợp lệ để cắt.';
+    }
+    if (action === 'HANDOVER' && /signature|proof|file/.test(message)) {
+      return 'Vui lòng thêm ảnh chữ ký hợp lệ trước khi xác nhận bàn giao.';
+    }
+    if (action === 'HANDOVER' && /already|delivered|handover/.test(message)) {
+      return 'Đơn hàng đã được bàn giao hoặc không còn đủ điều kiện bàn giao.';
+    }
+    if (action === 'PAYMENT' && /pending|verify|paid/.test(message)) {
+      return 'Thanh toán đang chờ xác minh hoặc đã được ghi nhận.';
+    }
+    if (action === 'APPLY_SEAL' && /seal/.test(message)) {
+      return 'Mã seal chưa hợp lệ hoặc seal đã được áp dụng.';
     }
     if (error.status === 409) {
       return 'Thao tác xung đột với trạng thái hiện tại. Dữ liệu sẽ được tải lại.';
@@ -857,9 +1039,67 @@ function formatActionError(
       return 'Không thể Check-in. Vui lòng kiểm tra trạng thái Stop rồi thử lại.';
     case 'HANDOVER':
       return 'Không thể xác nhận bàn giao Order. Vui lòng thử lại.';
-    case 'COD':
-      return 'Không thể ghi nhận thanh toán COD. Vui lòng thử lại.';
-    case 'DEPART':
-      return 'Không thể xác nhận rời đi. Vui lòng tải lại trạng thái Stop.';
+    case 'CUT_SEAL':
+      return 'Không thể cắt seal. Vui lòng kiểm tra trạng thái seal rồi thử lại.';
+    case 'PAYMENT':
+      return 'Không thể xử lý thanh toán. Vui lòng thử lại.';
+    case 'APPLY_SEAL':
+      return 'Không thể kẹp seal mới. Vui lòng kiểm tra mã seal rồi thử lại.';
   }
+}
+
+function toDeliveryUploadFile(asset: ImagePicker.ImagePickerAsset, fallbackName: string): DeliveryUploadFile {
+  return {
+    uri: asset.uri,
+    name: asset.fileName || fallbackName,
+    type: asset.mimeType || 'image/jpeg',
+  };
+}
+
+function formatCurrency(value: number) {
+  return `${value.toLocaleString('vi-VN')} ₫`;
+}
+
+function getEpodStatusLabel(status?: string | null) {
+  switch (status?.toUpperCase()) {
+    case 'HANDOVER_CONFIRMED': return 'Bàn giao đã xác nhận';
+    case 'COMPLETED': return 'ePOD đã hoàn tất';
+    default: return 'ePOD đã được tạo';
+  }
+}
+
+function getPaymentStatusLabel(status?: string | null) {
+  switch (status?.toUpperCase()) {
+    case 'PAID': return 'Thanh toán đã được ghi nhận';
+    case 'PAID_PROOF':
+    case 'PENDING_VERIFY': return 'Thanh toán đang chờ xác minh';
+    case 'AWAITING_PAYMENT': return 'Chờ khách thanh toán';
+    default: return 'Chưa có thông tin thanh toán';
+  }
+}
+
+function getDriverDeliveryActionState({
+  hasCheckedIn,
+  allOrdersHandedOver,
+  hasRemainingStops,
+  hasAppliedSeal,
+}: {
+  hasCheckedIn: boolean;
+  allOrdersHandedOver: boolean;
+  hasRemainingStops: boolean;
+  hasAppliedSeal: boolean;
+}) {
+  if (!hasCheckedIn) {
+    return { title: 'Bước tiếp theo: xác nhận đến điểm giao', detail: 'Thêm ảnh xác nhận và gửi check-in.' };
+  }
+  if (!allOrdersHandedOver) {
+    return { title: 'Bước tiếp theo: bàn giao đơn hàng', detail: 'Chọn từng đơn để thêm chữ ký người nhận.' };
+  }
+  if (hasRemainingStops && !hasAppliedSeal) {
+    return { title: 'Bước tiếp theo: kẹp seal mới', detail: 'Nhập mã seal mới trước khi tiếp tục đến điểm dừng kế tiếp.' };
+  }
+  return {
+    title: 'Đã hoàn tất các bước Mobile hỗ trợ',
+    detail: 'Xác nhận rời điểm dừng đang chờ Backend cung cấp endpoint chính thức.',
+  };
 }
