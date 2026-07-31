@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 
+import { customerColors, customerRadius } from '../../../../constants/customerTheme';
+import { CustomerCard, CustomerSectionHeader } from '../../../../components/customer/ui/CustomerUi';
 import type {
   RouteBookingOptionsDto,
   RouteOptionResponse,
@@ -10,7 +11,7 @@ import type {
 import type { CreateOrderValidationErrors } from '../createOrderValidation';
 import { AddressAutocompleteField } from './AddressAutocompleteField';
 import {
-  CreateOrderFormSection,
+  CreateOrderChoiceCard,
   type RegisterCreateOrderField,
   type RegisterCreateOrderInput,
 } from './CreateOrderUi';
@@ -60,72 +61,101 @@ export function RouteScheduleStep({
   onChangeAddress,
   onSelectAddress,
 }: RouteScheduleStepProps) {
+  const [isChangingRoute, setIsChangingRoute] = useState(false);
+  const selectedRoute = routes.find((route) => route.routeId === selectedRouteId) ?? null;
+  const showRoutePicker = !selectedRoute || isChangingRoute;
+
+  const handleSelectRoute = (routeId: string) => {
+    setIsChangingRoute(false);
+    onSelectRoute(routeId);
+  };
+
   return (
-    <CreateOrderFormSection
-      title="Tuyến và lịch"
-      icon="navigate-outline"
-      description="Chọn tuyến đang hoạt động, lịch khởi hành và điểm giao phù hợp."
-    >
-      <View className="rounded-xl bg-[#F8F3EF] p-4">
-        <View className="flex-row items-center gap-2">
-          <Ionicons name="business-outline" size={17} color="#8B4513" />
-          <Text className="text-sm font-bold text-[#3A1F04]">Điểm lấy hàng</Text>
-        </View>
-        <Text className="mt-1.5 text-sm leading-5 text-[#877369]">
-          Hub ColdChainX sẽ được xác nhận sau khi yêu cầu được duyệt.
-        </Text>
-      </View>
-
-      <View ref={(node) => registerField('routeId', node)}>
-        <RouteOptionPicker
-          routes={routes}
-          selectedRouteId={selectedRouteId}
-          isLoading={isLoadingRoutes}
-          error={routeError}
-          onRetry={onRetryRoutes}
-          onSelect={onSelectRoute}
-        />
-        {errors.routeId ? <FieldError message={errors.routeId} /> : null}
-      </View>
-
-      {selectedRouteId ? (
-        <View
-          ref={(node) => {
-            registerField('scheduleId', node);
-            registerField('dropoffStopId', node);
-          }}
-        >
-          <BookingOptionsPicker
-            bookingOptions={bookingOptions}
-            isLoading={isLoadingBooking}
-            error={bookingError}
-            selectedScheduleId={selectedScheduleId}
-            selectedStopId={selectedStopId}
-            scheduleError={errors.scheduleId}
-            stopError={errors.dropoffStopId}
-            onRetry={onRetryBooking}
-            onSelectSchedule={onSelectSchedule}
-            onSelectStop={onSelectStop}
+    <View className="gap-4">
+      <CustomerCard>
+        <View className="gap-4">
+          <CustomerSectionHeader
+            title={selectedRoute && !showRoutePicker ? 'Tuyến đã chọn' : 'Tuyến vận chuyển'}
+            icon="navigate-outline"
+            actionLabel={selectedRoute && !showRoutePicker ? 'Thay đổi' : undefined}
+            onAction={selectedRoute && !showRoutePicker ? () => setIsChangingRoute(true) : undefined}
           />
-        </View>
-      ) : (
-        <View className="rounded-xl border border-dashed border-[#DAC2B6] bg-[#F8F9FA] p-4">
-          <Text className="text-sm leading-5 text-[#877369]">
-            Chọn tuyến vận chuyển để xem lịch và điểm giao.
-          </Text>
-        </View>
-      )}
 
-      <View ref={(node) => registerField('destAddressText', node)}>
-        <AddressAutocompleteField
-          ref={(node) => registerInput('destAddressText', node)}
-          value={address}
-          error={errors.destAddressText}
-          onChangeText={onChangeAddress}
-          onSelectAddress={onSelectAddress}
-        />
-      </View>
-    </CreateOrderFormSection>
+          <View ref={(node) => registerField('routeId', node)}>
+            {showRoutePicker ? (
+              <RouteOptionPicker
+                routes={routes}
+                selectedRouteId={selectedRouteId}
+                isLoading={isLoadingRoutes}
+                error={routeError}
+                onRetry={onRetryRoutes}
+                onSelect={handleSelectRoute}
+              />
+            ) : (
+              <RouteSummary route={selectedRoute} />
+            )}
+            {errors.routeId ? <FieldError message={errors.routeId} /> : null}
+          </View>
+
+          {selectedRoute && !showRoutePicker ? (
+            <View ref={(node) => registerField('scheduleId', node)} className="gap-3">
+              <CustomerSectionHeader title="Lịch vận chuyển" icon="calendar-outline" />
+              <ScheduleOptions
+                bookingOptions={bookingOptions}
+                isLoading={isLoadingBooking}
+                error={bookingError}
+                selectedScheduleId={selectedScheduleId}
+                scheduleError={errors.scheduleId}
+                onRetry={onRetryBooking}
+                onSelectSchedule={onSelectSchedule}
+              />
+            </View>
+          ) : null}
+        </View>
+      </CustomerCard>
+
+      <CustomerCard>
+        <View className="gap-4">
+          <CustomerSectionHeader title="Giao hàng" icon="location-outline" />
+
+          <View ref={(node) => registerField('dropoffStopId', node)} className="gap-3">
+            <CustomerSectionHeader title="Điểm giao hàng" />
+            {selectedRouteId ? (
+              <DropoffOptions
+                bookingOptions={bookingOptions}
+                isLoading={isLoadingBooking}
+                error={bookingError}
+                selectedStopId={selectedStopId}
+                stopError={errors.dropoffStopId}
+                onSelectStop={onSelectStop}
+              />
+            ) : (
+              <AvailabilityNotice>Chọn tuyến vận chuyển để xem các điểm giao khả dụng.</AvailabilityNotice>
+            )}
+          </View>
+
+          <View ref={(node) => registerField('destAddressText', node)}>
+            <AddressAutocompleteField
+              ref={(node) => registerInput('destAddressText', node)}
+              value={address}
+              error={errors.destAddressText}
+              label="Địa chỉ giao hàng"
+              onChangeText={onChangeAddress}
+              onSelectAddress={onSelectAddress}
+            />
+          </View>
+        </View>
+      </CustomerCard>
+    </View>
+  );
+}
+
+function RouteSummary({ route }: { route: RouteOptionResponse }) {
+  return (
+    <View className="gap-1 p-4" style={{ backgroundColor: customerColors.primarySoft, borderRadius: customerRadius.control }}>
+      <Text className="text-base font-bold text-[#3A1F04]">{getRouteLabel(route)}</Text>
+      <Text className="text-xs leading-5 text-[#877369]">{getRouteMeta(route)}</Text>
+    </View>
   );
 }
 
@@ -148,15 +178,20 @@ function RouteOptionPicker({
 }: RouteOptionPickerProps) {
   return (
     <View className="gap-2">
-      <View className="flex-row items-center justify-between">
-        <Text className="text-[13px] font-bold text-[#3A1F04]">Tuyến vận chuyển</Text>
-        {isLoading ? <ActivityIndicator size="small" color="#8B4513" /> : null}
-      </View>
+      {isLoading ? <View className="items-center py-1"><ActivityIndicator size="small" color="#8B4513" /></View> : null}
 
       {error ? <LoadError message={error} actionLabel="Tải lại tuyến" onRetry={onRetry} /> : null}
 
       {!isLoading && !error && routes.length === 0 ? (
-        <View className="rounded-[14px] border border-[#DAC2B6]/60 bg-[#F8F9FA] p-4">
+        <View
+          className="p-4"
+          style={{
+            backgroundColor: customerColors.surfaceNeutral,
+            borderColor: customerColors.border,
+            borderRadius: 14,
+            borderWidth: 1,
+          }}
+        >
           <Text className="text-sm leading-5 text-[#877369]">
             Chưa có tuyến vận chuyển khả dụng. Vui lòng thử lại sau.
           </Text>
@@ -165,7 +200,7 @@ function RouteOptionPicker({
 
       <View className="gap-2">
         {routes.map((route) => (
-          <SelectableCard
+          <CreateOrderChoiceCard
             key={route.routeId}
             selected={selectedRouteId === route.routeId}
             title={getRouteLabel(route)}
@@ -179,31 +214,25 @@ function RouteOptionPicker({
   );
 }
 
-type BookingOptionsPickerProps = {
+type ScheduleOptionsProps = {
   bookingOptions: RouteBookingOptionsDto | null;
   isLoading: boolean;
   error: string | null;
   selectedScheduleId: string;
-  selectedStopId: string;
   scheduleError?: string;
-  stopError?: string;
   onRetry: () => void;
   onSelectSchedule: (scheduleId: string) => void;
-  onSelectStop: (stopId: string) => void;
 };
 
-function BookingOptionsPicker({
+function ScheduleOptions({
   bookingOptions,
   isLoading,
   error,
   selectedScheduleId,
-  selectedStopId,
   scheduleError,
-  stopError,
   onRetry,
   onSelectSchedule,
-  onSelectStop,
-}: BookingOptionsPickerProps) {
+}: ScheduleOptionsProps) {
   if (isLoading) {
     return (
       <View className="items-center py-4">
@@ -216,99 +245,52 @@ function BookingOptionsPicker({
   if (error) return <LoadError message={error} actionLabel="Thử lại" onRetry={onRetry} />;
   if (!bookingOptions) return null;
 
-  return (
-    <View className="gap-4">
-      <View className="gap-2">
-        <Text className="text-[13px] font-bold text-[#3A1F04]">Lịch vận chuyển</Text>
-        {bookingOptions.availableSchedules.length === 0 ? (
-          <AvailabilityNotice>
-            Tuyến này chưa có lịch khởi hành khả dụng. Vui lòng chọn tuyến khác.
-          </AvailabilityNotice>
-        ) : (
-          <View className="gap-2">
-            {bookingOptions.availableSchedules.map((schedule) => (
-              <SelectableCard
-                key={schedule.scheduleId}
-                selected={selectedScheduleId === schedule.scheduleId}
-                title={schedule.scheduleName}
-                subtitle={`${formatDepartureDate(schedule.departureDate)} · Khởi hành ${schedule.departureTime.slice(0, 5)} · Đóng nhận ${schedule.cutOffTime.slice(0, 5)}`}
-                accessibilityLabel={`Lịch ${schedule.scheduleName}, ${formatDepartureDate(schedule.departureDate)}`}
-                onPress={() => onSelectSchedule(schedule.scheduleId)}
-              />
-            ))}
-          </View>
-        )}
-        {scheduleError ? <FieldError message={scheduleError} /> : null}
-      </View>
-
-      <View className="gap-2">
-        <Text className="text-[13px] font-bold text-[#3A1F04]">Điểm giao hàng</Text>
-        {bookingOptions.availableStops.length === 0 ? (
-          <AvailabilityNotice>
-            Tuyến này chưa có điểm giao. Vui lòng chọn tuyến khác.
-          </AvailabilityNotice>
-        ) : (
-          <View className="gap-2">
-            {bookingOptions.availableStops.map((stop) => (
-              <SelectableCard
-                key={stop.stopId}
-                selected={selectedStopId === stop.stopId}
-                title={stop.stopName}
-                accessibilityLabel={`Điểm giao ${stop.stopName}`}
-                onPress={() => onSelectStop(stop.stopId)}
-              />
-            ))}
-          </View>
-        )}
-        {stopError ? <FieldError message={stopError} /> : null}
-      </View>
+  return bookingOptions.availableSchedules.length === 0 ? (
+    <AvailabilityNotice>Tuyến này chưa có lịch khởi hành khả dụng. Vui lòng chọn tuyến khác.</AvailabilityNotice>
+  ) : (
+    <View className="gap-3">
+      {bookingOptions.availableSchedules.map((schedule) => (
+        <CreateOrderChoiceCard
+          key={schedule.scheduleId}
+          selected={selectedScheduleId === schedule.scheduleId}
+          title={schedule.scheduleName}
+          subtitle={`${formatDepartureDate(schedule.departureDate)} · Khởi hành ${schedule.departureTime.slice(0, 5)} · Đóng nhận ${schedule.cutOffTime.slice(0, 5)}`}
+          accessibilityLabel={`Lịch ${schedule.scheduleName}, ${formatDepartureDate(schedule.departureDate)}`}
+          onPress={() => onSelectSchedule(schedule.scheduleId)}
+        />
+      ))}
+      {scheduleError ? <FieldError message={scheduleError} /> : null}
     </View>
   );
 }
 
-type SelectableCardProps = {
-  selected: boolean;
-  title: string;
-  subtitle?: string;
-  accessibilityLabel?: string;
-  accessibilityHint?: string;
-  onPress: () => void;
+type DropoffOptionsProps = {
+  bookingOptions: RouteBookingOptionsDto | null;
+  isLoading: boolean;
+  error: string | null;
+  selectedStopId: string;
+  stopError?: string;
+  onSelectStop: (stopId: string) => void;
 };
 
-function SelectableCard({
-  selected,
-  title,
-  subtitle,
-  accessibilityLabel,
-  accessibilityHint,
-  onPress,
-}: SelectableCardProps) {
+function DropoffOptions({ bookingOptions, isLoading, error, selectedStopId, stopError, onSelectStop }: DropoffOptionsProps) {
+  if (isLoading) return <Text className="text-xs leading-5 text-[#877369]">Đang tải điểm giao hàng...</Text>;
+  if (error || !bookingOptions) return null;
+  if (bookingOptions.availableStops.length === 0) return <AvailabilityNotice>Tuyến này chưa có điểm giao. Vui lòng chọn tuyến khác.</AvailabilityNotice>;
+
   return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="radio"
-      accessibilityLabel={accessibilityLabel || title}
-      accessibilityHint={accessibilityHint}
-      accessibilityState={{ selected }}
-      className={[
-        'min-h-[60px] justify-center rounded-[14px] border px-4 py-3',
-        selected ? 'border-[#8B4513] bg-[#8B4513]' : 'border-[#DAC2B6]/60 bg-[#F8F9FA]',
-      ].join(' ')}
-    >
-      <View className="flex-row items-start justify-between gap-3">
-        <View className="flex-1">
-          <Text className={['text-sm font-bold', selected ? 'text-white' : 'text-[#3A1F04]'].join(' ')}>
-            {title}
-          </Text>
-          {subtitle ? (
-            <Text className={['mt-1 text-xs leading-5', selected ? 'text-white/75' : 'text-[#877369]'].join(' ')}>
-              {subtitle}
-            </Text>
-          ) : null}
-        </View>
-        {selected ? <Ionicons name="checkmark-circle" size={20} color="#FFC29F" /> : null}
-      </View>
-    </Pressable>
+    <View className="gap-3">
+      {bookingOptions.availableStops.map((stop) => (
+        <CreateOrderChoiceCard
+          key={stop.stopId}
+          selected={selectedStopId === stop.stopId}
+          title={stop.stopName}
+          accessibilityLabel={`Điểm giao ${stop.stopName}`}
+          onPress={() => onSelectStop(stop.stopId)}
+        />
+      ))}
+      {stopError ? <FieldError message={stopError} /> : null}
+    </View>
   );
 }
 
@@ -340,8 +322,8 @@ function LoadError({
 
 function AvailabilityNotice({ children }: { children: React.ReactNode }) {
   return (
-    <View className="rounded-[14px] border border-amber-200 bg-amber-50 p-4">
-      <Text className="text-sm leading-5 text-amber-800">{children}</Text>
+    <View className="rounded-2xl bg-[#F8F9FA] p-4">
+      <Text className="text-sm leading-5 text-[#877369]">{children}</Text>
     </View>
   );
 }

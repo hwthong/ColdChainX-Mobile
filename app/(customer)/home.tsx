@@ -15,6 +15,7 @@ import { customerApi, CustomerOrderSummaryResponse } from '../../services/custom
 import { getCustomerIdFromToken } from '../../services/jwt';
 import { useAuthStore } from '../../store/useAuthStore';
 import { getCustomerOrderStatusPresentation } from '../../constants/customerOrderPresentation';
+import { customerColors } from '../../constants/customerTheme';
 
 const RECENT_ORDER_PAGE_SIZE = 2;
 
@@ -81,7 +82,8 @@ export default function CustomerHomeScreen() {
 
   return (
     <ScrollView
-      className="flex-1 bg-[#F5F2F0]"
+      className="flex-1"
+      style={{ backgroundColor: customerColors.background }}
       contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 120, gap: 24 }}
       contentInsetAdjustmentBehavior="automatic"
       showsVerticalScrollIndicator={false}
@@ -132,7 +134,7 @@ function DashboardSection({ title, actionLabel, onActionPress, children }: { tit
 
 function HeroCard({ onCreateOrder }: { onCreateOrder: () => void }) {
   return (
-    <View className="overflow-hidden rounded-[24px] bg-[#3A1F04] px-5 py-6">
+    <View className="overflow-hidden rounded-[24px] px-5 py-6" style={{ backgroundColor: customerColors.text }}>
       <View className="absolute -right-7 -top-5 h-36 w-36 rounded-full bg-[#8B4513]" />
       <View className="absolute right-6 top-7 h-20 w-20 items-center justify-center rounded-3xl border border-white/20 bg-white/10">
         <Ionicons name="cube-outline" size={40} color="#FFC29F" />

@@ -2,6 +2,7 @@ import React, { forwardRef, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
+import { customerColors, customerControl, customerRadius } from '../../../../constants/customerTheme';
 import { searchGoongAddressSuggestions, type GoongAddressSuggestion } from '../../../../services/goongPlacesApi';
 
 type AddressAutocompleteFieldProps = {
@@ -91,15 +92,22 @@ export const AddressAutocompleteField = forwardRef<TextInput, AddressAutocomplet
       <Text className="text-[13px] font-bold text-[#3A1F04]">
         {label} {required ? <Text className="text-red-600">*</Text> : null}
       </Text>
-      <View className={[
-        'min-h-[52px] flex-row items-center rounded-[14px] border bg-[#F8F9FA] px-4',
-        error ? 'border-red-300' : isFocused ? 'border-[#8B4513]' : 'border-[#DAC2B6]/60',
-        disabled ? 'opacity-60' : '',
-      ].join(' ')}>
+      <View
+        className="flex-row items-center px-4"
+        style={{
+          backgroundColor: customerColors.surface,
+          borderColor: error ? '#FCA5A5' : isFocused ? customerColors.primary : customerColors.border,
+          borderRadius: customerRadius.control,
+          borderWidth: 1,
+          minHeight: customerControl.height,
+          opacity: disabled ? 0.6 : 1,
+        }}
+      >
         <Ionicons name="location-outline" size={18} color="#8B4513" />
         <TextInput
           ref={ref}
-          className="min-h-[52px] flex-1 px-3 text-[14px] font-medium text-[#3A1F04]"
+          className="flex-1 px-3 text-[14px] font-medium text-[#3A1F04]"
+          style={{ minHeight: customerControl.height }}
           value={value}
           onChangeText={onChangeText}
           onFocus={() => setIsFocused(true)}
@@ -122,14 +130,23 @@ export const AddressAutocompleteField = forwardRef<TextInput, AddressAutocomplet
       </View>
       {error ? <Text accessibilityLiveRegion="polite" className="text-xs font-medium text-red-600">{error}</Text> : null}
       {showSuggestions && suggestions.length > 0 ? (
-        <View className="overflow-hidden rounded-xl border border-[#DAC2B6]/60 bg-white shadow-sm">
+        <View
+          className="overflow-hidden shadow-sm"
+          style={{
+            backgroundColor: customerColors.surface,
+            borderColor: customerColors.border,
+            borderRadius: customerRadius.control,
+            borderWidth: 1,
+          }}
+        >
           {suggestions.map((suggestion, index) => (
             <Pressable
               key={suggestion.placeId}
               onPress={() => selectSuggestion(suggestion)}
               accessibilityRole="button"
               accessibilityLabel={`Chọn địa chỉ ${suggestion.address}`}
-              className={['flex-row gap-3 px-4 py-3 active:bg-[#F8F3EF]', index > 0 ? 'border-t border-[#DAC2B6]/40' : ''].join(' ')}
+              className="flex-row gap-3 px-4 py-3 active:bg-[#F8F3EF]"
+              style={index > 0 ? { borderTopColor: customerColors.borderSubtle, borderTopWidth: 1 } : undefined}
             >
               <Ionicons name="location-outline" size={18} color="#8B4513" />
               <View className="flex-1">

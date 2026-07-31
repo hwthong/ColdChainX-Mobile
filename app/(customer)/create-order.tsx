@@ -9,13 +9,13 @@ import {
   ScrollView,
   TextInput,
   View,
-  findNodeHandle,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppToast, ToastType } from '../../components/AppToast';
+import { customerColors } from '../../constants/customerTheme';
 import { CargoInformationStep } from '../../features/customer/create-order/components/CargoInformationStep';
 import { CreateOrderReviewStep } from '../../features/customer/create-order/components/CreateOrderReviewStep';
 import {
@@ -50,11 +50,11 @@ import {
 } from '../../services/routeApi';
 import { useAuthStore } from '../../store/useAuthStore';
 
-const STEP_DETAILS: Record<CreateOrderStep, { title: string; subtitle: string }> = {
-  1: { title: 'Tuyến và lịch vận chuyển', subtitle: 'Chọn tuyến, lịch và điểm giao phù hợp.' },
-  2: { title: 'Thông tin hàng hóa', subtitle: 'Khai báo loại hàng và điều kiện bảo quản.' },
-  3: { title: 'Đóng gói và hình ảnh', subtitle: 'Bổ sung quy cách kiện hàng và ảnh thực tế.' },
-  4: { title: 'Kiểm tra và gửi yêu cầu', subtitle: 'Xác nhận lại thông tin trước khi gửi.' },
+const STEP_DETAILS: Record<CreateOrderStep, { title: string }> = {
+  1: { title: 'Tuyến và lịch vận chuyển' },
+  2: { title: 'Thông tin hàng hóa' },
+  3: { title: 'Đóng gói và hình ảnh' },
+  4: { title: 'Kiểm tra và gửi yêu cầu' },
 };
 
 export default function CreateOrderScreen() {
@@ -63,6 +63,8 @@ export default function CreateOrderScreen() {
   const accessToken = useAuthStore((state) => state.token);
   const insets = useSafeAreaInsets();
   const scrollViewRef = useRef<ScrollView | null>(null);
+  const scrollOffsetYRef = useRef(0);
+  const scrollRequestIdRef = useRef(0);
   const fieldRefs = useRef<Partial<Record<CreateOrderFieldKey, View | null>>>({});
   const inputRefs = useRef<Partial<Record<CreateOrderFieldKey, TextInput | null>>>({});
   const pendingErrorFieldRef = useRef<CreateOrderFieldKey | null>(null);
@@ -214,27 +216,37 @@ export default function CreateOrderScreen() {
   }, [currentStep]);
 
   const scrollToErrorField = useCallback((field: CreateOrderFieldKey) => {
-    requestAnimationFrame(() => {
+    const requestId = ++scrollRequestIdRef.current;
+    const frameId = requestAnimationFrame(() => {
       const fieldNode = fieldRefs.current[field];
-      const scrollHandle = findNodeHandle(scrollViewRef.current);
-      if (!fieldNode || !scrollHandle) return;
+      const scrollView = scrollViewRef.current;
+      const scrollNode = scrollView?.getNativeScrollRef();
+      if (!fieldNode || !scrollView || !scrollNode) return;
 
-      fieldNode.measureLayout(
-        scrollHandle,
-        (_x, y) => {
-          scrollViewRef.current?.scrollTo({ y: Math.max(y - 16, 0), animated: true });
+      fieldNode.measureInWindow((_fieldX, fieldY) => {
+        if (scrollRequestIdRef.current !== requestId) return;
+        scrollNode.measureInWindow((_scrollX, scrollY) => {
+          if (scrollRequestIdRef.current !== requestId) return;
+          const targetY = scrollOffsetYRef.current + fieldY - scrollY - 16;
+          scrollView.scrollTo({ y: Math.max(targetY, 0), animated: true });
           inputRefs.current[field]?.focus();
-        },
-        () => undefined
-      );
+        });
+      });
     });
+
+    return () => {
+      cancelAnimationFrame(frameId);
+      if (scrollRequestIdRef.current === requestId) {
+        scrollRequestIdRef.current += 1;
+      }
+    };
   }, []);
 
   useEffect(() => {
     const field = pendingErrorFieldRef.current;
     if (!field) return;
     pendingErrorFieldRef.current = null;
-    scrollToErrorField(field);
+    return scrollToErrorField(field);
   }, [currentStep, errors, scrollToErrorField]);
 
   const handleRouteSelect = (routeId: string) => {
@@ -559,17 +571,27 @@ export default function CreateOrderScreen() {
 
   // ─── Render ──────────────────────────────────────────────────────────────────
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      className="flex-1 bg-[#F5F2F0]"
-    >
-      <ScrollView
-        ref={scrollViewRef}
+    <View className="flex-1" style={{ backgroundColor: customerColors.background }}>
+      <View className="px-5 pb-2 pt-4">
+        <CreateOrderStepProgress currentStep={currentStep} totalSteps={4} {...STEP_DETAILS[currentStep]} />
+      </View>
+
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         className="flex-1"
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ padding: 20, paddingBottom: 144 + insets.bottom, gap: 18 }}
       >
+        <ScrollView
+          ref={scrollViewRef}
+          className="flex-1"
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          showsVerticalScrollIndicator={false}
+          onScroll={(event) => {
+            scrollOffsetYRef.current = event.nativeEvent.contentOffset.y;
+          }}
+          scrollEventThrottle={16}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 32, gap: 20 }}
+        >
         <AppToast
           visible={toastVisible}
           type={toastConfig.type}
@@ -577,8 +599,6 @@ export default function CreateOrderScreen() {
           message={toastConfig.message}
           onClose={() => setToastVisible(false)}
         />
-
-        <CreateOrderStepProgress currentStep={currentStep} totalSteps={4} {...STEP_DETAILS[currentStep]} />
 
         {currentStep === 1 ? (
           <RouteScheduleStep
@@ -678,7 +698,9 @@ export default function CreateOrderScreen() {
             onEdit={goToStep}
           />
         ) : null}
-      </ScrollView>
+        </ScrollView>
+
+      </KeyboardAvoidingView>
 
       <CreateOrderBottomActionBar
         currentStep={currentStep}
@@ -701,7 +723,7 @@ export default function CreateOrderScreen() {
         }}
         onCreateAnother={resetForm}
       />
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 

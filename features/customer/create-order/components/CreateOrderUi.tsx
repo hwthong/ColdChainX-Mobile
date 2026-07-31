@@ -1,6 +1,5 @@
 import React, { useState, type ReactNode } from 'react';
 import {
-  ActivityIndicator,
   Modal,
   Pressable,
   Text,
@@ -11,6 +10,13 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
+import { customerColors, customerControl, customerRadius } from '../../../../constants/customerTheme';
+import {
+  CustomerBottomActionBar,
+  CustomerCard,
+  CustomerChoiceCard,
+  CustomerSectionHeader,
+} from '../../../../components/customer/ui/CustomerUi';
 import type { CreateOrderFieldKey } from '../createOrderValidation';
 
 export type CreateOrderSuccessData = {
@@ -37,16 +43,47 @@ export function CreateOrderFormSection({
   children,
 }: CreateOrderFormSectionProps) {
   return (
-    <View className="gap-4 rounded-2xl border border-[#DAC2B6]/50 bg-white p-5">
-      <View className="border-b border-[#DAC2B6]/30 pb-3">
-        <View className="flex-row items-center gap-2">
-          <Ionicons name={icon} size={18} color="#8B4513" />
-          <Text className="text-base font-bold text-[#3A1F04]">{title}</Text>
-        </View>
-        {description ? <Text className="mt-1.5 text-xs leading-5 text-[#877369]">{description}</Text> : null}
+    <CustomerCard>
+      <View className="gap-5">
+        <CustomerSectionHeader title={title} icon={icon} description={description} />
+        {children}
       </View>
-      {children}
-    </View>
+    </CustomerCard>
+  );
+}
+
+type CreateOrderChoiceCardProps = {
+  title: string;
+  subtitle?: string;
+  selected: boolean;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
+  selectionMode?: 'radio' | 'checkbox';
+  leading?: ReactNode;
+  onPress: () => void;
+};
+
+export function CreateOrderChoiceCard({
+  title,
+  subtitle,
+  selected,
+  accessibilityLabel,
+  accessibilityHint,
+  selectionMode = 'radio',
+  leading,
+  onPress,
+}: CreateOrderChoiceCardProps) {
+  return (
+    <CustomerChoiceCard
+      title={title}
+      description={subtitle}
+      selected={selected}
+      leading={leading}
+      selectionMode={selectionMode}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
+      onPress={onPress}
+    />
   );
 }
 
@@ -99,10 +136,14 @@ export function CreateOrderTextField({
         placeholderTextColor="#877369"
         accessibilityLabel={`${label}, bắt buộc`}
         accessibilityHint={error}
-        className={[
-          'min-h-[52px] rounded-[14px] border bg-[#F8F9FA] px-4 text-[14px] font-medium text-[#3A1F04]',
-          error ? 'border-red-300' : isFocused ? 'border-[#8B4513]' : 'border-[#DAC2B6]/60',
-        ].join(' ')}
+        className="px-4 text-[14px] font-medium text-[#3A1F04]"
+        style={{
+          backgroundColor: customerColors.surface,
+          borderColor: error ? '#FCA5A5' : isFocused ? customerColors.primary : customerColors.border,
+          borderRadius: customerRadius.control,
+          borderWidth: 1,
+          minHeight: customerControl.height,
+        }}
       />
       {error ? (
         <Text accessibilityLiveRegion="polite" className="text-xs font-medium text-red-600">
@@ -128,45 +169,15 @@ export function CreateOrderBottomActionBar({
   onBack,
   onContinue,
 }: CreateOrderBottomActionBarProps) {
-  const isReviewStep = currentStep === 4;
-
   return (
-    <View
-      className="absolute inset-x-0 bottom-0 z-30 flex-row gap-3 border-t border-[#DAC2B6]/50 bg-[#F5F2F0] px-5 pt-4"
-      style={{ paddingBottom: Math.max(bottomInset, 16) }}
-    >
-      {currentStep > 1 ? (
-        <Pressable
-          onPress={onBack}
-          disabled={isLoading}
-          accessibilityRole="button"
-          accessibilityLabel="Quay lại bước trước"
-          accessibilityState={{ disabled: isLoading }}
-          className={[
-            'min-h-14 items-center justify-center rounded-2xl border border-[#8B4513] px-5',
-            isLoading ? 'opacity-60' : '',
-          ].join(' ')}
-        >
-          <Text className="text-base font-bold text-[#8B4513]">Quay lại</Text>
-        </Pressable>
-      ) : null}
-      <Pressable
-        onPress={onContinue}
-        disabled={isLoading}
-        accessibilityRole="button"
-        accessibilityLabel={isReviewStep ? 'Gửi yêu cầu vận chuyển' : 'Tiếp tục'}
-        accessibilityState={{ disabled: isLoading }}
-        className={[
-          'min-h-14 flex-1 flex-row items-center justify-center gap-2 rounded-2xl bg-[#8B4513]',
-          isLoading ? 'opacity-70' : '',
-        ].join(' ')}
-      >
-        {isLoading ? <ActivityIndicator color="#FFC29F" /> : null}
-        <Text className="text-base font-bold text-white">
-          {isLoading ? 'Đang gửi yêu cầu...' : isReviewStep ? 'Gửi yêu cầu vận chuyển' : 'Tiếp tục'}
-        </Text>
-      </Pressable>
-    </View>
+    <CustomerBottomActionBar
+      primaryLabel={currentStep === 4 ? 'Gửi yêu cầu vận chuyển' : 'Tiếp tục'}
+      primaryLoading={isLoading}
+      onPrimaryPress={onContinue}
+      secondaryLabel={currentStep > 1 ? 'Quay lại' : undefined}
+      onSecondaryPress={currentStep > 1 ? onBack : undefined}
+      bottomInset={bottomInset}
+    />
   );
 }
 
@@ -195,7 +206,15 @@ export function CreateOrderSuccessModal({
             </Text>
           </View>
 
-          <View className="my-6 gap-3 rounded-2xl border border-[#DAC2B6]/40 bg-[#F8F9FA] p-4">
+          <View
+            className="my-6 gap-3 p-4"
+            style={{
+              backgroundColor: customerColors.surfaceNeutral,
+              borderColor: customerColors.borderSubtle,
+              borderRadius: customerRadius.control,
+              borderWidth: 1,
+            }}
+          >
             <InfoRow label="Mã yêu cầu" value={data?.trackingCode || 'Đang cập nhật'} />
             <InfoRow label="Trạng thái" value={translateStatus(data?.status || 'PENDING_REVIEW')} />
           </View>
@@ -205,7 +224,8 @@ export function CreateOrderSuccessModal({
               onPress={onViewOrder}
               accessibilityRole="button"
               accessibilityLabel={data?.orderId ? 'Xem chi tiết đơn vừa tạo' : 'Xem trạng thái đơn vừa tạo'}
-              className="min-h-12 w-full items-center justify-center rounded-xl bg-[#8B4513]"
+              className="w-full items-center justify-center"
+              style={{ backgroundColor: customerColors.primary, borderRadius: 12, minHeight: 48 }}
             >
               <Text className="text-[15px] font-bold text-white">
                 {data?.orderId ? 'Xem chi tiết đơn' : 'Xem trạng thái đơn'}
@@ -215,7 +235,14 @@ export function CreateOrderSuccessModal({
               onPress={onCreateAnother}
               accessibilityRole="button"
               accessibilityLabel="Tạo đơn khác"
-              className="min-h-12 w-full items-center justify-center rounded-xl border border-[#8B4513] bg-white"
+              className="w-full items-center justify-center"
+              style={{
+                backgroundColor: customerColors.surface,
+                borderColor: customerColors.primary,
+                borderRadius: 12,
+                borderWidth: 1,
+                minHeight: 48,
+              }}
             >
               <Text className="text-[15px] font-bold text-[#8B4513]">Tạo đơn khác</Text>
             </Pressable>

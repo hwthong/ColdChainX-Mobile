@@ -1,7 +1,9 @@
 import React from 'react';
-import { Image, Pressable, Text, View } from 'react-native';
+import { Image, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
+import { customerColors } from '../../../../constants/customerTheme';
+import { CustomerCard, CustomerSectionHeader } from '../../../../components/customer/ui/CustomerUi';
 import type {
   RouteOptionResponse,
   ScheduleOptionDto,
@@ -41,17 +43,22 @@ export function CreateOrderReviewStep({
         ]}
       />
       <ReviewSection
-        title="Hàng hóa và đóng gói"
+        title="Hàng hóa"
         icon="cube-outline"
         onEdit={() => onEdit(2)}
-        secondaryEditLabel="Sửa đóng gói"
-        onSecondaryEdit={() => onEdit(3)}
         rows={[
           ['Tên hàng', values.itemName || '—'],
           ['Loại hàng', getGoodsTypeLabel(values.category)],
           ['Khối lượng', values.expectedWeightKg ? `${values.expectedWeightKg} kg` : '—'],
           ['Số kiện', values.quantity ? `${values.quantity} kiện` : '—'],
           ['Nhiệt độ', `${values.tempCondition}°C`],
+        ]}
+      />
+      <ReviewSection
+        title="Đóng gói và hình ảnh"
+        icon="archive-outline"
+        onEdit={() => onEdit(3)}
+        rows={[
           [
             'Bao bì',
             values.packagingType.length
@@ -78,8 +85,6 @@ type ReviewSectionProps = {
   rows: [string, string][];
   imageUri?: string;
   onEdit: () => void;
-  secondaryEditLabel?: string;
-  onSecondaryEdit?: () => void;
 };
 
 function ReviewSection({
@@ -88,29 +93,18 @@ function ReviewSection({
   rows,
   imageUri,
   onEdit,
-  secondaryEditLabel,
-  onSecondaryEdit,
 }: ReviewSectionProps) {
   return (
-    <View className="rounded-2xl border border-[#DAC2B6]/50 bg-white p-5">
-      <View className="flex-row items-center justify-between gap-3 border-b border-[#DAC2B6]/30 pb-3">
-        <View className="flex-1 flex-row items-center gap-2">
-          <Ionicons name={icon} size={18} color="#8B4513" />
-          <Text className="flex-1 text-base font-bold text-[#3A1F04]">{title}</Text>
-        </View>
-        <Pressable
-          onPress={onEdit}
-          accessibilityRole="button"
-          accessibilityLabel={`Chỉnh sửa ${title.toLowerCase()}`}
-          className="min-h-11 justify-center px-2"
-        >
-          <Text className="text-sm font-bold text-[#8B4513]">Chỉnh sửa</Text>
-        </Pressable>
-      </View>
+    <CustomerCard>
+      <CustomerSectionHeader title={title} icon={icon} actionLabel="Chỉnh sửa" onAction={onEdit} />
 
-      <View className="mt-4 gap-3">
-        {rows.map(([label, value]) => (
-          <View key={label} className="flex-row items-start gap-4">
+      <View className="mt-4">
+        {rows.map(([label, value], index) => (
+          <View
+            key={label}
+            className="flex-row items-start gap-4 py-2.5"
+            style={index > 0 ? { borderTopColor: customerColors.borderSubtle, borderTopWidth: 1 } : undefined}
+          >
             <Text className="w-[94px] text-xs font-medium leading-5 text-[#877369]">{label}</Text>
             <Text className="flex-1 text-right text-sm font-semibold leading-5 text-[#3A1F04]">{value}</Text>
           </View>
@@ -124,17 +118,6 @@ function ReviewSection({
           />
         ) : null}
       </View>
-
-      {secondaryEditLabel && onSecondaryEdit ? (
-        <Pressable
-          onPress={onSecondaryEdit}
-          accessibilityRole="button"
-          accessibilityLabel="Chỉnh sửa thông tin đóng gói và hình ảnh"
-          className="mt-4 min-h-11 items-center justify-center rounded-xl bg-[#F8F3EF] px-4"
-        >
-          <Text className="text-sm font-bold text-[#8B4513]">{secondaryEditLabel}</Text>
-        </Pressable>
-      ) : null}
-    </View>
+    </CustomerCard>
   );
 }

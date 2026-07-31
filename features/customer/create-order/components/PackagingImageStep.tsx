@@ -2,6 +2,7 @@ import React from 'react';
 import { Image, Pressable, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
+import { customerColors, customerRadius } from '../../../../constants/customerTheme';
 import type {
   CreateOrderFieldKey,
   CreateOrderValidationErrors,
@@ -60,43 +61,43 @@ export function PackagingImageStep({
   onRemoveImage,
   onSubmitField,
 }: PackagingImageStepProps) {
-  const togglePackagingType = (value: string) => {
-    onChangePackagingTypes(
-      packagingTypes.includes(value)
-        ? packagingTypes.filter((type) => type !== value)
-        : [...packagingTypes, value]
-    );
+  const selectPackagingType = (value: string) => {
+    if (packagingTypes[0] === value && packagingTypes.length === 1) return;
+    onChangePackagingTypes([value]);
   };
 
   return (
     <View className="gap-4">
       <CreateOrderFormSection
-        title="Quy cách đóng gói"
+        title="Hình thức đóng gói"
         icon="archive-outline"
-        description="Chọn bao bì và nhập kích thước của mỗi kiện hàng."
+        description="Chọn loại bao bì phù hợp với lô hàng."
       >
         <View ref={(node) => registerField('packagingType', node)} className="gap-2">
           <Text className="text-[13px] font-bold text-[#3A1F04]">
             Loại bao bì <Text className="text-red-600">*</Text>
           </Text>
-          <Text className="text-xs leading-5 text-[#877369]">Có thể chọn nhiều loại phù hợp với lô hàng.</Text>
           <View className="flex-row flex-wrap gap-2">
             {PACKAGING_OPTIONS.map((option) => {
               const selected = packagingTypes.includes(option.value);
               return (
                 <Pressable
                   key={option.value}
-                  onPress={() => togglePackagingType(option.value)}
-                  accessibilityRole="checkbox"
+                  onPress={() => selectPackagingType(option.value)}
+                  accessibilityRole="radio"
                   accessibilityLabel={option.label}
-                  accessibilityState={{ checked: selected }}
-                  className={[
-                    'min-h-11 flex-row items-center justify-center gap-1.5 rounded-full border px-4',
-                    selected ? 'border-[#8B4513] bg-[#8B4513]' : 'border-[#DAC2B6]/60 bg-[#F8F9FA]',
-                  ].join(' ')}
+                  accessibilityState={{ selected }}
+                  className="flex-row items-center justify-center gap-1.5 px-4"
+                  style={{
+                    backgroundColor: selected ? customerColors.surfaceSoft : customerColors.surface,
+                    borderColor: selected ? customerColors.primary : customerColors.border,
+                    borderRadius: 999,
+                    borderWidth: 1,
+                    minHeight: 44,
+                  }}
                 >
-                  {selected ? <Ionicons name="checkmark" size={15} color="#FFC29F" /> : null}
-                  <Text className={['text-[13px] font-bold', selected ? 'text-white' : 'text-[#3A1F04]'].join(' ')}>
+                  {selected ? <Ionicons name="checkmark" size={15} color="#8B4513" /> : null}
+                  <Text className={['text-[13px] font-bold', selected ? 'text-[#8B4513]' : 'text-[#3A1F04]'].join(' ')}>
                     {option.label}
                   </Text>
                 </Pressable>
@@ -106,6 +107,13 @@ export function PackagingImageStep({
           {errors.packagingType ? <FieldError message={errors.packagingType} /> : null}
         </View>
 
+      </CreateOrderFormSection>
+
+      <CreateOrderFormSection
+        title="Kích thước kiện hàng"
+        icon="resize-outline"
+        description="Nhập kích thước của mỗi kiện để kiểm tra sức chứa."
+      >
         <View className="gap-2">
           <Text className="text-[13px] font-bold text-[#3A1F04]">
             Kích thước kiện hàng <Text className="text-red-600">*</Text>
@@ -159,7 +167,7 @@ export function PackagingImageStep({
         </View>
 
         {capacityWarning ? (
-          <View className="flex-row items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <View className="flex-row items-start gap-2 rounded-2xl bg-[#FFF7ED] p-4">
             <Ionicons name="warning-outline" size={18} color="#B45309" />
             <Text className="flex-1 text-sm font-semibold leading-5 text-amber-800">{capacityWarning}</Text>
           </View>
@@ -177,7 +185,7 @@ export function PackagingImageStep({
               <Image
                 source={{ uri: image.uri }}
                 accessibilityLabel="Ảnh lô hàng đã chọn"
-                className="h-44 w-full rounded-xl"
+                className="h-40 w-full rounded-2xl"
                 resizeMode="cover"
               />
               <View className="flex-row gap-3">
@@ -185,7 +193,7 @@ export function PackagingImageStep({
                   onPress={onPickImage}
                   accessibilityRole="button"
                   accessibilityLabel="Thay ảnh lô hàng"
-                  className="min-h-11 flex-1 items-center justify-center rounded-xl bg-[#F8F3EF]"
+                  className="min-h-11 flex-1 items-center justify-center rounded-2xl bg-[#F8F3EF]"
                 >
                   <Text className="text-sm font-bold text-[#8B4513]">Thay ảnh</Text>
                 </Pressable>
@@ -193,7 +201,14 @@ export function PackagingImageStep({
                   onPress={onRemoveImage}
                   accessibilityRole="button"
                   accessibilityLabel="Xóa ảnh lô hàng"
-                  className="min-h-11 flex-1 items-center justify-center rounded-xl border border-[#DAC2B6]"
+                  className="flex-1 items-center justify-center"
+                  style={{
+                    backgroundColor: customerColors.surface,
+                    borderColor: customerColors.border,
+                    borderRadius: customerRadius.control,
+                    borderWidth: 1,
+                    minHeight: 44,
+                  }}
                 >
                   <Text className="text-sm font-bold text-[#3A1F04]">Xóa ảnh</Text>
                 </Pressable>
@@ -205,10 +220,15 @@ export function PackagingImageStep({
               accessibilityRole="button"
               accessibilityLabel="Thêm ảnh lô hàng"
               accessibilityHint="Chụp ảnh hoặc chọn ảnh rõ kiện hàng"
-              className={[
-                'min-h-[148px] items-center justify-center rounded-xl border-2 border-dashed px-5',
-                errors.documentImage ? 'border-red-300 bg-red-50' : 'border-[#DAC2B6] bg-[#F8F9FA]',
-              ].join(' ')}
+              className="items-center justify-center px-5"
+              style={{
+                backgroundColor: errors.documentImage ? '#FEF2F2' : customerColors.surfaceNeutral,
+                borderColor: errors.documentImage ? '#FCA5A5' : customerColors.border,
+                borderRadius: customerRadius.control,
+                borderStyle: 'dashed',
+                borderWidth: 2,
+                minHeight: 148,
+              }}
             >
               <View className="h-12 w-12 items-center justify-center rounded-full bg-[#8B4513]/10">
                 <Ionicons name="camera-outline" size={25} color="#8B4513" />

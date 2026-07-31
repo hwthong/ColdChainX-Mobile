@@ -61,6 +61,7 @@ export default function CustomerLayout() {
         name="create-order"
         options={{
           href: null,
+          tabBarStyle: { display: 'none' },
         }}
       />
       <Tabs.Screen

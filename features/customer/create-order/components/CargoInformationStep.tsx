@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
+import { customerColors, customerControl, customerRadius } from '../../../../constants/customerTheme';
 import {
   MAX_TEMPERATURE_CELSIUS,
   MIN_TEMPERATURE_CELSIUS,
@@ -10,6 +11,7 @@ import {
   type GoodsType,
 } from '../createOrderValidation';
 import {
+  CreateOrderChoiceCard,
   CreateOrderFormSection,
   CreateOrderTextField,
   type RegisterCreateOrderField,
@@ -78,7 +80,7 @@ export function CargoInformationStep({
   return (
     <View className="gap-4">
       <CreateOrderFormSection
-        title="Thông tin hàng hóa"
+        title="Thông tin cơ bản"
         icon="cube-outline"
         description="Mô tả lô hàng để hệ thống kiểm tra điều kiện vận chuyển."
       >
@@ -111,7 +113,7 @@ export function CargoInformationStep({
               registerInput={registerInput}
             />
           </View>
-          <View className="w-[112px]">
+          <View style={{ flex: 0.48 }}>
             <CreateOrderTextField
               field="quantity"
               label="Số kiện"
@@ -127,6 +129,13 @@ export function CargoInformationStep({
           </View>
         </View>
 
+      </CreateOrderFormSection>
+
+      <CreateOrderFormSection
+        title="Phân loại hàng hóa"
+        icon="grid-outline"
+        description="Chọn nhóm phù hợp nhất với lô hàng."
+      >
         <View ref={(node) => registerField('category', node)} className="gap-2">
           <Text className="text-[13px] font-bold text-[#3A1F04]">
             Phân loại hàng hóa <Text className="text-red-600">*</Text>
@@ -135,31 +144,20 @@ export function CargoInformationStep({
             {GOODS_TYPES.map((type) => {
               const selected = category === type.id;
               return (
-                <Pressable
+                <CreateOrderChoiceCard
                   key={type.id}
-                  onPress={() => onChangeCategory(type.id)}
-                  accessibilityRole="radio"
                   accessibilityLabel={type.label}
                   accessibilityHint={type.description}
-                  accessibilityState={{ selected }}
-                  className={[
-                    'min-h-[62px] flex-row items-center gap-3 rounded-[14px] border px-4 py-3',
-                    selected ? 'border-[#8B4513] bg-[#8B4513]' : 'border-[#DAC2B6]/60 bg-[#F8F9FA]',
-                  ].join(' ')}
-                >
-                  <View className={['h-9 w-9 items-center justify-center rounded-full', selected ? 'bg-white/15' : 'bg-[#F8F3EF]'].join(' ')}>
-                    <Ionicons name={type.icon} size={19} color={selected ? '#FFC29F' : '#8B4513'} />
-                  </View>
-                  <View className="flex-1">
-                    <Text className={['text-sm font-bold', selected ? 'text-white' : 'text-[#3A1F04]'].join(' ')}>
-                      {type.label}
-                    </Text>
-                    <Text className={['mt-0.5 text-xs leading-5', selected ? 'text-white/75' : 'text-[#877369]'].join(' ')}>
-                      {type.description}
-                    </Text>
-                  </View>
-                  {selected ? <Ionicons name="checkmark-circle" size={20} color="#FFC29F" /> : null}
-                </Pressable>
+                  selected={selected}
+                  title={type.label}
+                  subtitle={type.description}
+                  leading={(
+                    <View className="h-9 w-9 items-center justify-center rounded-full bg-[#F8F3EF]">
+                      <Ionicons name={type.icon} size={19} color="#8B4513" />
+                    </View>
+                  )}
+                  onPress={() => onChangeCategory(type.id)}
+                />
               );
             })}
           </View>
@@ -173,7 +171,15 @@ export function CargoInformationStep({
         description="Chọn nhiệt độ yêu cầu trong phạm vi hệ thống hỗ trợ."
       >
         <View ref={(node) => registerField('tempCondition', node)} className="gap-3">
-          <View className="flex-row items-center justify-between rounded-[14px] border border-[#DAC2B6]/60 bg-[#F8F9FA] p-3">
+          <View
+            className="flex-row items-center justify-between p-3"
+            style={{
+              backgroundColor: customerColors.surfaceNeutral,
+              borderColor: customerColors.border,
+              borderRadius: customerRadius.control,
+              borderWidth: 1,
+            }}
+          >
             <TemperatureButton
               icon="remove"
               label="Giảm nhiệt độ"
@@ -225,10 +231,16 @@ function TemperatureButton({
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled }}
-      className={[
-        'h-12 w-12 items-center justify-center rounded-xl border border-[#DAC2B6]/60 bg-white',
-        disabled ? 'opacity-40' : '',
-      ].join(' ')}
+      className="items-center justify-center"
+      style={{
+        backgroundColor: customerColors.surface,
+        borderColor: customerColors.border,
+        borderRadius: customerRadius.control,
+        borderWidth: 1,
+        height: 48,
+        opacity: disabled ? 0.4 : 1,
+        width: 48,
+      }}
     >
       <Ionicons name={icon} size={23} color="#8B4513" />
     </Pressable>
