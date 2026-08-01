@@ -59,7 +59,7 @@ type StopOrder = {
 const STOP_STATUS: Record<string, string> = {
   PLANNED: 'Chờ check-in',
   ARRIVED: 'Đã check-in',
-  DEPARTED: 'Đã rời đi',
+  DEPARTED: 'Đã hoàn tất (dữ liệu cũ)',
   FAILED_DELIVERY: 'Giao hàng thất bại',
 };
 
@@ -83,6 +83,7 @@ export default function StopDetailScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [driverStop, setDriverStop] = useState<DriverTripStopDto | null>(null);
   const [tripStops, setTripStops] = useState<DriverTripStopDto[]>([]);
+  const [tripStatus, setTripStatus] = useState('UNKNOWN');
   const [orders, setOrders] = useState<StopOrder[]>([]);
   const [step, setStep] = useState<ScreenStep>('ORDERS');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
@@ -106,7 +107,7 @@ export default function StopDetailScreen() {
   const allOrdersHandedOver = orders.every(isHandoverConfirmed);
   const stopStatus = driverStop?.status?.toUpperCase() || 'UNKNOWN';
   const hasCheckedIn = stopStatus === 'ARRIVED';
-  const hasDeparted = stopStatus === 'DEPARTED';
+  const isLegacyCompletedStop = stopStatus === 'DEPARTED';
   const hasRemainingStops = tripStops.some(
     (stop) => stop.stopSequence > (driverStop?.stopSequence ?? Number.MAX_SAFE_INTEGER)
       && stop.status?.toUpperCase() !== 'DEPARTED'
@@ -116,6 +117,7 @@ export default function StopDetailScreen() {
     allOrdersHandedOver,
     hasRemainingStops,
     hasAppliedSeal: Boolean(appliedSeal),
+    tripStatus,
   });
 
   const loadData = useCallback(async (showSpinner = true) => {
@@ -194,6 +196,7 @@ export default function StopDetailScreen() {
 
       setDriverStop(currentStop);
       setTripStops(tripDetail.stops);
+      setTripStatus(tripDetail.status || 'UNKNOWN');
       setOrders(nextOrders);
       setSelectedOrderId((current) =>
         current && nextOrders.some((order) => order.orderId === current) ? current : null
@@ -295,8 +298,8 @@ export default function StopDetailScreen() {
         epodId: result.epodId,
         orderId: selectedOrder.orderId,
         status: 'HANDOVER_CONFIRMED',
-        codAmount: result.codAmountDue,
-        paymentStatus: result.codAmountDue > 0 ? 'AWAITING_PAYMENT' : null,
+        paymentAmountDue: result.paymentAmountDue,
+        paymentStatus: result.paymentAmountDue > 0 ? 'AWAITING_PAYMENT' : null,
         handoverPdfUrl: result.handoverPdfUrl || null,
       });
 
@@ -449,14 +452,14 @@ export default function StopDetailScreen() {
       <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 100 }}>
         <StopHeader stop={driverStop} orderCount={orders.length} />
 
-        {hasDeparted ? (
+        {isLegacyCompletedStop ? (
           <View className="mt-10 items-center rounded-2xl border border-green-200 bg-green-50 p-6">
             <Ionicons name="checkmark-circle" size={64} color="#15803d" />
             <Text className="mt-3 text-lg font-bold text-green-900">
               Stop đã hoàn tất
             </Text>
             <Text className="mt-2 text-center text-green-800">
-              Điểm dừng này đã được xác nhận rời đi và không thể thao tác lại.
+              Đây là trạng thái hoàn tất từ dữ liệu cũ. Ứng dụng chỉ hiển thị và không tạo thêm thao tác.
             </Text>
           </View>
         ) : !hasCheckedIn ? (
@@ -613,7 +616,7 @@ export default function StopDetailScreen() {
                 {allOrdersHandedOver
                   ? hasRemainingStops
                     ? 'Nếu còn điểm dừng tiếp theo, hãy kẹp seal mới trước khi tiếp tục.'
-                    : 'Bàn giao đã hoàn tất. Chức năng xác nhận rời điểm dừng đang chờ Backend cung cấp endpoint.'
+                    : `Bàn giao tại điểm cuối đã hoàn tất. Trạng thái chuyến hiện tại: ${formatTripStatus(tripStatus)}.`
                   : 'Hoàn tất bàn giao tất cả đơn tại điểm dừng này trước khi thực hiện bước tiếp theo.'}
               </Text>
               {allOrdersHandedOver && hasRemainingStops && !appliedSeal ? (
@@ -634,7 +637,7 @@ export default function StopDetailScreen() {
                   </View>
                 </View>
               ) : null}
-              {appliedSeal ? (
+              {hasRemainingStops && appliedSeal ? (
                 <DeliveryNotice
                   icon="shield-checkmark"
                   title="Đã kẹp seal mới"
@@ -642,12 +645,12 @@ export default function StopDetailScreen() {
                   tone="success"
                 />
               ) : null}
-              {allOrdersHandedOver ? (
+              {allOrdersHandedOver && !hasRemainingStops ? (
                 <DeliveryNotice
-                  icon="information-circle-outline"
-                  title="Chưa thể xác nhận rời điểm dừng"
-                  detail="BLOCKED_BY_BACKEND: Backend chưa có Controller endpoint cho thao tác Depart Stop."
-                  tone="neutral"
+                  icon={tripStatus.toUpperCase() === 'COMPLETED' ? 'checkmark-circle' : 'information-circle-outline'}
+                  title={tripStatus.toUpperCase() === 'COMPLETED' ? 'Chuyến đã hoàn tất' : 'Đã hoàn tất bàn giao tại điểm cuối'}
+                  detail={`Trạng thái chuyến do hệ thống trả về: ${formatTripStatus(tripStatus)}.`}
+                  tone={tripStatus.toUpperCase() === 'COMPLETED' ? 'success' : 'neutral'}
                 />
               ) : null}
             </View>
@@ -795,9 +798,9 @@ function PaymentPanel({
   onOpenUrl: (url?: string | null) => void;
   onDone: () => void;
 }) {
-  const amount = paymentQr?.codAmountDue ?? epod.codAmount ?? 0;
+  const amount = paymentQr?.paymentAmountDue ?? epod.paymentAmountDue ?? 0;
   const paymentStatus = paymentVerification?.currentPaymentStatus || paymentQr?.paymentStatus || epod.paymentStatus;
-  const hasCod = amount > 0;
+  const requiresPayment = amount > 0;
 
   return (
     <View>
@@ -813,7 +816,7 @@ function PaymentPanel({
         ) : null}
       </View>
 
-      {!hasCod ? (
+      {!requiresPayment ? (
         <View className="mt-5">
           <AppButton label="Hoàn tất" onPress={onDone} disabled={processing} />
         </View>
@@ -1083,12 +1086,17 @@ function getDriverDeliveryActionState({
   allOrdersHandedOver,
   hasRemainingStops,
   hasAppliedSeal,
+  tripStatus,
 }: {
   hasCheckedIn: boolean;
   allOrdersHandedOver: boolean;
   hasRemainingStops: boolean;
   hasAppliedSeal: boolean;
+  tripStatus: string;
 }) {
+  if (tripStatus.toUpperCase() === 'COMPLETED') {
+    return { title: 'Chuyến đã hoàn tất', detail: 'Trạng thái hoàn tất đã được hệ thống xác nhận.' };
+  }
   if (!hasCheckedIn) {
     return { title: 'Bước tiếp theo: xác nhận đến điểm giao', detail: 'Thêm ảnh xác nhận và gửi check-in.' };
   }
@@ -1098,8 +1106,21 @@ function getDriverDeliveryActionState({
   if (hasRemainingStops && !hasAppliedSeal) {
     return { title: 'Bước tiếp theo: kẹp seal mới', detail: 'Nhập mã seal mới trước khi tiếp tục đến điểm dừng kế tiếp.' };
   }
+  if (hasRemainingStops) {
+    return { title: 'Sẵn sàng tới điểm tiếp theo', detail: 'Seal mới đã được ghi nhận. Tiếp tục theo lộ trình của chuyến.' };
+  }
   return {
-    title: 'Đã hoàn tất các bước Mobile hỗ trợ',
-    detail: 'Xác nhận rời điểm dừng đang chờ Backend cung cấp endpoint chính thức.',
+    title: 'Đã hoàn tất bàn giao tại điểm cuối',
+    detail: `Trạng thái chuyến hiện tại: ${formatTripStatus(tripStatus)}.`,
   };
+}
+
+function formatTripStatus(status?: string | null) {
+  switch (status?.toUpperCase()) {
+    case 'COMPLETED': return 'Hoàn tất';
+    case 'IN_TRANSIT': return 'Đang vận chuyển';
+    case 'SEALED': return 'Đã kẹp seal';
+    case 'DISPATCHED': return 'Đã điều phối';
+    default: return status?.trim() || 'Chưa xác định';
+  }
 }

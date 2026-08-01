@@ -26,7 +26,7 @@ const STATUS: Record<string, string> = {
 const STOP_STATUS: Record<string, string> = {
   PLANNED: 'Chờ check-in',
   ARRIVED: 'Đã check-in',
-  DEPARTED: 'Đã rời đi',
+  DEPARTED: 'Đã hoàn tất (dữ liệu cũ)',
   FAILED_DELIVERY: 'Giao hàng thất bại',
 };
 

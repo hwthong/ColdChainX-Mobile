@@ -43,7 +43,7 @@ export type HandoverConfirmResponse = {
   epodId: string;
   handoverConfirmedAt: string;
   orderStatus: string;
-  codAmountDue: number;
+  paymentAmountDue: number;
   handoverPdfUrl?: string | null;
   nextStep?: string | null;
 };
@@ -52,8 +52,8 @@ export type EpodResponse = {
   epodId: string;
   orderId?: string | null;
   status?: string | null;
-  codAmount?: number | null;
-  codAmountPaid?: number | null;
+  paymentAmountDue?: number | null;
+  paymentAmountPaid?: number | null;
   paymentMethod?: string | null;
   paymentStatus?: string | null;
   paymentEvidenceImageUrl?: string | null;
@@ -66,7 +66,7 @@ export type PaymentQrResponse = {
   epodId: string;
   orderId?: string | null;
   trackingCode?: string | null;
-  codAmountDue: number;
+  paymentAmountDue: number;
   paymentStatus?: string | null;
   payosOrderCode?: number | null;
   checkoutUrl?: string | null;
@@ -86,6 +86,19 @@ export type HandoverRequest = {
   customerId: string;
   signatureFile: DeliveryUploadFile;
   handoverPhotoFile?: DeliveryUploadFile | null;
+};
+
+type HandoverConfirmApiResponse = Omit<HandoverConfirmResponse, 'paymentAmountDue'> & {
+  codAmountDue: number;
+};
+
+type EpodApiResponse = Omit<EpodResponse, 'paymentAmountDue' | 'paymentAmountPaid'> & {
+  codAmount?: number | null;
+  codAmountPaid?: number | null;
+};
+
+type PaymentQrApiResponse = Omit<PaymentQrResponse, 'paymentAmountDue'> & {
+  codAmountDue: number;
 };
 
 function getAuthHeaders() {
@@ -147,27 +160,34 @@ export const deliveryApi = {
       appendFile(formData, 'HandoverPhotoFile', request.handoverPhotoFile);
     }
 
-    const response = await apiRequest<ApiResponse<HandoverConfirmResponse>>(
+    const response = await apiRequest<ApiResponse<HandoverConfirmApiResponse>>(
       `/api/Delivery/stops/${stopId}/confirm-handover`,
       { method: 'POST', headers: getAuthHeaders(), body: formData }
     );
-    return unwrap(response, 'Không thể xác nhận bàn giao.');
+    const { codAmountDue, ...handover } = unwrap(response, 'Không thể xác nhận bàn giao.');
+    return { ...handover, paymentAmountDue: codAmountDue };
   },
 
   getEpodByOrderId: async (orderId: string) => {
-    const response = await apiRequest<ApiResponse<EpodResponse>>(
+    const response = await apiRequest<ApiResponse<EpodApiResponse>>(
       `/api/Delivery/orders/${orderId}/epod`,
       { method: 'GET', headers: getAuthHeaders() }
     );
-    return unwrap(response, 'Không thể tải ePOD.');
+    const { codAmount, codAmountPaid, ...epod } = unwrap(response, 'Không thể tải ePOD.');
+    return {
+      ...epod,
+      paymentAmountDue: codAmount,
+      paymentAmountPaid: codAmountPaid,
+    };
   },
 
   getPaymentQr: async (epodId: string) => {
-    const response = await apiRequest<ApiResponse<PaymentQrResponse>>(
+    const response = await apiRequest<ApiResponse<PaymentQrApiResponse>>(
       `/api/Delivery/epods/${epodId}/payment-qr`,
       { method: 'GET', headers: getAuthHeaders() }
     );
-    return unwrap(response, 'Không thể tạo mã thanh toán.');
+    const { codAmountDue, ...paymentQr } = unwrap(response, 'Không thể tạo mã thanh toán.');
+    return { ...paymentQr, paymentAmountDue: codAmountDue };
   },
 
   verifyQrPayment: async (epodId: string, paymentEvidenceFile?: DeliveryUploadFile | null) => {

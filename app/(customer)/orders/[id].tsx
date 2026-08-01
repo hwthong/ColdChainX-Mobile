@@ -572,7 +572,7 @@ export default function OrderDetailScreen() {
       ) : null}
 
       {trackingDetail?.delivery ? (
-        <InfoCard title="Giao hàng tận nơi & COD" icon="home-outline">
+        <InfoCard title="Giao hàng & ePOD" icon="home-outline">
           <InfoRow label="Người nhận" value={trackingDetail.delivery.receiverName} strong />
           <InfoRow label="SĐT nhận" value={trackingDetail.delivery.receiverPhone} />
           <InfoRow label="Ghi chú ePOD" value={trackingDetail.delivery.note || '--'} />
