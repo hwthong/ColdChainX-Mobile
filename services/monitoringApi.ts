@@ -44,6 +44,14 @@ export interface TemperatureChart {
   points: TemperaturePoint[];
 }
 
+export interface StopTemperatureChart extends TemperatureChart {
+  tripId: string;
+  stopId: string;
+  endTime: string;
+  rawPointCount: number;
+  sampledPointCount: number;
+}
+
 export async function getTripTracking(token: string, tripId: string) {
   const response = await getTrackingByTripId(token, tripId);
   return {
@@ -107,6 +115,17 @@ export function getTripTemperatureChart(token: string, tripId: string) {
   });
 }
 
+export function getStopTemperatureChart(token: string, stopId: string) {
+  const validStopId = requireStopId(stopId);
+  return apiRequest<ApiResponse<StopTemperatureChart>>(
+    `/api/stops/${validStopId}/chart/temperature`,
+    {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
+}
+
 function toTripTracking(tracking: TrackingDataResponse): TripTracking {
   const latest = tracking.latestTelemetry;
   return {
@@ -138,5 +157,11 @@ function inferOnlineState(status?: string) {
 function requireTripId(tripId: string) {
   const sanitized = sanitizeTripId(tripId);
   if (!sanitized) throw new Error('TripId không hợp lệ. Vui lòng dùng UUID của chuyến.');
+  return encodeURIComponent(sanitized);
+}
+
+function requireStopId(stopId: string) {
+  const sanitized = sanitizeTripId(stopId);
+  if (!sanitized) throw new Error('StopId không hợp lệ. Vui lòng dùng UUID do hệ thống cung cấp.');
   return encodeURIComponent(sanitized);
 }

@@ -11,6 +11,7 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
+import { localizeCustomerOrderStatusesInText } from '../../constants/customerOrderPresentation';
 import { getApiErrorMessage } from '../../services/apiClient';
 import {
   getNotificationById,
@@ -283,7 +284,8 @@ function getNotificationTitle(notification: NotificationResponse) {
 }
 
 function getNotificationMessage(notification: NotificationResponse) {
-  return notification.message?.trim() || notification.content?.trim() || 'Bạn có cập nhật mới từ ColdChainX.';
+  const message = notification.message?.trim() || notification.content?.trim();
+  return message ? localizeCustomerOrderStatusesInText(message) : 'Bạn có cập nhật mới từ ColdChainX.';
 }
 
 function getNotificationType(notification: NotificationResponse) {

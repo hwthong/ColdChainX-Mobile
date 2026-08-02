@@ -32,7 +32,14 @@ const STATUS_PRESENTATIONS: Record<string, StatusPresentation> = {
   RECEIVING: { label: 'Đang nhập kho', containerClass: 'bg-green-100 border-green-200', textClass: 'text-green-800' },
   DELIVERED: { label: 'Đã giao', containerClass: 'bg-green-100 border-green-200', textClass: 'text-green-800' },
   PARTIALLY_DELIVERED: { label: 'Đã giao một phần', containerClass: 'bg-green-100 border-green-200', textClass: 'text-green-800' },
-  DISCREPANCY_HOLD: { label: 'Chờ xử lý sai lệch', containerClass: 'bg-amber-100 border-amber-200', textClass: 'text-amber-800' },
+  PARTIAL_DELIVER_OSD: { label: 'Đã giao một phần, đang kiểm tra sai lệch', containerClass: 'bg-orange-100 border-orange-200', textClass: 'text-orange-800' },
+  DELIVERY_RETURNED: { label: 'Đang hoàn hàng về kho', containerClass: 'bg-red-100 border-red-200', textClass: 'text-red-800' },
+  READY_FOR_ROUTING: { label: 'Đang chờ sắp xếp chuyến mới', containerClass: 'bg-blue-100 border-blue-200', textClass: 'text-blue-800' },
+  DISCREPANCY_HOLD: { label: 'Đang chờ kiểm tra hàng hóa', containerClass: 'bg-amber-100 border-amber-200', textClass: 'text-amber-800' },
+  OSD_CLAIM_REJECTED_BY_DISPATCHER: { label: 'Yêu cầu bồi thường không được chấp thuận', containerClass: 'bg-red-100 border-red-200', textClass: 'text-red-800' },
+  OSD_REJECT_PENDING: { label: 'Đang xử lý hàng bị từ chối', containerClass: 'bg-red-100 border-red-200', textClass: 'text-red-800' },
+  OSD_DOCK_PENDING: { label: 'Đang kiểm tra hàng tại điểm giao', containerClass: 'bg-orange-100 border-orange-200', textClass: 'text-orange-800' },
+  DELIVERY_FAILED_NOSHOW: { label: 'Giao hàng chưa thành công do không có người nhận', containerClass: 'bg-red-100 border-red-200', textClass: 'text-red-800' },
   RETURN_PENDING: { label: 'Chờ hoàn trả', containerClass: 'bg-red-100 border-red-200', textClass: 'text-red-800' },
   RETURNED: { label: 'Đã hoàn trả', containerClass: 'bg-red-100 border-red-200', textClass: 'text-red-800' },
   REJECTED: { label: 'Từ chối', containerClass: 'bg-red-100 border-red-200', textClass: 'text-red-800' },
@@ -48,6 +55,24 @@ const CATEGORY_LABELS: Record<string, string> = {
 export function getCustomerOrderStatusPresentation(status?: string | null): StatusPresentation {
   const normalizedStatus = status?.trim().toUpperCase();
   return normalizedStatus ? STATUS_PRESENTATIONS[normalizedStatus] ?? DEFAULT_STATUS_PRESENTATION : DEFAULT_STATUS_PRESENTATION;
+}
+
+const CUSTOMER_NOTIFICATION_STATUS_CODES = [
+  'OSD_CLAIM_REJECTED_BY_DISPATCHER',
+  'DELIVERY_FAILED_NOSHOW',
+  'DELIVERY_RETURNED',
+  'READY_FOR_ROUTING',
+  'DISCREPANCY_HOLD',
+  'OSD_REJECT_PENDING',
+  'OSD_DOCK_PENDING',
+  'REJECTED',
+];
+
+export function localizeCustomerOrderStatusesInText(value: string): string {
+  return CUSTOMER_NOTIFICATION_STATUS_CODES.reduce((localized, code) => {
+    const label = STATUS_PRESENTATIONS[code]?.label;
+    return label ? localized.replace(new RegExp(`\\b${code}\\b`, 'g'), label) : localized;
+  }, value);
 }
 
 export function getCustomerOrderCategoryLabel(category?: string | null): string | null {

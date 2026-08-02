@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
-import { useLocalSearchParams } from 'expo-router';
-import React, { useCallback, useMemo, useState } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -10,6 +10,7 @@ import {
   Linking,
   Pressable,
   ScrollView,
+  Switch,
   Text,
   View,
 } from 'react-native';
@@ -17,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppButton } from '../../../../components/AppButton';
 import { AppInput } from '../../../../components/AppInput';
+import { TemperatureChart } from '../../../../components/customer/TemperatureChart';
 import { ApiClientError } from '../../../../services/apiClient';
 import {
   ApplySealResponse,
@@ -24,6 +26,7 @@ import {
   DeliveryUploadFile,
   EpodResponse,
   PaymentQrResponse,
+  ReturnWarehouse,
   VerifyQrPaymentResponse,
   deliveryApi,
 } from '../../../../services/deliveryApi';
@@ -31,6 +34,10 @@ import {
   driverApi,
   DriverTripStopDto,
 } from '../../../../services/driverApi';
+import {
+  getStopTemperatureChart,
+  StopTemperatureChart,
+} from '../../../../services/monitoringApi';
 import {
   getOrderById,
   OrderResponse,
@@ -44,7 +51,7 @@ import {
 } from '../../../../services/trackingApi';
 import { useAuthStore } from '../../../../store/useAuthStore';
 
-type ScreenStep = 'ORDERS' | 'SIGNATURE' | 'PAYMENT';
+type ScreenStep = 'ORDERS' | 'ORDER_ACTIONS' | 'SIGNATURE' | 'PAYMENT' | 'REJECT' | 'NO_SHOW';
 
 type StopOrder = {
   orderId: string;
@@ -68,6 +75,14 @@ const HANDOVER_STATUSES = new Set([
   'RETURNED',
   'REJECTED',
   'PARTIALLY_DELIVERED',
+  'OSD_REJECT_PENDING',
+  'OSD_DOCK_PENDING',
+  'PARTIAL_DELIVER_OSD',
+  'DELIVERY_FAILED_NOSHOW',
+]);
+
+const RETURN_ORDER_STATUSES = new Set([
+  'DELIVERY_FAILED_NOSHOW',
 ]);
 
 export default function StopDetailScreen() {
@@ -77,7 +92,9 @@ export default function StopDetailScreen() {
   }>();
   const stopId = firstParam(params.stopId);
   const tripId = firstParam(params.tripId);
+  const router = useRouter();
   const token = useAuthStore((state) => state.token);
+  const mutationLock = useRef(false);
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -99,6 +116,18 @@ export default function StopDetailScreen() {
   const [cutSeal, setCutSeal] = useState<CutSealResponse | null>(null);
   const [appliedSeal, setAppliedSeal] = useState<ApplySealResponse | null>(null);
   const [newSealCode, setNewSealCode] = useState('');
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [rejectEvidenceAsset, setRejectEvidenceAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [noShowEvidenceAsset, setNoShowEvidenceAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [isReturnToWarehouse, setIsReturnToWarehouse] = useState(true);
+  const [returnFlowActive, setReturnFlowActive] = useState(false);
+  const [warehouses, setWarehouses] = useState<ReturnWarehouse[] | null>(null);
+  const [warehouseError, setWarehouseError] = useState<string | null>(null);
+  const [isLoadingWarehouses, setIsLoadingWarehouses] = useState(false);
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState<string | null>(null);
+  const [temperatureChart, setTemperatureChart] = useState<StopTemperatureChart | null>(null);
+  const [temperatureError, setTemperatureError] = useState<string | null>(null);
+  const [isLoadingTemperature, setIsLoadingTemperature] = useState(false);
 
   const selectedOrder = useMemo(
     () => orders.find((order) => order.orderId === selectedOrderId) ?? null,
@@ -106,7 +135,7 @@ export default function StopDetailScreen() {
   );
   const allOrdersHandedOver = orders.every(isHandoverConfirmed);
   const stopStatus = driverStop?.status?.toUpperCase() || 'UNKNOWN';
-  const hasCheckedIn = stopStatus === 'ARRIVED';
+  const hasCheckedIn = stopStatus === 'ARRIVED' || stopStatus === 'SKIPPED_NOSHOW';
   const isLegacyCompletedStop = stopStatus === 'DEPARTED';
   const hasRemainingStops = tripStops.some(
     (stop) => stop.stopSequence > (driverStop?.stopSequence ?? Number.MAX_SAFE_INTEGER)
@@ -114,11 +143,21 @@ export default function StopDetailScreen() {
   );
   const deliveryActionState = getDriverDeliveryActionState({
     hasCheckedIn,
+    hasCutSeal: Boolean(cutSeal),
     allOrdersHandedOver,
     hasRemainingStops,
     hasAppliedSeal: Boolean(appliedSeal),
     tripStatus,
   });
+  const hasNoShowOrder = orders.some((order) => order.status.toUpperCase() === 'DELIVERY_FAILED_NOSHOW');
+  const isReturnFlow = returnFlowActive
+    || stopStatus === 'SKIPPED_NOSHOW'
+    || orders.some((order) => RETURN_ORDER_STATUSES.has(order.status.toUpperCase()));
+  const canCloseShift = isReturnFlow
+    && allOrdersHandedOver
+    && !hasRemainingStops
+    && !hasNoShowOrder
+    && tripStatus.toUpperCase() !== 'COMPLETED';
 
   const loadData = useCallback(async (showSpinner = true) => {
     if (!token || !tripId || !stopId) {
@@ -240,6 +279,11 @@ export default function StopDetailScreen() {
     }
   };
 
+  const startOrderActions = (order: StopOrder) => {
+    setSelectedOrderId(order.orderId);
+    setStep('ORDER_ACTIONS');
+  };
+
   const startHandover = (order: StopOrder) => {
     setSelectedOrderId(order.orderId);
     setSignatureAsset(null);
@@ -332,6 +376,9 @@ export default function StopDetailScreen() {
     setHandoverPhotoAsset(null);
     setPaymentQr(null);
     setPaymentVerification(null);
+    setRejectEvidenceAsset(null);
+    setNoShowEvidenceAsset(null);
+    setRejectionReason('');
     setStep('ORDERS');
   };
 
@@ -410,6 +457,179 @@ export default function StopDetailScreen() {
     }
   };
 
+  const startRejectEntireLpn = () => {
+    setRejectionReason('');
+    setRejectEvidenceAsset(null);
+    setIsReturnToWarehouse(true);
+    setStep('REJECT');
+  };
+
+  const submitRejectEntireLpn = async () => {
+    if (mutationLock.current || isProcessing || !stopId || !tripId || !selectedOrder) return;
+    if (!selectedOrder.customerId) {
+      Alert.alert('Thiếu dữ liệu đơn hàng', 'Không xác định được khách hàng của đơn. Vui lòng tải lại điểm dừng.');
+      return;
+    }
+    if (!rejectionReason.trim()) {
+      Alert.alert('Thiếu lý do', 'Vui lòng nhập lý do từ chối nhận kiện hàng.');
+      return;
+    }
+    if (!rejectEvidenceAsset) {
+      Alert.alert('Thiếu ảnh minh chứng', 'Vui lòng thêm ảnh minh chứng.');
+      return;
+    }
+
+    try {
+      mutationLock.current = true;
+      setIsProcessing(true);
+      const result = await deliveryApi.rejectEntireLpn(stopId, {
+        tripId,
+        customerId: selectedOrder.customerId,
+        rejectionReason: rejectionReason.trim(),
+        isReturnToWarehouse,
+        evidenceImageFile: toDeliveryUploadFile(rejectEvidenceAsset, 'lpn-rejection-evidence.jpg'),
+      });
+      setReturnFlowActive(result.isReturnToWarehouse);
+      await loadData(false);
+      resetOrderForm();
+      Alert.alert('Đã ghi nhận từ chối kiện hàng', `Trạng thái đơn do hệ thống trả về: ${formatOrderStatus(result.orderStatus)}.`);
+    } catch (error) {
+      Alert.alert('Không thể ghi nhận từ chối', formatActionError(error, 'REJECT'));
+      await loadData(false);
+    } finally {
+      mutationLock.current = false;
+      setIsProcessing(false);
+    }
+  };
+
+  const confirmRejectEntireLpn = () => {
+    if (!selectedOrder || !rejectionReason.trim() || !rejectEvidenceAsset || isProcessing) {
+      void submitRejectEntireLpn();
+      return;
+    }
+    const lpnLabel = selectedOrder.lpns.map((lpn) => lpn.lpnCode).filter(Boolean).join(', ')
+      || selectedOrder.trackingCode;
+    Alert.alert(
+      'Xác nhận từ chối toàn bộ',
+      `Xác nhận khách từ chối toàn bộ kiện ${lpnLabel}?`,
+      [
+        { text: 'Hủy', style: 'cancel' },
+        { text: 'Xác nhận', style: 'destructive', onPress: () => void submitRejectEntireLpn() },
+      ]
+    );
+  };
+
+  const startNoShow = () => {
+    setSelectedOrderId(null);
+    setNoShowEvidenceAsset(null);
+    setStep('NO_SHOW');
+  };
+
+  const submitNoShow = async () => {
+    if (mutationLock.current || isProcessing || !stopId) return;
+    if (!noShowEvidenceAsset) {
+      Alert.alert('Thiếu ảnh minh chứng', 'Vui lòng thêm ảnh minh chứng.');
+      return;
+    }
+
+    try {
+      mutationLock.current = true;
+      setIsProcessing(true);
+      await deliveryApi.reportNoShow(
+        stopId,
+        toDeliveryUploadFile(noShowEvidenceAsset, 'customer-no-show-evidence.jpg')
+      );
+      setReturnFlowActive(true);
+      await loadData(false);
+      resetOrderForm();
+      Alert.alert('Đã báo khách không có mặt', 'Trạng thái điểm dừng và kiện hàng đã được tải lại từ hệ thống.');
+    } catch (error) {
+      Alert.alert('Không thể báo khách không có mặt', formatActionError(error, 'NO_SHOW'));
+      await loadData(false);
+    } finally {
+      mutationLock.current = false;
+      setIsProcessing(false);
+    }
+  };
+
+  const confirmNoShow = () => {
+    if (!noShowEvidenceAsset || isProcessing) {
+      void submitNoShow();
+      return;
+    }
+    Alert.alert(
+      'Xác nhận khách không có mặt',
+      'Bạn xác nhận khách hàng không xuất hiện hoặc từ chối nhận hàng tại điểm giao này?',
+      [
+        { text: 'Hủy', style: 'cancel' },
+        { text: 'Xác nhận', style: 'destructive', onPress: () => void submitNoShow() },
+      ]
+    );
+  };
+
+  const loadReturnWarehouses = async () => {
+    if (!tripId || !isReturnFlow || isLoadingWarehouses) return;
+    try {
+      setIsLoadingWarehouses(true);
+      setWarehouseError(null);
+      const result = await deliveryApi.getNearestReturnWarehouses(tripId);
+      setWarehouses(result.warehouses ?? []);
+    } catch (error) {
+      setWarehouseError(formatActionError(error, 'WAREHOUSE'));
+    } finally {
+      setIsLoadingWarehouses(false);
+    }
+  };
+
+  const loadTemperatureChart = async () => {
+    if (!token || !stopId || isLoadingTemperature) return;
+    try {
+      setIsLoadingTemperature(true);
+      setTemperatureError(null);
+      const response = await getStopTemperatureChart(token, stopId);
+      if (!response.success || !response.data) {
+        throw new Error(response.message || 'Không thể tải dữ liệu nhiệt độ.');
+      }
+      setTemperatureChart(response.data);
+    } catch (error) {
+      setTemperatureError(formatActionError(error, 'TEMPERATURE'));
+    } finally {
+      setIsLoadingTemperature(false);
+    }
+  };
+
+  const submitCloseShift = async () => {
+    if (mutationLock.current || isProcessing || !tripId || !selectedWarehouseId || !canCloseShift) return;
+    try {
+      mutationLock.current = true;
+      setIsProcessing(true);
+      const result = await deliveryApi.closeShift(tripId, selectedWarehouseId);
+      await loadData(false);
+      Alert.alert('Đóng ca thành công', result.message || 'Tài xế và xe đã sẵn sàng cho chuyến mới.', [
+        { text: 'Về danh sách chuyến', onPress: () => router.replace('/(driver)/trips' as never) },
+      ]);
+    } catch (error) {
+      Alert.alert('Không thể đóng ca', formatActionError(error, 'CLOSE_SHIFT'));
+      await loadData(false);
+    } finally {
+      mutationLock.current = false;
+      setIsProcessing(false);
+    }
+  };
+
+  const confirmCloseShift = () => {
+    if (!selectedWarehouseId || !canCloseShift || isProcessing) return;
+    const warehouse = warehouses?.find((item) => item.warehouseId === selectedWarehouseId);
+    Alert.alert(
+      'Xác nhận đóng ca',
+      `Đóng ca và cập nhật vị trí xe về ${warehouse?.warehouseName || 'kho đã chọn'}?`,
+      [
+        { text: 'Hủy', style: 'cancel' },
+        { text: 'Đóng ca', onPress: () => void submitCloseShift() },
+      ]
+    );
+  };
+
   const openExternalUrl = async (url?: string | null) => {
     if (!url) return;
     try {
@@ -452,6 +672,42 @@ export default function StopDetailScreen() {
       <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 100 }}>
         <StopHeader stop={driverStop} orderCount={orders.length} />
 
+        <View className="mb-6 rounded-2xl border border-amber-200 bg-white p-4">
+          <View className="flex-row items-center gap-3">
+            <Ionicons name="thermometer-outline" size={24} color="#92400E" />
+            <View className="flex-1">
+              <Text className="font-bold text-amber-950">Nhiệt độ hành trình đến điểm giao</Text>
+              <Text className="mt-1 text-sm text-amber-700">Dữ liệu được giới hạn đến thời điểm xe đến điểm dừng.</Text>
+            </View>
+          </View>
+          {!temperatureChart && !temperatureError ? (
+            <View className="mt-4">
+              <AppButton
+                label="Xem dữ liệu nhiệt độ"
+                variant="secondary"
+                loading={isLoadingTemperature}
+                onPress={() => void loadTemperatureChart()}
+              />
+            </View>
+          ) : null}
+          {temperatureError ? (
+            <View className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3">
+              <Text className="text-sm text-red-800">{temperatureError}</Text>
+              <View className="mt-3">
+                <AppButton label="Thử lại" variant="secondary" loading={isLoadingTemperature} onPress={() => void loadTemperatureChart()} />
+              </View>
+            </View>
+          ) : null}
+          {temperatureChart ? (
+            <View className="mt-4 gap-3">
+              <Text className="text-sm text-amber-700">
+                Đến {formatDateTime(temperatureChart.endTime)} · {temperatureChart.sampledPointCount}/{temperatureChart.rawPointCount} điểm
+              </Text>
+              <TemperatureChart points={temperatureChart.points} />
+            </View>
+          ) : null}
+        </View>
+
         {isLegacyCompletedStop ? (
           <View className="mt-10 items-center rounded-2xl border border-green-200 bg-green-50 p-6">
             <Ionicons name="checkmark-circle" size={64} color="#15803d" />
@@ -482,6 +738,88 @@ export default function StopDetailScreen() {
                 loading={isProcessing}
                 disabled={!checkinProofAsset}
               />
+            </View>
+          </View>
+        ) : step === 'ORDER_ACTIONS' && selectedOrder ? (
+          <View>
+            <Text className="text-lg font-bold text-amber-950">Chọn cách xử lý đơn hàng</Text>
+            <Text className="mb-4 mt-1 text-sm text-amber-700">Đơn {selectedOrder.trackingCode}</Text>
+            <View className="rounded-2xl border border-amber-200 bg-white p-4">
+              <Text className="text-sm text-amber-700">Kiện hàng</Text>
+              <Text className="mt-1 font-bold text-amber-950">
+                {selectedOrder.lpns.map((lpn) => lpn.lpnCode).filter(Boolean).join(', ') || 'Chưa có mã LPN'}
+              </Text>
+              <View className="mt-5 gap-3">
+                <AppButton label="Bàn giao cho người nhận" onPress={() => startHandover(selectedOrder)} disabled={isProcessing} />
+                <AppButton label="Khách từ chối toàn bộ kiện hàng" variant="secondary" onPress={startRejectEntireLpn} disabled={isProcessing} />
+              </View>
+            </View>
+            <View className="mt-4">
+              <AppButton label="Quay lại" variant="secondary" onPress={resetOrderForm} disabled={isProcessing} />
+            </View>
+          </View>
+        ) : step === 'REJECT' && selectedOrder ? (
+          <View>
+            <Text className="text-lg font-bold text-amber-950">Từ chối toàn bộ kiện hàng</Text>
+            <Text className="mb-4 mt-1 text-sm text-amber-700">
+              Đơn {selectedOrder.trackingCode} · {selectedOrder.lpns.map((lpn) => lpn.lpnCode).filter(Boolean).join(', ') || 'LPN của đơn'}
+            </Text>
+            <View className="rounded-2xl border border-red-200 bg-white p-4">
+              <AppInput
+                label="Lý do từ chối"
+                value={rejectionReason}
+                onChangeText={setRejectionReason}
+                placeholder="Nhập lý do khách từ chối nhận hàng"
+              />
+              <View className="mt-4">
+                <ProofPicker
+                  asset={rejectEvidenceAsset}
+                  emptyLabel="Chưa có ảnh minh chứng"
+                  chooseLabel={rejectEvidenceAsset ? 'Đổi ảnh minh chứng' : 'Thêm ảnh minh chứng'}
+                  disabled={isProcessing}
+                  onPick={() => void pickImage(setRejectEvidenceAsset, 'ảnh minh chứng từ chối kiện hàng')}
+                  onRemove={() => setRejectEvidenceAsset(null)}
+                />
+              </View>
+              <View className="mt-4 flex-row items-center justify-between rounded-xl bg-amber-50 p-3">
+                <View className="mr-4 flex-1">
+                  <Text className="font-bold text-amber-950">Đưa hàng về kho</Text>
+                  <Text className="mt-1 text-xs text-amber-700">Hệ thống sẽ lập phiếu hàng hoàn khi bật tùy chọn này.</Text>
+                </View>
+                <Switch value={isReturnToWarehouse} onValueChange={setIsReturnToWarehouse} disabled={isProcessing} />
+              </View>
+              <View className="mt-5">
+                <AppButton
+                  label="Xác nhận từ chối"
+                  loading={isProcessing}
+                  disabled={!rejectionReason.trim() || !rejectEvidenceAsset}
+                  onPress={confirmRejectEntireLpn}
+                />
+              </View>
+            </View>
+            <View className="mt-4">
+              <AppButton label="Quay lại" variant="secondary" onPress={() => setStep('ORDER_ACTIONS')} disabled={isProcessing} />
+            </View>
+          </View>
+        ) : step === 'NO_SHOW' ? (
+          <View>
+            <Text className="text-lg font-bold text-amber-950">Khách hàng không có mặt</Text>
+            <Text className="mb-4 mt-1 text-sm text-amber-700">Ảnh minh chứng là bắt buộc theo Backend.</Text>
+            <View className="rounded-2xl border border-red-200 bg-white p-4">
+              <ProofPicker
+                asset={noShowEvidenceAsset}
+                emptyLabel="Chưa có ảnh xác nhận khách không có mặt"
+                chooseLabel={noShowEvidenceAsset ? 'Đổi ảnh minh chứng' : 'Thêm ảnh minh chứng'}
+                disabled={isProcessing}
+                onPick={() => void pickImage(setNoShowEvidenceAsset, 'ảnh minh chứng khách không có mặt')}
+                onRemove={() => setNoShowEvidenceAsset(null)}
+              />
+              <View className="mt-4">
+                <AppButton label="Xác nhận khách không có mặt" loading={isProcessing} disabled={!noShowEvidenceAsset} onPress={confirmNoShow} />
+              </View>
+            </View>
+            <View className="mt-4">
+              <AppButton label="Quay lại" variant="secondary" onPress={resetOrderForm} disabled={isProcessing} />
             </View>
           </View>
         ) : step === 'SIGNATURE' && selectedOrder ? (
@@ -568,9 +906,20 @@ export default function StopDetailScreen() {
                 order={order}
                 selected={selectedOrderId === order.orderId}
                 disabled={isProcessing}
-                onSelect={() => startHandover(order)}
+                onSelect={() => startOrderActions(order)}
               />
             ))}
+
+            {cutSeal && !allOrdersHandedOver && stopStatus !== 'SKIPPED_NOSHOW' ? (
+              <View className="mt-4">
+                <AppButton
+                  label="Báo khách hàng không có mặt"
+                  variant="secondary"
+                  disabled={isProcessing}
+                  onPress={startNoShow}
+                />
+              </View>
+            ) : null}
 
             {!cutSeal ? (
               <View className="mt-6 rounded-2xl border border-amber-200 bg-white p-4">
@@ -599,6 +948,78 @@ export default function StopDetailScreen() {
                 tone="success"
               />
             )}
+
+            {isReturnFlow ? (
+              <View className="mt-6 rounded-2xl border border-orange-200 bg-orange-50 p-4">
+                <View className="flex-row items-start gap-3">
+                  <Ionicons name="business-outline" size={24} color="#9A3412" />
+                  <View className="flex-1">
+                    <Text className="font-bold text-orange-950">Kho quy đầu gần vị trí xe</Text>
+                    <Text className="mt-1 text-sm text-orange-800">Khoảng cách do Backend tính từ dữ liệu vị trí xe.</Text>
+                  </View>
+                </View>
+
+                {warehouses === null && !warehouseError ? (
+                  <View className="mt-4">
+                    <AppButton label="Tìm kho phù hợp" variant="secondary" loading={isLoadingWarehouses} onPress={() => void loadReturnWarehouses()} />
+                  </View>
+                ) : null}
+
+                {warehouseError ? (
+                  <View className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3">
+                    <Text className="text-sm text-red-800">{warehouseError}</Text>
+                    <View className="mt-3">
+                      <AppButton label="Thử lại" variant="secondary" loading={isLoadingWarehouses} onPress={() => void loadReturnWarehouses()} />
+                    </View>
+                  </View>
+                ) : null}
+
+                {warehouses?.length === 0 ? (
+                  <Text className="mt-4 text-sm text-orange-800">Chưa tìm thấy kho phù hợp gần vị trí hiện tại.</Text>
+                ) : null}
+
+                {warehouses?.map((warehouse) => {
+                  const selected = selectedWarehouseId === warehouse.warehouseId;
+                  return (
+                    <Pressable
+                      key={warehouse.warehouseId}
+                      disabled={!canCloseShift || isProcessing}
+                      onPress={() => setSelectedWarehouseId(warehouse.warehouseId)}
+                      className={`mt-3 rounded-xl border p-3 ${selected ? 'border-orange-700 bg-white' : 'border-orange-200 bg-white/80'}`}
+                      style={({ pressed }) => ({ opacity: !canCloseShift ? 0.8 : pressed ? 0.7 : 1 })}
+                    >
+                      <View className="flex-row items-start justify-between gap-3">
+                        <View className="flex-1">
+                          <Text className="font-bold text-orange-950">{warehouse.warehouseName}</Text>
+                          <Text className="mt-1 text-sm text-orange-800">{warehouse.address}</Text>
+                        </View>
+                        {selected ? <Ionicons name="checkmark-circle" size={22} color="#9A3412" /> : null}
+                      </View>
+                      <Text className="mt-2 text-xs text-orange-700">
+                        {warehouse.distanceKm} · khoảng {warehouse.estimatedTravelTimeMinutes} phút · {formatWarehouseStatus(warehouse.status)}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+
+                {hasRemainingStops ? (
+                  <Text className="mt-4 text-sm text-orange-800">Tiếp tục xử lý các điểm dừng còn lại theo trạng thái hệ thống.</Text>
+                ) : null}
+                {hasNoShowOrder ? (
+                  <Text className="mt-4 text-sm text-orange-800">Ca chưa thể đóng vì Backend yêu cầu mọi đơn có xác nhận bàn giao/ePOD.</Text>
+                ) : null}
+                {canCloseShift && warehouses && warehouses.length > 0 ? (
+                  <View className="mt-4">
+                    <AppButton
+                      label="Đóng ca tại kho đã chọn"
+                      loading={isProcessing}
+                      disabled={!selectedWarehouseId}
+                      onPress={confirmCloseShift}
+                    />
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
 
             <View className="mt-8 border-t border-amber-200 pt-6">
               <Ionicons
@@ -682,7 +1103,7 @@ function StopHeader({
         </View>
         <View className="rounded-lg bg-amber-100 px-3 py-2">
           <Text className="text-xs font-bold text-amber-900">
-            {STOP_STATUS[status] || 'Chưa xác định'}
+            {getStopStatusLabel(status)}
           </Text>
         </View>
       </View>
@@ -746,6 +1167,7 @@ function ProofPicker({
   disabled,
   compact = false,
   onPick,
+  onRemove,
 }: {
   asset: ImagePicker.ImagePickerAsset | null;
   emptyLabel: string;
@@ -753,6 +1175,7 @@ function ProofPicker({
   disabled: boolean;
   compact?: boolean;
   onPick: () => void;
+  onRemove?: () => void;
 }) {
   return (
     <View>
@@ -769,6 +1192,11 @@ function ProofPicker({
         </View>
       )}
       <AppButton label={chooseLabel} variant="secondary" disabled={disabled} onPress={onPick} />
+      {asset && onRemove ? (
+        <Pressable disabled={disabled} onPress={onRemove} className="mt-3 items-center py-2">
+          <Text className="font-bold text-red-700">Xóa ảnh đã chọn</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -947,6 +1375,15 @@ function isHandoverConfirmed(order: StopOrder) {
 
 function getOrderStatus(statusValue: string) {
   const status = statusValue.toUpperCase();
+  if (status === 'DELIVERY_FAILED_NOSHOW') {
+    return { label: 'Khách không có mặt', background: 'bg-red-100', text: 'text-red-800' };
+  }
+  if (status === 'OSD_REJECT_PENDING' || status === 'OSD_DOCK_PENDING') {
+    return { label: 'Đang xử lý hàng bị từ chối', background: 'bg-red-100', text: 'text-red-800' };
+  }
+  if (status === 'PARTIAL_DELIVER_OSD') {
+    return { label: 'Đã giao một phần', background: 'bg-orange-100', text: 'text-orange-800' };
+  }
   if (status === 'RETURNED' || status === 'REJECTED') {
     return {
       label: 'Bị từ chối',
@@ -984,10 +1421,11 @@ function isAlreadyCheckedInError(error: unknown) {
 function formatActionError(
   error: unknown,
   action: 'LOAD' | 'CHECK_IN' | 'CUT_SEAL' | 'HANDOVER' | 'PAYMENT' | 'APPLY_SEAL'
+    | 'REJECT' | 'NO_SHOW' | 'WAREHOUSE' | 'TEMPERATURE' | 'CLOSE_SHIFT'
 ) {
   if (error instanceof ApiClientError) {
     if (error.status === undefined) {
-      return 'Không thể kết nối Backend. Hãy kiểm tra mạng rồi thử lại.';
+      return 'Không thể kết nối máy chủ. Vui lòng thử lại.';
     }
     if (error.status === 401) {
       return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
@@ -1027,6 +1465,24 @@ function formatActionError(
     if (action === 'APPLY_SEAL' && /seal/.test(message)) {
       return 'Mã seal chưa hợp lệ hoặc seal đã được áp dụng.';
     }
+    if ((action === 'REJECT' || action === 'NO_SHOW') && /evidence|image|photo|file/.test(message)) {
+      return 'Vui lòng thêm ảnh minh chứng.';
+    }
+    if (action === 'REJECT' && /already|delivered|handover|processed|conflict/.test(message)) {
+      return 'Kiện hàng này đã được xử lý trước đó.';
+    }
+    if (action === 'NO_SHOW' && /already|no.?show|skipped/.test(message)) {
+      return 'Điểm giao này đã được báo không nhận hàng.';
+    }
+    if (action === 'WAREHOUSE' && /telemetry|iot|gps|location/.test(message)) {
+      return 'Chưa nhận được vị trí xe từ thiết bị IoT.';
+    }
+    if (action === 'WAREHOUSE' && /warehouse|kho/.test(message)) {
+      return 'Chưa tìm thấy kho phù hợp gần vị trí hiện tại.';
+    }
+    if (action === 'CLOSE_SHIFT' && /status|state|pending|unconfirmed|handover/.test(message)) {
+      return 'Thao tác này chưa thể thực hiện ở trạng thái hiện tại.';
+    }
     if (error.status === 409) {
       return 'Thao tác xung đột với trạng thái hiện tại. Dữ liệu sẽ được tải lại.';
     }
@@ -1046,6 +1502,16 @@ function formatActionError(
       return 'Không thể cắt seal. Vui lòng kiểm tra trạng thái seal rồi thử lại.';
     case 'PAYMENT':
       return 'Không thể xử lý thanh toán. Vui lòng thử lại.';
+    case 'REJECT':
+      return 'Không thể ghi nhận từ chối kiện hàng. Vui lòng thử lại.';
+    case 'NO_SHOW':
+      return 'Không thể báo khách không có mặt. Vui lòng thử lại.';
+    case 'WAREHOUSE':
+      return 'Không thể tải danh sách kho quy đầu. Vui lòng thử lại.';
+    case 'TEMPERATURE':
+      return 'Không thể tải dữ liệu nhiệt độ. Vui lòng thử lại.';
+    case 'CLOSE_SHIFT':
+      return 'Không thể đóng ca. Vui lòng kiểm tra trạng thái chuyến rồi thử lại.';
     case 'APPLY_SEAL':
       return 'Không thể kẹp seal mới. Vui lòng kiểm tra mã seal rồi thử lại.';
   }
@@ -1061,6 +1527,33 @@ function toDeliveryUploadFile(asset: ImagePicker.ImagePickerAsset, fallbackName:
 
 function formatCurrency(value: number) {
   return `${value.toLocaleString('vi-VN')} ₫`;
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return '--';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '--' : date.toLocaleString('vi-VN');
+}
+
+function formatOrderStatus(status?: string | null) {
+  return status ? getOrderStatus(status).label : 'Đang cập nhật';
+}
+
+function getStopStatusLabel(status: string) {
+  if (status === 'SKIPPED_NOSHOW') return 'Khách không có mặt';
+  return STOP_STATUS[status] || 'Chưa xác định';
+}
+
+function formatWarehouseStatus(status?: string | null) {
+  switch (status?.trim().toUpperCase()) {
+    case 'ACTIVE':
+    case 'OK':
+      return 'Đang hoạt động';
+    case 'INACTIVE':
+      return 'Tạm ngưng';
+    default:
+      return 'Chưa xác định';
+  }
 }
 
 function getEpodStatusLabel(status?: string | null) {
@@ -1083,12 +1576,14 @@ function getPaymentStatusLabel(status?: string | null) {
 
 function getDriverDeliveryActionState({
   hasCheckedIn,
+  hasCutSeal,
   allOrdersHandedOver,
   hasRemainingStops,
   hasAppliedSeal,
   tripStatus,
 }: {
   hasCheckedIn: boolean;
+  hasCutSeal: boolean;
   allOrdersHandedOver: boolean;
   hasRemainingStops: boolean;
   hasAppliedSeal: boolean;
@@ -1099,6 +1594,9 @@ function getDriverDeliveryActionState({
   }
   if (!hasCheckedIn) {
     return { title: 'Bước tiếp theo: xác nhận đến điểm giao', detail: 'Thêm ảnh xác nhận và gửi check-in.' };
+  }
+  if (!hasCutSeal && !allOrdersHandedOver) {
+    return { title: 'Bước tiếp theo: cắt seal', detail: 'Cắt seal trước khi bàn giao hoặc xử lý trường hợp không nhận hàng.' };
   }
   if (!allOrdersHandedOver) {
     return { title: 'Bước tiếp theo: bàn giao đơn hàng', detail: 'Chọn từng đơn để thêm chữ ký người nhận.' };

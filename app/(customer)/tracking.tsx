@@ -5,6 +5,7 @@ import { ActivityIndicator, AppState, Pressable, RefreshControl, ScrollView, Tex
 
 import { GoongRouteMap } from '../../components/customer/GoongRouteMap';
 import { TemperatureChart } from '../../components/customer/TemperatureChart';
+import { getCustomerOrderStatusPresentation } from '../../constants/customerOrderPresentation';
 import { getApiErrorMessage, getCustomerDataErrorMessage } from '../../services/apiClient';
 import {
   getTripRoute,
@@ -372,7 +373,7 @@ function TrackingOrderSelector({
               <View className="flex-1">
                 <Text className="font-bold text-[#3A1F04]">{order.trackingCode}</Text>
                 <Text className="mt-1 text-sm text-[#877369]">{order.itemName}</Text>
-                <Text className="mt-2 text-xs font-bold uppercase text-[#8B4513]">{order.status}</Text>
+                <Text className="mt-2 text-xs font-bold text-[#8B4513]">{getCustomerOrderStatusPresentation(order.status).label}</Text>
               </View>
               {isSelected ? <Ionicons name="checkmark-circle" size={22} color="#8B4513" /> : null}
             </View>
@@ -420,11 +421,12 @@ function AlertRow({ alert }: { alert: SmartAlert }) {
 }
 
 function OrderHeader({ order }: { order: OrderResponse }) {
+  const status = getCustomerOrderStatusPresentation(order.status);
   return <View className="rounded-3xl bg-[#3A1F04] p-5">
     <Text className="text-xs font-bold uppercase tracking-widest text-[#FFC29F]/70">Tracking code</Text>
     <Text className="mt-2 text-2xl font-bold text-[#FFC29F]">{order.trackingCode}</Text>
     <Text className="mt-2 text-sm text-white/70">{order.itemName}</Text>
-    <View className="mt-4 rounded-2xl bg-white/10 p-4"><Text className="text-xs text-white/60">Trạng thái đơn</Text><Text className="mt-1 font-bold text-white">{order.status}</Text></View>
+    <View className="mt-4 rounded-2xl bg-white/10 p-4"><Text className="text-xs text-white/60">Trạng thái đơn</Text><Text className="mt-1 font-bold text-white">{status.label}</Text></View>
   </View>;
 }
 

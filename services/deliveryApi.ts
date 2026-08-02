@@ -88,6 +88,54 @@ export type HandoverRequest = {
   handoverPhotoFile?: DeliveryUploadFile | null;
 };
 
+export type RejectEntireLpnRequest = {
+  tripId: string;
+  customerId: string;
+  rejectionReason: string;
+  isReturnToWarehouse: boolean;
+  evidenceImageFile: DeliveryUploadFile;
+};
+
+export type RejectEntireLpnResponse = {
+  epodId: string;
+  handoverProcessedAt: string;
+  orderStatus: string;
+  lpnCode: string;
+  originalQuantity: number;
+  rejectedQuantity: number;
+  acceptedQuantity: number;
+  rejectedRatio: string;
+  rejectionReason: string;
+  isReturnToWarehouse: boolean;
+  paymentSkipped: boolean;
+  inboundReturnSlip?: unknown;
+};
+
+export type ReturnWarehouse = {
+  warehouseId: string;
+  warehouseCode: string;
+  warehouseName: string;
+  address: string;
+  distanceKm: string;
+  estimatedTravelTimeMinutes: number;
+  status: string;
+};
+
+export type NearestReturnWarehousesResponse = {
+  totalWarehouses: number;
+  warehouses: ReturnWarehouse[];
+  message?: string;
+};
+
+export type CloseShiftResponse = {
+  tripId: string;
+  closedAt: string;
+  vehicleReleased: boolean;
+  driversReleasedCount: number;
+  newLocation: string;
+  message: string;
+};
+
 type HandoverConfirmApiResponse = Omit<HandoverConfirmResponse, 'paymentAmountDue'> & {
   codAmountDue: number;
 };
@@ -188,6 +236,52 @@ export const deliveryApi = {
     );
     const { codAmountDue, ...paymentQr } = unwrap(response, 'Không thể tạo mã thanh toán.');
     return { ...paymentQr, paymentAmountDue: codAmountDue };
+  },
+
+  rejectEntireLpn: async (stopId: string, request: RejectEntireLpnRequest) => {
+    const formData = new FormData();
+    formData.append('TripId', request.tripId);
+    formData.append('CustomerId', request.customerId);
+    formData.append('RejectionReason', request.rejectionReason);
+    formData.append('IsReturnToWarehouse', String(request.isReturnToWarehouse));
+    appendFile(formData, 'EvidenceImageFile', request.evidenceImageFile);
+
+    const response = await apiRequest<ApiResponse<RejectEntireLpnResponse>>(
+      `/api/Delivery/stops/${stopId}/reject-entire-lpn`,
+      { method: 'POST', headers: getAuthHeaders(), body: formData }
+    );
+    return unwrap(response, 'Không thể ghi nhận từ chối kiện hàng.');
+  },
+
+  reportNoShow: async (stopId: string, evidenceImageFile: DeliveryUploadFile) => {
+    const formData = new FormData();
+    appendFile(formData, 'EvidenceImageFile', evidenceImageFile);
+
+    const response = await apiRequest<ApiResponse<string>>(
+      `/api/Delivery/${stopId}/report-no-show`,
+      { method: 'POST', headers: getAuthHeaders(), body: formData }
+    );
+    return unwrap(response, 'Không thể báo khách hàng không có mặt.');
+  },
+
+  getNearestReturnWarehouses: async (tripId: string) => {
+    const response = await apiRequest<ApiResponse<NearestReturnWarehousesResponse>>(
+      `/api/Delivery/nearest-return-warehouses?tripId=${encodeURIComponent(tripId)}`,
+      { method: 'GET', headers: getAuthHeaders() }
+    );
+    return unwrap(response, 'Không thể tải danh sách kho quy đầu.');
+  },
+
+  closeShift: async (tripId: string, warehouseId: string) => {
+    const response = await apiRequest<ApiResponse<CloseShiftResponse>>(
+      '/api/Delivery/depart',
+      {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: { tripId, warehouseId },
+      }
+    );
+    return unwrap(response, 'Không thể đóng ca.');
   },
 
   verifyQrPayment: async (epodId: string, paymentEvidenceFile?: DeliveryUploadFile | null) => {
