@@ -144,9 +144,29 @@ export default function WarehouseInboundScreen() {
     }
   };
 
+  const resetQcWorkflow = () => {
+    setQcWeight('');
+    setQcLength('');
+    setQcWidth('');
+    setQcHeight('');
+    setQcTemperature('');
+    setQcEvidence([]);
+    setQcResult(null);
+    setRecheckWeight('');
+    setRecheckLength('');
+    setRecheckWidth('');
+    setRecheckHeight('');
+    setRecheckTemperature('');
+    setRecheckEvidence([]);
+    setRecheckResult(null);
+    setLpnId('');
+    setReceiptId('');
+  };
+
   const selectAsn = (asn: AsnScheduleResponse) => {
     setSelectedAsn(asn);
     setManualAsnId(asn.asnId);
+    resetQcWorkflow();
     setLpnStatus(null);
     setLpnWarehouseId(null);
     setLpnHasWarehouseReceipt(false);
@@ -159,6 +179,13 @@ export default function WarehouseInboundScreen() {
 
   const updateLpnId = (value: string) => {
     setLpnId(value);
+    setRecheckWeight('');
+    setRecheckLength('');
+    setRecheckWidth('');
+    setRecheckHeight('');
+    setRecheckTemperature('');
+    setRecheckEvidence([]);
+    setRecheckResult(null);
     setLpnStatus(null);
     setLpnWarehouseId(null);
     setLpnHasWarehouseReceipt(false);
@@ -185,6 +212,7 @@ export default function WarehouseInboundScreen() {
       });
 
       setQcResult(response);
+      setRecheckResult(null);
       if (response.lpnId) setLpnId(response.lpnId);
       if (response.receiptId) setReceiptId(response.receiptId);
       setLpnStatus(response.state ?? null);
@@ -515,6 +543,7 @@ export default function WarehouseInboundScreen() {
                     variant="secondary"
                     onPress={() => {
                       setSelectedAsn(null);
+                      resetQcWorkflow();
                       setLpnStatus(null);
                       setLpnWarehouseId(null);
                       setLpnHasWarehouseReceipt(false);
@@ -619,6 +648,9 @@ export default function WarehouseInboundScreen() {
             {/* ── Receipt tab ── */}
             {activeStep === 'receipt' ? (
               <View style={{ gap: 12 }}>
+                {latestResultForCurrentLpn?.state === 'RECEIVING' ? (
+                  <ResultBox title="Kết quả QC hiện hành" result={latestResultForCurrentLpn} />
+                ) : null}
                 {currentLpnState === 'IN_STOCK' ? (
                   <AppMessage tone="success" text="LPN này đã nhập kho, không thể tạo phiếu nhập lại." />
                 ) : null}
@@ -812,6 +844,10 @@ function ResultBox({ title, result }: { title: string; result: InboundQcResponse
         {result.state ? <StatusBadge status={result.state} showVietnameseLabel /> : <Text style={{ fontSize: 12, color: WH_COLORS.textPrimary }}>N/A</Text>}
       </View>
       <AppInfoRow label="Chênh lệch" value={`${result.diffPercent}%`} />
+      <AppInfoRow
+        label="Kết quả"
+        value={result.state === 'RECEIVING' ? 'Đạt' : result.state === 'DISCREPANCY_HOLD' ? 'Cần xử lý sai lệch' : 'N/A'}
+      />
       <AppInfoRow label="PDF" value={result.pdfUrl || 'N/A'} />
     </View>
   );

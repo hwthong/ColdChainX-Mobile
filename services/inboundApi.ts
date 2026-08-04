@@ -98,7 +98,6 @@ export function submitInboundQc(accessToken: string, payload: ProcessInboundQcPa
     formData.append('Temperature', String(payload.temperature));
   }
   appendEvidenceImages(formData, payload.evidenceImages);
-  logQcPayload('submit', payload);
 
   return apiRequest<InboundQcResponse>('/api/Inbound/qc', {
     method: 'POST',
@@ -118,7 +117,6 @@ export function reEvaluateInboundQc(accessToken: string, payload: ReEvaluateInbo
     formData.append('Temperature', String(payload.temperature));
   }
   appendEvidenceImages(formData, payload.evidenceImages);
-  logQcPayload('re-evaluate', payload);
 
   return apiRequest<InboundQcResponse>('/api/Inbound/qc/re-evaluate', {
     method: 'PUT',
@@ -178,20 +176,6 @@ function appendEvidenceImages(formData: FormData, images?: EvidenceImage[]) {
       name: image.fileName || `evidence-${index + 1}.jpg`,
       type: image.mimeType || image.type || 'image/jpeg',
     } as any);
-  });
-}
-
-function logQcPayload(action: string, payload: ProcessInboundQcPayload | ReEvaluateInboundQcPayload) {
-  if (!__DEV__) return;
-
-  console.log(`[inboundApi] ${action} QC payload`, {
-    ...('asnId' in payload ? { AsnId: payload.asnId } : { LpnId: payload.lpnId }),
-    ActualWeightKg: payload.actualWeightKg,
-    LengthCm: payload.lengthCm,
-    WidthCm: payload.widthCm,
-    HeightCm: payload.heightCm,
-    Temperature: payload.temperature ?? null,
-    EvidenceImages: payload.evidenceImages?.length ?? 0,
   });
 }
 
