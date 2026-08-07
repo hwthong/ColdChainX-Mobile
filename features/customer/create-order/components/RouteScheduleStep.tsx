@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 
 import { customerColors, customerRadius } from '../../../../constants/customerTheme';
 import { CustomerCard, CustomerSectionHeader } from '../../../../components/customer/ui/CustomerUi';
@@ -102,6 +102,7 @@ export function RouteScheduleStep({
               <CustomerSectionHeader title="Lịch vận chuyển" icon="calendar-outline" />
               <ScheduleOptions
                 bookingOptions={bookingOptions}
+                selectedRoute={selectedRoute}
                 isLoading={isLoadingBooking}
                 error={bookingError}
                 selectedScheduleId={selectedScheduleId}
@@ -214,8 +215,16 @@ function RouteOptionPicker({
   );
 }
 
+export type ScheduleDateGroup = {
+  dateKey: string;
+  dateLabel: string;
+  dayOfWeekLabel: string;
+  schedules: ScheduleOptionDto[];
+};
+
 type ScheduleOptionsProps = {
   bookingOptions: RouteBookingOptionsDto | null;
+  selectedRoute: RouteOptionResponse | null;
   isLoading: boolean;
   error: string | null;
   selectedScheduleId: string;
@@ -226,6 +235,7 @@ type ScheduleOptionsProps = {
 
 function ScheduleOptions({
   bookingOptions,
+  selectedRoute,
   isLoading,
   error,
   selectedScheduleId,
@@ -233,6 +243,51 @@ function ScheduleOptions({
   onRetry,
   onSelectSchedule,
 }: ScheduleOptionsProps) {
+  // 1. Derive arrays safely (unconditional)
+  const schedules = bookingOptions?.availableSchedules ?? [];
+  const routeId = bookingOptions?.routeId ?? '';
+
+  const sortedSchedules = React.useMemo(() => {
+    return [...schedules].sort((a, b) => {
+      const dCmp = a.departureDate.localeCompare(b.departureDate);
+      if (dCmp !== 0) return dCmp;
+      return a.departureTime.localeCompare(b.departureTime);
+    });
+  }, [schedules]);
+
+  const dateGroups = React.useMemo(() => {
+    const dateGroupsMap = new Map<string, ScheduleOptionDto[]>();
+    for (const s of sortedSchedules) {
+      const key = s.departureDate.trim();
+      if (!dateGroupsMap.has(key)) {
+        dateGroupsMap.set(key, []);
+      }
+      dateGroupsMap.get(key)!.push(s);
+    }
+    return Array.from(dateGroupsMap.entries()).map(([key, list]) => ({
+      dateKey: key,
+      dateLabel: getShortDateLabel(key),
+      dayOfWeekLabel: getDayOfWeekLabel(key),
+      schedules: list,
+    }));
+  }, [sortedSchedules]);
+
+  const currentSchedule = React.useMemo(() => {
+    return sortedSchedules.find((s) => s.scheduleId === selectedScheduleId) ?? null;
+  }, [sortedSchedules, selectedScheduleId]);
+
+  // 2. Unconditional Hooks (Top level before any early return)
+  const [activeDateKey, setActiveDateKey] = useState<string>('');
+
+  React.useEffect(() => {
+    if (currentSchedule) {
+      setActiveDateKey(currentSchedule.departureDate);
+    } else if (dateGroups.length > 0 && (!activeDateKey || !dateGroups.some((g) => g.dateKey === activeDateKey))) {
+      setActiveDateKey(dateGroups[0].dateKey);
+    }
+  }, [selectedScheduleId, currentSchedule, routeId, dateGroups]);
+
+  // 3. Early Returns (Safe after all hooks)
   if (isLoading) {
     return (
       <View className="items-center py-4">
@@ -245,20 +300,116 @@ function ScheduleOptions({
   if (error) return <LoadError message={error} actionLabel="Thử lại" onRetry={onRetry} />;
   if (!bookingOptions) return null;
 
-  return bookingOptions.availableSchedules.length === 0 ? (
-    <AvailabilityNotice>Tuyến này chưa có lịch khởi hành khả dụng. Vui lòng chọn tuyến khác.</AvailabilityNotice>
-  ) : (
-    <View className="gap-3">
-      {bookingOptions.availableSchedules.map((schedule) => (
-        <CreateOrderChoiceCard
-          key={schedule.scheduleId}
-          selected={selectedScheduleId === schedule.scheduleId}
-          title={schedule.scheduleName}
-          subtitle={`${formatDepartureDate(schedule.departureDate)} · Khởi hành ${schedule.departureTime.slice(0, 5)} · Đóng nhận ${schedule.cutOffTime.slice(0, 5)}`}
-          accessibilityLabel={`Lịch ${schedule.scheduleName}, ${formatDepartureDate(schedule.departureDate)}`}
-          onPress={() => onSelectSchedule(schedule.scheduleId)}
-        />
-      ))}
+  if (schedules.length === 0) {
+    return <AvailabilityNotice>Hiện chưa có lịch khởi hành phù hợp. Vui lòng chọn tuyến khác.</AvailabilityNotice>;
+  }
+
+  const activeGroup = dateGroups.find((g) => g.dateKey === activeDateKey) ?? dateGroups[0];
+
+  const handleSelectDate = (dateKey: string) => {
+    setActiveDateKey(dateKey);
+    if (currentSchedule && currentSchedule.departureDate !== dateKey) {
+      onSelectSchedule('');
+    }
+  };
+
+  return (
+    <View className="gap-4">
+      {/* 1. DATE SELECTOR */}
+      <View className="gap-1.5">
+        <Text className="text-xs font-semibold uppercase tracking-wider text-[#877369]">Ngày khởi hành</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-2 py-1">
+          {dateGroups.map((group) => {
+            const isSelected = group.dateKey === activeDateKey;
+            return (
+              <Pressable
+                key={group.dateKey}
+                onPress={() => handleSelectDate(group.dateKey)}
+                accessibilityRole="button"
+                accessibilityLabel={`Ngày ${group.dayOfWeekLabel} ${group.dateLabel}`}
+                style={{
+                  backgroundColor: isSelected ? '#8B4513' : '#F8F9FA',
+                  borderColor: isSelected ? '#8B4513' : '#E5DEB6',
+                  borderWidth: 1,
+                  borderRadius: customerRadius.control,
+                  paddingVertical: 8,
+                  paddingHorizontal: 16,
+                  alignItems: 'center',
+                  minWidth: 64,
+                }}
+              >
+                <Text className={`text-xs font-bold ${isSelected ? 'text-white' : 'text-[#3A1F04]'}`}>
+                  {group.dayOfWeekLabel}
+                </Text>
+                <Text className={`text-xs ${isSelected ? 'text-amber-100' : 'text-[#877369]'}`}>
+                  {group.dateLabel}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </View>
+
+      {/* 2. TIME SELECTOR */}
+      {activeGroup ? (
+        <View className="gap-1.5">
+          <Text className="text-xs font-semibold uppercase tracking-wider text-[#877369]">Giờ khởi hành</Text>
+          <View className="flex-row flex-wrap gap-2 py-1">
+            {activeGroup.schedules.map((schedule) => {
+              const isSelected = schedule.scheduleId === selectedScheduleId;
+              const timeDisplay = schedule.departureTime.slice(0, 5);
+              return (
+                <Pressable
+                  key={schedule.scheduleId}
+                  onPress={() => onSelectSchedule(schedule.scheduleId)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Khởi hành lúc ${timeDisplay}`}
+                  style={{
+                    backgroundColor: isSelected ? '#8B4513' : '#F5F0EB',
+                    borderColor: isSelected ? '#8B4513' : '#D9C8B4',
+                    borderWidth: 1,
+                    borderRadius: customerRadius.control,
+                    paddingVertical: 10,
+                    paddingHorizontal: 20,
+                    alignItems: 'center',
+                  }}
+                >
+                  <Text className={`text-sm font-bold ${isSelected ? 'text-white' : 'text-[#3A1F04]'}`}>
+                    {timeDisplay}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
+
+      {/* 3. CUTOFF & ETA SUMMARY CARD */}
+      {currentSchedule ? (
+        <View
+          style={{
+            backgroundColor: '#FAF5EE',
+            borderColor: '#E8DEC9',
+            borderWidth: 1,
+            borderRadius: customerRadius.control,
+            padding: 12,
+            gap: 6,
+          }}
+        >
+          <View className="flex-row items-center justify-between">
+            <Text className="text-xs font-semibold text-[#8B4513]">
+              Nhận hàng trước {currentSchedule.cutOffTime.slice(0, 5)}
+            </Text>
+            <Text className="text-xs font-bold text-[#3A1F04]">
+              {calculateEtaText(currentSchedule.departureDate, currentSchedule.departureTime, selectedRoute?.transitTime)}
+            </Text>
+          </View>
+          <Text className="text-[11px] leading-4 text-[#877369]">
+            * Lịch dự kiến, sẽ được xác nhận khi yêu cầu vận chuyển được xử lý.
+          </Text>
+        </View>
+      ) : null}
+
       {scheduleError ? <FieldError message={scheduleError} /> : null}
     </View>
   );
@@ -336,6 +487,56 @@ function FieldError({ message }: { message: string }) {
   );
 }
 
+function parseTransitHours(transitTime: string | null | undefined): number {
+  if (!transitTime || typeof transitTime !== 'string') return 8;
+  const match = transitTime.match(/(\d+)/);
+  return match ? parseInt(match[1], 10) : 8;
+}
+
+function getDayOfWeekLabel(dateStr: string): string {
+  const parts = dateStr.trim().split('-').map(Number);
+  if (parts.length !== 3 || parts.some(Number.isNaN)) return '—';
+  const [year, month, day] = parts;
+  const date = new Date(year, month - 1, day);
+  const days = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+  return days[date.getDay()] ?? '—';
+}
+
+function getShortDateLabel(dateStr: string): string {
+  const parts = dateStr.trim().split('-').map(Number);
+  if (parts.length !== 3 || parts.some(Number.isNaN)) return dateStr;
+  const [, month, day] = parts;
+  return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}`;
+}
+
+function calculateEtaText(departureDateStr: string, departureTimeStr: string, transitTimeStr: string | null | undefined): string {
+  const dateParts = departureDateStr.trim().split('-').map(Number);
+  const timeParts = departureTimeStr.trim().split(':').map(Number);
+  if (dateParts.length !== 3 || dateParts.some(Number.isNaN)) return '—';
+
+  const [year, month, day] = dateParts;
+  const hours = timeParts[0] ?? 0;
+  const mins = timeParts[1] ?? 0;
+
+  const depDate = new Date(year, month - 1, day, hours, mins);
+  const transitHours = parseTransitHours(transitTimeStr);
+
+  const etaDate = new Date(depDate.getTime() + transitHours * 60 * 60 * 1000);
+  const etaHoursStr = `${String(etaDate.getHours()).padStart(2, '0')}:${String(etaDate.getMinutes()).padStart(2, '0')}`;
+
+  const isSameDay = etaDate.getFullYear() === depDate.getFullYear() &&
+                    etaDate.getMonth() === depDate.getMonth() &&
+                    etaDate.getDate() === depDate.getDate();
+
+  if (isSameDay) {
+    return `Dự kiến đến ${etaHoursStr}`;
+  }
+
+  const dayName = getDayOfWeekLabel(`${etaDate.getFullYear()}-${String(etaDate.getMonth() + 1).padStart(2, '0')}-${String(etaDate.getDate()).padStart(2, '0')}`);
+  const etaDateLabel = `${String(etaDate.getDate()).padStart(2, '0')}/${String(etaDate.getMonth() + 1).padStart(2, '0')}`;
+  return `Dự kiến đến ${etaHoursStr}, ${dayName} ${etaDateLabel}`;
+}
+
 function formatCityName(city: string) {
   switch (city.trim().toUpperCase()) {
     case 'HCM':
@@ -357,8 +558,22 @@ export function getRouteLabel(route: RouteOptionResponse) {
   return `${formatCityName(route.originCity)} → ${formatCityName(route.destCity)}`;
 }
 
+export function formatTransitDuration(transitTime: string | null | undefined): string {
+  if (!transitTime || typeof transitTime !== 'string') {
+    return 'Dự kiến 8 giờ';
+  }
+  const trimmed = transitTime.trim();
+  if (!trimmed) return 'Dự kiến 8 giờ';
+
+  const formatted = trimmed
+    .replace(/hours?/gi, 'giờ')
+    .replace(/mins?|minutes?/gi, 'phút');
+
+  return `Dự kiến ${formatted}`;
+}
+
 function getRouteMeta(route: RouteOptionResponse) {
-  return `${route.routeCode} · Dự kiến ${route.transitTime}`;
+  return formatTransitDuration(route.transitTime);
 }
 
 function formatDepartureDate(value: string): string {
@@ -382,5 +597,5 @@ function formatDepartureDate(value: string): string {
 }
 
 export function formatScheduleLabel(schedule: ScheduleOptionDto) {
-  return `${schedule.scheduleName} · ${formatDepartureDate(schedule.departureDate)} · Khởi hành ${schedule.departureTime.slice(0, 5)}`;
+  return `${formatDepartureDate(schedule.departureDate)} · Khởi hành ${schedule.departureTime.slice(0, 5)}`;
 }
