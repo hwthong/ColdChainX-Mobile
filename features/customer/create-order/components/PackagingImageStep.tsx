@@ -3,10 +3,11 @@ import { Image, Pressable, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { customerColors, customerRadius } from '../../../../constants/customerTheme';
-import type {
-  CreateOrderFieldKey,
-  CreateOrderValidationErrors,
-  DocumentImage,
+import {
+  parseCreateOrderDecimal,
+  type CreateOrderFieldKey,
+  type CreateOrderValidationErrors,
+  type DocumentImage,
 } from '../createOrderValidation';
 import {
   CreateOrderFormSection,
@@ -29,6 +30,7 @@ type PackagingImageStepProps = {
   lengthCm: string;
   widthCm: string;
   heightCm: string;
+  quantity: string;
   image: DocumentImage | null;
   capacityWarning: string | null;
   errors: CreateOrderValidationErrors;
@@ -40,6 +42,7 @@ type PackagingImageStepProps = {
   onChangeHeight: (value: string) => void;
   onPickImage: () => void;
   onRemoveImage: () => void;
+  onBlurField: (field: CreateOrderFieldKey) => void;
   onSubmitField: (field: CreateOrderFieldKey) => void;
 };
 
@@ -48,6 +51,7 @@ export function PackagingImageStep({
   lengthCm,
   widthCm,
   heightCm,
+  quantity,
   image,
   capacityWarning,
   errors,
@@ -59,8 +63,11 @@ export function PackagingImageStep({
   onChangeHeight,
   onPickImage,
   onRemoveImage,
+  onBlurField,
   onSubmitField,
 }: PackagingImageStepProps) {
+  const cbmPreview = calculateCbmPreview(lengthCm, widthCm, heightCm, quantity);
+
   const selectPackagingType = (value: string) => {
     if (packagingTypes[0] === value && packagingTypes.length === 1) return;
     onChangePackagingTypes([value]);
@@ -87,17 +94,18 @@ export function PackagingImageStep({
                   accessibilityRole="radio"
                   accessibilityLabel={option.label}
                   accessibilityState={{ selected }}
-                  className="flex-row items-center justify-center gap-1.5 px-4"
-                  style={{
+                  className="max-w-full flex-row items-center justify-center gap-1.5 px-4"
+                  style={({ pressed }) => ({
                     backgroundColor: selected ? customerColors.surfaceSoft : customerColors.surface,
                     borderColor: selected ? customerColors.primary : customerColors.border,
-                    borderRadius: 999,
+                    borderRadius: customerRadius.pill,
                     borderWidth: 1,
                     minHeight: 44,
-                  }}
+                    opacity: pressed ? 0.76 : 1,
+                  })}
                 >
                   {selected ? <Ionicons name="checkmark" size={15} color="#8B4513" /> : null}
-                  <Text className={['text-[13px] font-bold', selected ? 'text-[#8B4513]' : 'text-[#3A1F04]'].join(' ')}>
+                  <Text className={['flex-shrink text-[13px] font-bold', selected ? 'text-[#8B4513]' : 'text-[#3A1F04]'].join(' ')}>
                     {option.label}
                   </Text>
                 </Pressable>
@@ -110,14 +118,11 @@ export function PackagingImageStep({
       </CreateOrderFormSection>
 
       <CreateOrderFormSection
-        title="Kích thước kiện hàng"
+        title="Kích thước mỗi kiện"
         icon="resize-outline"
-        description="Nhập kích thước của mỗi kiện để kiểm tra sức chứa."
+        description="Nhập kích thước của một kiện. Hệ thống sẽ tính tổng theo số kiện."
       >
-        <View className="gap-2">
-          <Text className="text-[13px] font-bold text-[#3A1F04]">
-            Kích thước kiện hàng <Text className="text-red-600">*</Text>
-          </Text>
+        <View className="gap-3">
           <View className="flex-row gap-2">
             <View className="flex-1">
               <CreateOrderTextField
@@ -126,9 +131,10 @@ export function PackagingImageStep({
                 placeholder="Dài"
                 value={lengthCm}
                 error={errors.lengthCm}
-                keyboardType="numeric"
+                keyboardType="decimal-pad"
                 returnKeyType="next"
                 onChangeText={onChangeLength}
+                onBlur={() => onBlurField('lengthCm')}
                 onSubmitEditing={() => onSubmitField('lengthCm')}
                 registerField={registerField}
                 registerInput={registerInput}
@@ -141,9 +147,10 @@ export function PackagingImageStep({
                 placeholder="Rộng"
                 value={widthCm}
                 error={errors.widthCm}
-                keyboardType="numeric"
+                keyboardType="decimal-pad"
                 returnKeyType="next"
                 onChangeText={onChangeWidth}
+                onBlur={() => onBlurField('widthCm')}
                 onSubmitEditing={() => onSubmitField('widthCm')}
                 registerField={registerField}
                 registerInput={registerInput}
@@ -156,14 +163,16 @@ export function PackagingImageStep({
                 placeholder="Cao"
                 value={heightCm}
                 error={errors.heightCm}
-                keyboardType="numeric"
+                keyboardType="decimal-pad"
                 onChangeText={onChangeHeight}
+                onBlur={() => onBlurField('heightCm')}
                 onSubmitEditing={() => onSubmitField('heightCm')}
                 registerField={registerField}
                 registerInput={registerInput}
               />
             </View>
           </View>
+          {cbmPreview ? <CbmPreviewStrip preview={cbmPreview} /> : null}
         </View>
 
         {capacityWarning ? (
@@ -175,9 +184,9 @@ export function PackagingImageStep({
       </CreateOrderFormSection>
 
       <CreateOrderFormSection
-        title="Ảnh lô hàng"
+        title="Ảnh lô hàng *"
         icon="camera-outline"
-        description="Dùng ảnh rõ kiện hàng để hỗ trợ bước kiểm duyệt."
+        description="Thêm ảnh để hỗ trợ kiểm tra tình trạng và đóng gói."
       >
         <View ref={(node) => registerField('documentImage', node)} className="gap-3">
           {image ? (
@@ -227,7 +236,7 @@ export function PackagingImageStep({
                 borderRadius: customerRadius.control,
                 borderStyle: 'dashed',
                 borderWidth: 2,
-                minHeight: 148,
+                minHeight: 132,
               }}
             >
               <View className="h-12 w-12 items-center justify-center rounded-full bg-[#8B4513]/10">
@@ -244,6 +253,61 @@ export function PackagingImageStep({
       </CreateOrderFormSection>
     </View>
   );
+}
+
+export type CbmPreview = {
+  packageCount: number;
+  perPackageLabel: string;
+  totalLabel: string;
+};
+
+export function calculateCbmPreview(
+  lengthValue: string,
+  widthValue: string,
+  heightValue: string,
+  quantityValue: string
+): CbmPreview | null {
+  const lengthCm = parseCreateOrderDecimal(lengthValue);
+  const widthCm = parseCreateOrderDecimal(widthValue);
+  const heightCm = parseCreateOrderDecimal(heightValue);
+  const packageCount = Number(quantityValue.trim());
+
+  if (
+    !Number.isFinite(lengthCm) || lengthCm <= 0
+    || !Number.isFinite(widthCm) || widthCm <= 0
+    || !Number.isFinite(heightCm) || heightCm <= 0
+    || !Number.isInteger(packageCount) || packageCount < 1
+  ) {
+    return null;
+  }
+
+  const perPackageCbm = (lengthCm * widthCm * heightCm) / 1_000_000;
+  return {
+    packageCount,
+    perPackageLabel: formatCbm(perPackageCbm, 4),
+    totalLabel: formatCbm(perPackageCbm * packageCount, 3),
+  };
+}
+
+function CbmPreviewStrip({ preview }: { preview: CbmPreview }) {
+  return (
+    <View className="gap-1 px-4 py-3" style={{ backgroundColor: customerColors.primarySoft, borderRadius: customerRadius.control }}>
+      <Text className="text-xs font-medium leading-5 text-[#877369]">
+        {preview.packageCount} kiện · {preview.perPackageLabel} m³/kiện
+      </Text>
+      <Text className="text-sm font-bold leading-5 text-[#3A1F04]">
+        Tổng thể tích dự kiến: {preview.totalLabel} m³
+      </Text>
+    </View>
+  );
+}
+
+function formatCbm(value: number, maximumFractionDigits: number) {
+  return value
+    .toFixed(maximumFractionDigits)
+    .replace(/0+$/, '')
+    .replace(/\.$/, '')
+    .replace('.', ',');
 }
 
 function FieldError({ message }: { message: string }) {

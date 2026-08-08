@@ -60,6 +60,7 @@ type CreateOrderChoiceCardProps = {
   accessibilityHint?: string;
   selectionMode?: 'radio' | 'checkbox';
   leading?: ReactNode;
+  trailingContent?: ReactNode;
   onPress: () => void;
 };
 
@@ -71,6 +72,7 @@ export function CreateOrderChoiceCard({
   accessibilityHint,
   selectionMode = 'radio',
   leading,
+  trailingContent,
   onPress,
 }: CreateOrderChoiceCardProps) {
   return (
@@ -79,6 +81,7 @@ export function CreateOrderChoiceCard({
       description={subtitle}
       selected={selected}
       leading={leading}
+      trailingContent={trailingContent}
       selectionMode={selectionMode}
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
@@ -97,6 +100,8 @@ type CreateOrderTextFieldProps = {
   keyboardType?: KeyboardTypeOptions;
   returnKeyType?: ReturnKeyTypeOptions;
   onSubmitEditing?: () => void;
+  onBlur?: () => void;
+  helperText?: string;
   registerField: RegisterCreateOrderField;
   registerInput: RegisterCreateOrderInput;
 };
@@ -111,6 +116,8 @@ export function CreateOrderTextField({
   keyboardType = 'default',
   returnKeyType = 'done',
   onSubmitEditing,
+  onBlur,
+  helperText,
   registerField,
   registerInput,
 }: CreateOrderTextFieldProps) {
@@ -130,7 +137,10 @@ export function CreateOrderTextField({
         blurOnSubmit={returnKeyType !== 'next'}
         onSubmitEditing={onSubmitEditing}
         onFocus={() => setIsFocused(true)}
-        onBlur={() => setIsFocused(false)}
+        onBlur={() => {
+          setIsFocused(false);
+          onBlur?.();
+        }}
         selectionColor="#8B4513"
         placeholder={placeholder}
         placeholderTextColor="#877369"
@@ -149,6 +159,8 @@ export function CreateOrderTextField({
         <Text accessibilityLiveRegion="polite" className="text-xs font-medium text-red-600">
           {error}
         </Text>
+      ) : helperText ? (
+        <Text className="text-xs leading-5 text-[#877369]">{helperText}</Text>
       ) : null}
     </View>
   );

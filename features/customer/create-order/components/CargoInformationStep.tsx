@@ -32,6 +32,7 @@ type CargoInformationStepProps = {
   onChangeQuantity: (value: string) => void;
   onChangeCategory: (value: GoodsType) => void;
   onChangeTemperature: (value: number) => void;
+  onBlurField: (field: CreateOrderFieldKey) => void;
   onSubmitField: (field: CreateOrderFieldKey) => void;
 };
 
@@ -39,24 +40,28 @@ const GOODS_TYPES: {
   id: GoodsType;
   label: string;
   description: string;
+  example: string;
   icon: keyof typeof Ionicons.glyphMap;
 }[] = [
   {
     id: 'FROZEN_FRUITS_VEGGIES',
     label: 'Thực phẩm đông lạnh',
-    description: 'Rau củ, trái cây và thực phẩm cấp đông',
+    description: 'Thực phẩm cần duy trì nhiệt độ âm',
+    example: 'Ví dụ: Tôm sú đông lạnh, cá hồi đông lạnh',
     icon: 'restaurant-outline',
   },
   {
     id: 'PHARMACEUTICALS',
     label: 'Dược phẩm',
     description: 'Thuốc, vaccine và vật tư y tế',
+    example: 'Ví dụ: Vaccine, thuốc bảo quản lạnh',
     icon: 'medkit-outline',
   },
   {
     id: 'MEAT_SEAFOOD',
     label: 'Thịt / Hải sản',
-    description: 'Thịt, cá và thủy hải sản đông lạnh',
+    description: 'Hàng tươi hoặc đông lạnh',
+    example: 'Ví dụ: Thịt bò đông lạnh, tôm, cá',
     icon: 'fish-outline',
   },
 ];
@@ -75,71 +80,19 @@ export function CargoInformationStep({
   onChangeQuantity,
   onChangeCategory,
   onChangeTemperature,
+  onBlurField,
   onSubmitField,
 }: CargoInformationStepProps) {
+  const selectedGoodsType = GOODS_TYPES.find((type) => type.id === category);
+
   return (
     <View className="gap-4">
-      <CreateOrderFormSection
-        title="Thông tin cơ bản"
-        icon="cube-outline"
-        description="Mô tả lô hàng để hệ thống kiểm tra điều kiện vận chuyển."
-      >
-        <CreateOrderTextField
-          field="itemName"
-          label="Tên hàng hóa"
-          placeholder="Ví dụ: Nho Mỹ, vaccine, cá hồi..."
-          value={itemName}
-          error={errors.itemName}
-          returnKeyType="next"
-          onChangeText={onChangeItemName}
-          onSubmitEditing={() => onSubmitField('itemName')}
-          registerField={registerField}
-          registerInput={registerInput}
-        />
-
-        <View className="flex-row gap-3">
-          <View className="flex-1">
-            <CreateOrderTextField
-              field="expectedWeightKg"
-              label="Khối lượng (kg)"
-              placeholder="Ví dụ: 12.5"
-              value={expectedWeightKg}
-              error={errors.expectedWeightKg}
-              keyboardType="numeric"
-              returnKeyType="next"
-              onChangeText={onChangeExpectedWeight}
-              onSubmitEditing={() => onSubmitField('expectedWeightKg')}
-              registerField={registerField}
-              registerInput={registerInput}
-            />
-          </View>
-          <View style={{ flex: 0.48 }}>
-            <CreateOrderTextField
-              field="quantity"
-              label="Số kiện"
-              placeholder="Ví dụ: 1"
-              value={quantity}
-              error={errors.quantity}
-              keyboardType="numeric"
-              onChangeText={onChangeQuantity}
-              onSubmitEditing={() => onSubmitField('quantity')}
-              registerField={registerField}
-              registerInput={registerInput}
-            />
-          </View>
-        </View>
-
-      </CreateOrderFormSection>
-
       <CreateOrderFormSection
         title="Phân loại hàng hóa"
         icon="grid-outline"
         description="Chọn nhóm phù hợp nhất với lô hàng."
       >
         <View ref={(node) => registerField('category', node)} className="gap-2">
-          <Text className="text-[13px] font-bold text-[#3A1F04]">
-            Phân loại hàng hóa <Text className="text-red-600">*</Text>
-          </Text>
           <View className="gap-2">
             {GOODS_TYPES.map((type) => {
               const selected = category === type.id;
@@ -152,10 +105,14 @@ export function CargoInformationStep({
                   title={type.label}
                   subtitle={type.description}
                   leading={(
-                    <View className="h-9 w-9 items-center justify-center rounded-full bg-[#F8F3EF]">
-                      <Ionicons name={type.icon} size={19} color="#8B4513" />
+                    <View
+                      className="h-9 w-9 items-center justify-center rounded-full"
+                      style={{ backgroundColor: selected ? customerColors.primary : customerColors.primarySoft }}
+                    >
+                      <Ionicons name={type.icon} size={19} color={selected ? '#FFFFFF' : customerColors.primary} />
                     </View>
                   )}
+                  trailingContent={<CategorySelectionIndicator selected={selected} />}
                   onPress={() => onChangeCategory(type.id)}
                 />
               );
@@ -166,18 +123,76 @@ export function CargoInformationStep({
       </CreateOrderFormSection>
 
       <CreateOrderFormSection
+        title="Thông tin lô hàng"
+        icon="cube-outline"
+        description="Thông tin dùng để tính tải trọng và xử lý lô hàng."
+      >
+        <CreateOrderTextField
+          field="itemName"
+          label="Tên hàng hóa"
+          placeholder="Nhập tên hàng hóa"
+          value={itemName}
+          error={errors.itemName}
+          helperText={selectedGoodsType?.example}
+          returnKeyType="next"
+          onChangeText={onChangeItemName}
+          onBlur={() => onBlurField('itemName')}
+          onSubmitEditing={() => onSubmitField('itemName')}
+          registerField={registerField}
+          registerInput={registerInput}
+        />
+
+        <View className="flex-row gap-3">
+          <View className="flex-1">
+            <CreateOrderTextField
+              field="expectedWeightKg"
+              label="Tổng khối lượng lô hàng (kg)"
+              placeholder="Nhập khối lượng"
+              value={expectedWeightKg}
+              error={errors.expectedWeightKg}
+              helperText="Tổng khối lượng của tất cả kiện hàng."
+              keyboardType="decimal-pad"
+              returnKeyType="next"
+              onChangeText={onChangeExpectedWeight}
+              onBlur={() => onBlurField('expectedWeightKg')}
+              onSubmitEditing={() => onSubmitField('expectedWeightKg')}
+              registerField={registerField}
+              registerInput={registerInput}
+            />
+          </View>
+          <View style={{ flex: 0.48 }}>
+            <CreateOrderTextField
+              field="quantity"
+              label="Tổng số kiện"
+              placeholder="1"
+              value={quantity}
+              error={errors.quantity}
+              helperText="Tổng số kiện trong lô hàng."
+              keyboardType="number-pad"
+              onChangeText={onChangeQuantity}
+              onBlur={() => onBlurField('quantity')}
+              onSubmitEditing={() => onSubmitField('quantity')}
+              registerField={registerField}
+              registerInput={registerInput}
+            />
+          </View>
+        </View>
+      </CreateOrderFormSection>
+
+      <CreateOrderFormSection
         title="Điều kiện bảo quản"
         icon="thermometer-outline"
-        description="Chọn nhiệt độ yêu cầu trong phạm vi hệ thống hỗ trợ."
+        description="Thiết lập nhiệt độ yêu cầu cho lô hàng."
       >
         <View ref={(node) => registerField('tempCondition', node)} className="gap-3">
+          <Text className="text-[13px] font-bold text-[#3A1F04]">
+            Nhiệt độ yêu cầu <Text className="text-red-600">*</Text>
+          </Text>
           <View
             className="flex-row items-center justify-between p-3"
             style={{
-              backgroundColor: customerColors.surfaceNeutral,
-              borderColor: customerColors.border,
+              backgroundColor: customerColors.primarySoft,
               borderRadius: customerRadius.control,
-              borderWidth: 1,
             }}
           >
             <TemperatureButton
@@ -194,7 +209,6 @@ export function CargoInformationStep({
               >
                 {temperature}°C
               </Text>
-              <Text className="mt-1 text-[11px] font-semibold text-[#877369]">Nhiệt độ yêu cầu</Text>
             </View>
             <TemperatureButton
               icon="add"
@@ -209,6 +223,21 @@ export function CargoInformationStep({
           {errors.tempCondition ? <FieldError message={errors.tempCondition} centered /> : null}
         </View>
       </CreateOrderFormSection>
+    </View>
+  );
+}
+
+function CategorySelectionIndicator({ selected }: { selected: boolean }) {
+  return (
+    <View
+      className="h-6 w-6 items-center justify-center rounded-full"
+      style={{
+        backgroundColor: selected ? customerColors.primary : customerColors.surface,
+        borderColor: selected ? customerColors.primary : customerColors.borderStrong,
+        borderWidth: 1,
+      }}
+    >
+      {selected ? <Ionicons name="checkmark" size={15} color="#FFFFFF" /> : null}
     </View>
   );
 }

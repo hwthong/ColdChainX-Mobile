@@ -563,6 +563,13 @@ export default function CreateOrderScreen() {
     if (errors[field]) setErrors((current) => ({ ...current, [field]: undefined }));
   };
 
+  const validateFieldOnBlur = (field: CreateOrderFieldKey) => {
+    const fieldStep = getFieldStep(field);
+    if (!fieldStep) return;
+    const fieldError = validateCreateOrderStep(fieldStep, formValues, routeOptions, bookingOptions)[field];
+    setErrors((current) => ({ ...current, [field]: fieldError }));
+  };
+
   const submitTextField = (field: CreateOrderFieldKey) => {
     const nextField = getNextInputField(field);
     if (nextField) inputRefs.current[nextField]?.focus();
@@ -660,6 +667,7 @@ export default function CreateOrderScreen() {
               setTempCondition(value);
               setErrors((current) => ({ ...current, tempCondition: undefined }));
             }}
+            onBlurField={validateFieldOnBlur}
             onSubmitField={submitTextField}
           />
         ) : null}
@@ -670,6 +678,7 @@ export default function CreateOrderScreen() {
             lengthCm={lengthCm}
             widthCm={widthCm}
             heightCm={heightCm}
+            quantity={quantity}
             image={documentImage}
             capacityWarning={capacityWarning}
             errors={errors}
@@ -685,6 +694,7 @@ export default function CreateOrderScreen() {
             onChangeHeight={(value) => updateTextField('heightCm', value, setHeightCm)}
             onPickImage={openImagePicker}
             onRemoveImage={removeDocumentImage}
+            onBlurField={validateFieldOnBlur}
             onSubmitField={submitTextField}
           />
         ) : null}
@@ -824,6 +834,13 @@ function getFirstInvalidStep(errors: CreateOrderValidationErrors): CreateOrderSt
     if (CREATE_ORDER_STEP_FIELDS[step].some((field) => errors[field])) return step;
   }
   return 4;
+}
+
+function getFieldStep(field: CreateOrderFieldKey): Exclude<CreateOrderStep, 4> | null {
+  for (const step of [1, 2, 3] as const) {
+    if (CREATE_ORDER_STEP_FIELDS[step].includes(field)) return step;
+  }
+  return null;
 }
 
 function getFirstInvalidField(errors: CreateOrderValidationErrors): CreateOrderFieldKey | null {
