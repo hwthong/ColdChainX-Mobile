@@ -46,6 +46,46 @@ const STATUS_PRESENTATIONS: Record<string, StatusPresentation> = {
   CANCELLED: { label: 'Đã hủy', containerClass: 'bg-red-100 border-red-200', textClass: 'text-red-800' },
 };
 
+const CONTRACT_STATUS_PRESENTATIONS: Record<string, StatusPresentation> = {
+  PENDING_CUSTOMER_SIGNATURE: { label: 'Chờ khách hàng ký', containerClass: 'bg-amber-100 border-amber-200', textClass: 'text-amber-800' },
+  PENDING_SALES_VERIFICATION: { label: 'Chờ Sales xác nhận', containerClass: 'bg-blue-100 border-blue-200', textClass: 'text-blue-800' },
+  ACTIVE: { label: 'Đã xác nhận', containerClass: 'bg-green-100 border-green-200', textClass: 'text-green-800' },
+  VERIFIED: { label: 'Đã xác nhận', containerClass: 'bg-green-100 border-green-200', textClass: 'text-green-800' },
+  REJECTED: { label: 'Cần ký lại', containerClass: 'bg-red-100 border-red-200', textClass: 'text-red-800' },
+  DRAFT: { label: 'Đang soạn', containerClass: 'bg-gray-100 border-gray-200', textClass: 'text-gray-800' },
+  PENDING_SIGNATURE: { label: 'Đang soạn', containerClass: 'bg-gray-100 border-gray-200', textClass: 'text-gray-800' },
+};
+
+const PACKAGING_LABELS: Record<string, string> = {
+  'FOAM BOX': 'Thùng xốp giữ nhiệt',
+  'FOAMBOX': 'Thùng xốp giữ nhiệt',
+  'FOAM_BOX': 'Thùng xốp giữ nhiệt',
+  'CARTON BOX': 'Thùng carton',
+  'CARTONBOX': 'Thùng carton',
+  'CARTON_BOX': 'Thùng carton',
+  'PLASTIC BOX': 'Thùng nhựa',
+  'PLASTICBOX': 'Thùng nhựa',
+  'PLASTIC_BOX': 'Thùng nhựa',
+  'PALLET': 'Pallet',
+  'BAG': 'Bao',
+};
+
+const CITY_LABELS: Record<string, string> = {
+  'HO CHI MINH CITY': 'TP. Hồ Chí Minh',
+  'HO CHI MINH': 'TP. Hồ Chí Minh',
+  'HOCHIMINH': 'TP. Hồ Chí Minh',
+  'TP.HCM': 'TP. Hồ Chí Minh',
+  'TP HCM': 'TP. Hồ Chí Minh',
+  'DAK LAK': 'Đắk Lắk',
+  'DAKLAK': 'Đắk Lắk',
+  'HA NOI': 'Hà Nội',
+  'HANOI': 'Hà Nội',
+  'DA NANG': 'Đà Nẵng',
+  'DANANG': 'Đà Nẵng',
+  'CAN THO': 'Cần Thơ',
+  'CANTHO': 'Cần Thơ',
+};
+
 const CATEGORY_LABELS: Record<string, string> = {
   FROZEN_FRUITS_VEGGIES: 'Rau củ, trái cây đông lạnh',
   PHARMACEUTICALS: 'Dược phẩm',
@@ -55,6 +95,28 @@ const CATEGORY_LABELS: Record<string, string> = {
 export function getCustomerOrderStatusPresentation(status?: string | null): StatusPresentation {
   const normalizedStatus = status?.trim().toUpperCase();
   return normalizedStatus ? STATUS_PRESENTATIONS[normalizedStatus] ?? DEFAULT_STATUS_PRESENTATION : DEFAULT_STATUS_PRESENTATION;
+}
+
+export function getContractStatusPresentation(status?: string | null): StatusPresentation {
+  const normalizedStatus = status?.trim().toUpperCase();
+  return normalizedStatus ? CONTRACT_STATUS_PRESENTATIONS[normalizedStatus] ?? getCustomerOrderStatusPresentation(status) : DEFAULT_STATUS_PRESENTATION;
+}
+
+export function getPackagingLabel(packingType?: string | null): string {
+  if (!packingType || !packingType.trim()) return 'Chưa cập nhật';
+  const key = packingType.trim().toUpperCase();
+  return PACKAGING_LABELS[key] ?? packingType.trim();
+}
+
+export function formatCityName(city?: string | null): string {
+  if (!city || !city.trim()) return 'Chưa cập nhật';
+  const key = city.trim().toUpperCase();
+  return CITY_LABELS[key] ?? city.trim();
+}
+
+export function formatTransitDuration(duration?: string | null): string {
+  if (!duration || !duration.trim()) return 'Chưa cập nhật';
+  return duration.trim().replace(/\bhours?\b/gi, 'giờ').replace(/\bdays?\b/gi, 'ngày');
 }
 
 const CUSTOMER_NOTIFICATION_STATUS_CODES = [

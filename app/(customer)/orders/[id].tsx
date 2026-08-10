@@ -24,8 +24,12 @@ import {
 } from '../../../services/appendixApi';
 import { customerApi } from '../../../services/customerApi';
 import {
+  formatCityName,
+  formatTransitDuration,
+  getContractStatusPresentation,
   getCustomerOrderCategoryLabel,
   getCustomerOrderStatusPresentation,
+  getPackagingLabel,
 } from '../../../constants/customerOrderPresentation';
 import {
   ContractInfoResponse,
@@ -161,8 +165,8 @@ export default function OrderDetailScreen() {
       try {
         const detail = await customerApi.getMyOrderTrackingDetail(orderId);
         setTrackingDetail(detail);
-      } catch (err) {
-        console.warn('Could not fetch tracking detail', err);
+      } catch {
+        // Optional tracking detail
       }
 
       await Promise.all([fetchContractDetail(), fetchAppendixDetail()]);
@@ -187,7 +191,6 @@ export default function OrderDetailScreen() {
 
   const documentImage = getFullAssetUrl(getOrderImageUrl(order));
 
-
   const handleAcceptQuotation = async (quote: QuotationResponse) => {
     if (!accessToken) {
       setError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
@@ -209,7 +212,7 @@ export default function OrderDetailScreen() {
         throw new Error(response.message || 'Không thể chấp nhận báo giá.');
       }
 
-      setSuccessMessage('Bạn đã chấp nhận báo giá.');
+      setSuccessMessage('Bạn đã chấp nhận báo giá thành công.');
       await fetchOrderDetail();
     } catch (err) {
       setError(getApiErrorMessage(err));
@@ -239,17 +242,17 @@ export default function OrderDetailScreen() {
 
   const handleUploadSignedContract = async () => {
     if (!accessToken) {
-      setContractError('Your session has expired. Please log in again.');
+      setContractError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
       return;
     }
 
     if (!contract) {
-      setContractError('Contract is not available yet.');
+      setContractError('Chưa có hợp đồng cho đơn hàng này.');
       return;
     }
 
     if (!selectedSignedFile) {
-      setContractError('Please choose a signed contract file before submitting.');
+      setContractError('Vui lòng chọn file hợp đồng đã ký trước khi gửi.');
       return;
     }
 
@@ -261,12 +264,12 @@ export default function OrderDetailScreen() {
       const response = await uploadSignedContract(contract.contractId, selectedSignedFile);
 
       if (!response.success) {
-        throw new Error(response.message || 'Could not upload signed contract.');
+        throw new Error(response.message || 'Không thể tải lên hợp đồng đã ký.');
       }
 
       setSelectedSignedFile(null);
-      setSuccessMessage('Signed contract uploaded. Waiting for Sales verification.');
-      Alert.alert('Upload complete', 'Signed contract uploaded. Waiting for Sales verification.');
+      setSuccessMessage('Đã tải hợp đồng đã ký lên. Đang chờ bộ phận Sales xác nhận.');
+      Alert.alert('Hoàn tất tải lên', 'Đã tải hợp đồng đã ký lên. Đang chờ bộ phận Sales xác nhận.');
       await fetchOrderDetail();
     } catch (err) {
       setContractError(getApiErrorMessage(err));
@@ -327,8 +330,8 @@ export default function OrderDetailScreen() {
       }
 
       setAppendix(response.data);
-      setSuccessMessage('Đã chấp nhận phụ lục. Vui lòng chờ Sales xác nhận thực thi.');
-      Alert.alert('Đã chấp nhận', 'Đã chấp nhận phụ lục. Vui lòng chờ Sales xác nhận thực thi.');
+      setSuccessMessage('Đã chấp nhận phụ lục. Vui lòng chờ bộ phận Sales xác nhận thực thi.');
+      Alert.alert('Đã chấp nhận', 'Đã chấp nhận phụ lục. Vui lòng chờ bộ phận Sales xác nhận thực thi.');
       await fetchOrderDetail();
     } catch (err) {
       setAppendixError(getApiErrorMessage(err));
@@ -408,6 +411,8 @@ export default function OrderDetailScreen() {
     );
   }
 
+  const stageDescription = getStageAwareHeaderDescription(order.status, Boolean(order.masterTripId));
+
   return (
     <ScrollView className="flex-1 bg-[#F5F2F0]" contentContainerStyle={{ padding: 20, paddingBottom: 80 }}>
       {error ? (
@@ -429,10 +434,11 @@ export default function OrderDetailScreen() {
               <Ionicons name="barcode-outline" size={20} color="#8B4513" />
               <Text className="text-xl font-bold text-[#8B4513]">{order.trackingCode}</Text>
             </View>
-            <Text className="mt-2 text-sm text-[#877369]">{formatDate(order.createdAt)}</Text>
+            <Text className="mt-2 text-xs text-[#877369]">{formatDateWithoutSeconds(order.createdAt)}</Text>
           </View>
           <StatusBadge status={order.status} />
         </View>
+
         {order.masterTripId ? (
           <Pressable
             onPress={() =>
@@ -448,7 +454,7 @@ export default function OrderDetailScreen() {
           </Pressable>
         ) : (
           <Text className="text-sm font-medium leading-6 text-[#877369]">
-            Đơn hàng chưa được điều phối vào chuyến.
+            {stageDescription}
           </Text>
         )}
       </View>
@@ -456,19 +462,23 @@ export default function OrderDetailScreen() {
       <InfoCard title="Thông tin hàng hóa" icon="cube-outline">
         <InfoRow label="Tên hàng" value={order.itemName} />
         <InfoRow label="Phân loại" value={formatCategory(order.category)} />
-        <InfoRow label="Số lượng" value={`${order.quantity}`} />
-        <InfoRow label="Quy cách đóng gói" value={order.packingType} />
-        <InfoRow label="Khối lượng dự kiến" value={`${order.expectedWeightKg} kg`} />
+        <InfoRow label="Số kiện" value={`${order.quantity}`} />
+        <InfoRow label="Đóng gói" value={getPackagingLabel(order.packingType)} />
+        <InfoRow label="Tổng khối lượng" value={`${order.expectedWeightKg} kg`} />
         <InfoRow label="Nhiệt độ yêu cầu" value={formatTemperature(order.tempCondition)} strong />
       </InfoCard>
 
       {order.route ? (
         <InfoCard title="Tuyến vận chuyển" icon="git-branch-outline">
-          <InfoRow label="Mã tuyến" value={order.route.routeCode} strong />
-          <InfoRow label="Điểm đi" value={order.route.originCity} />
-          <InfoRow label="Điểm đến" value={order.route.destCity} />
-          <InfoRow label="Thời gian dự kiến" value={order.route.transitTime} />
-          <InfoRow label="Cut-off nhập hub" value={formatCutOffTime(order.route.cutOffTime)} />
+          <InfoRow label="Điểm đi" value={formatCityName(order.route.originCity)} />
+          <InfoRow label="Điểm đến" value={formatCityName(order.route.destCity)} />
+          <InfoRow label="Thời gian vận chuyển" value={formatTransitDuration(order.route.transitTime)} />
+          <InfoRow label="Hạn nhận hàng tại kho" value={formatCutOffTime(order.route.cutOffTime)} />
+          {order.route.routeCode ? (
+            <View className="mt-1 border-t border-gray-100 pt-2">
+              <Text className="text-[11px] text-gray-400">Mã tuyến: {order.route.routeCode}</Text>
+            </View>
+          ) : null}
         </InfoCard>
       ) : null}
 
@@ -480,8 +490,8 @@ export default function OrderDetailScreen() {
 
       {hasCoordinates(order) ? (
         <InfoCard title="Vị trí giao hàng" icon="map-outline">
-          <InfoRow label="Latitude" value={`${order.destination?.latitude}`} />
-          <InfoRow label="Longitude" value={`${order.destination?.longitude}`} />
+          <InfoRow label="Vĩ độ (Latitude)" value={`${order.destination?.latitude}`} />
+          <InfoRow label="Kinh độ (Longitude)" value={`${order.destination?.longitude}`} />
           <Text className="mt-2 text-xs leading-5 text-[#877369]">
             Bản đồ sẽ được hiển thị khi ứng dụng tích hợp thư viện bản đồ phù hợp.
           </Text>
@@ -506,7 +516,7 @@ export default function OrderDetailScreen() {
 
         {displayedQuotations.length === 0 ? (
           <Text className="text-sm leading-6 text-[#877369]">
-            Đơn hàng đang chờ Sales kiểm duyệt và gửi báo giá.
+            Đơn hàng đang chờ bộ phận Sales kiểm duyệt và gửi báo giá.
           </Text>
         ) : (
           <View className="gap-4">
@@ -514,6 +524,7 @@ export default function OrderDetailScreen() {
               <QuotationCard
                 key={quote.quoteId}
                 quote={quote}
+                hasContract={Boolean(contract)}
                 isAccepting={isAcceptingQuoteId === quote.quoteId}
                 onAccept={() => handleAcceptQuotation(quote)}
               />
@@ -549,13 +560,13 @@ export default function OrderDetailScreen() {
         <InfoCard title="Giao hàng tại Hub" icon="business-outline">
           <InfoRow label="Kho nhận" value={trackingDetail.warehouse.warehouseName} strong />
           <InfoRow label="Nhiệt độ ghi nhận" value={formatTemperature(trackingDetail.warehouse.storedTemperature)} />
-          <InfoRow label="Thời gian nhận" value={formatDate(trackingDetail.warehouse.receivedAt)} />
+          <InfoRow label="Thời gian nhận" value={formatDateWithoutSeconds(trackingDetail.warehouse.receivedAt)} />
         </InfoCard>
       ) : null}
 
       {trackingDetail?.tripInfo ? (
         <InfoCard title="Điều phối & xếp xe" icon="file-tray-stacked-outline">
-          <InfoRow label="Chuyến xe" value={trackingDetail.tripInfo.tripId?.slice(0,8).toUpperCase()} strong />
+          <InfoRow label="Chuyến xe" value={trackingDetail.tripInfo.tripId?.slice(0, 8).toUpperCase()} strong />
           <InfoRow label="Số seal" value={trackingDetail.tripInfo.sealNumber || '--'} />
           {trackingDetail.vehicle ? (
             <InfoRow label="Xe vận chuyển" value={`${trackingDetail.vehicle.truckPlate} - ${trackingDetail.vehicle.vehicleType}`} />
@@ -564,10 +575,10 @@ export default function OrderDetailScreen() {
             <InfoRow label="Tài xế" value={trackingDetail.drivers.map((d: any) => d.fullName).join(', ')} />
           ) : null}
           {trackingDetail.route ? (
-            <InfoRow label="Tuyến" value={`${trackingDetail.route.routeCode} (${trackingDetail.route.originCity} -> ${trackingDetail.route.destCity})`} />
+            <InfoRow label="Tuyến" value={`${formatCityName(trackingDetail.route.originCity)} -> ${formatCityName(trackingDetail.route.destCity)}`} />
           ) : null}
-          <InfoRow label="Khởi hành" value={formatDate(trackingDetail.tripInfo.departedAt)} />
-          <InfoRow label="Dự kiến đến" value={formatDate(trackingDetail.estimatedArrival)} />
+          <InfoRow label="Khởi hành" value={formatDateWithoutSeconds(trackingDetail.tripInfo.departedAt)} />
+          <InfoRow label="Dự kiến đến" value={formatDateWithoutSeconds(trackingDetail.estimatedArrival)} />
         </InfoCard>
       ) : null}
 
@@ -576,14 +587,14 @@ export default function OrderDetailScreen() {
           <InfoRow label="Người nhận" value={trackingDetail.delivery.receiverName} strong />
           <InfoRow label="SĐT nhận" value={trackingDetail.delivery.receiverPhone} />
           <InfoRow label="Ghi chú ePOD" value={trackingDetail.delivery.note || '--'} />
-          <InfoRow label="Thời gian ký nhận" value={formatDate(trackingDetail.delivery.signedAt)} />
-          
+          <InfoRow label="Thời gian ký nhận" value={formatDateWithoutSeconds(trackingDetail.delivery.signedAt)} />
+
           {trackingDetail?.returnedItems?.length > 0 ? (
             <View className="mt-2 rounded-xl border border-red-200 bg-red-50 p-3">
               <Text className="text-sm font-bold text-red-700">Hàng trả về ({trackingDetail.returnedItems.length})</Text>
               {trackingDetail.returnedItems.map((item: any, idx: number) => (
                 <View key={idx} className="mt-2">
-                  <Text className="text-xs text-red-800 font-semibold">{item.itemName} (SL: {item.quantity})</Text>
+                  <Text className="text-xs font-semibold text-red-800">{item.itemName} (SL: {item.quantity})</Text>
                   <Text className="text-xs text-red-600">Lý do: {item.reasonNote || item.reasonType}</Text>
                 </View>
               ))}
@@ -597,10 +608,12 @@ export default function OrderDetailScreen() {
 
 function QuotationCard({
   quote,
+  hasContract,
   isAccepting,
   onAccept,
 }: {
   quote: QuotationResponse;
+  hasContract: boolean;
   isAccepting: boolean;
   onAccept: () => void;
 }) {
@@ -612,8 +625,8 @@ function QuotationCard({
     <View className="rounded-2xl border border-[#DAC2B6]/60 bg-[#F8F9FA] p-4">
       <View className="mb-3 flex-row items-start justify-between gap-3">
         <View>
-          <Text className="text-sm font-bold text-[#3A1F04]">Báo giá</Text>
-          <Text className="mt-1 text-xs text-[#877369]">{formatDate(quote.createdAt)}</Text>
+          <Text className="text-sm font-bold text-[#3A1F04]">Báo giá chi tiết</Text>
+          <Text className="mt-1 text-xs text-[#877369]">{formatDateWithoutSeconds(quote.createdAt)}</Text>
         </View>
         <StatusBadge status={quote.status} />
       </View>
@@ -629,7 +642,7 @@ function QuotationCard({
       {fullFileUrl ? (
         <Pressable onPress={() => Linking.openURL(fullFileUrl)} className="mt-4 flex-row items-center gap-2">
           <Ionicons name="document-attach-outline" size={16} color="#8B4513" />
-          <Text className="text-sm font-semibold text-[#8B4513]">Xem file báo giá</Text>
+          <Text className="text-sm font-semibold text-[#8B4513]">Xem báo giá</Text>
         </Pressable>
       ) : null}
 
@@ -648,10 +661,10 @@ function QuotationCard({
         </Pressable>
       ) : null}
 
-      {accepted ? (
+      {accepted && !hasContract ? (
         <View className="mt-4 rounded-xl border border-green-200 bg-green-50 p-3">
           <Text className="text-sm font-semibold leading-5 text-green-700">
-            Bạn đã chấp nhận báo giá. Hợp đồng sẽ được tạo trong bước tiếp theo.
+            Báo giá đã được chấp nhận. Đang chờ bộ phận Sales tạo hợp đồng.
           </Text>
         </View>
       ) : null}
@@ -687,13 +700,13 @@ function ContractSection({
     <View className="mb-4 rounded-2xl border border-[#DAC2B6]/50 bg-white p-5 shadow-sm">
       <View className="mb-3 flex-row items-center gap-2 border-b border-[#DAC2B6]/30 pb-3">
         <Ionicons name="document-text-outline" size={18} color="#8B4513" />
-        <Text className="text-base font-bold text-[#8B4513]">Contract</Text>
+        <Text className="text-base font-bold text-[#8B4513]">Hợp đồng</Text>
       </View>
 
       {isLoading ? (
         <View className="flex-row items-center gap-3 rounded-xl bg-[#F8F9FA] p-3">
           <ActivityIndicator size="small" color="#8B4513" />
-          <Text className="text-sm font-semibold text-[#877369]">Loading contract...</Text>
+          <Text className="text-sm font-semibold text-[#877369]">Đang tải hợp đồng...</Text>
         </View>
       ) : null}
 
@@ -704,7 +717,7 @@ function ContractSection({
       ) : null}
 
       {!isLoading && !contract ? (
-        <Text className="text-sm leading-6 text-[#877369]">Contract is not available yet.</Text>
+        <Text className="text-sm leading-6 text-[#877369]">Chưa có hợp đồng cho đơn hàng này.</Text>
       ) : null}
 
       {!isLoading && contract ? (
@@ -712,26 +725,26 @@ function ContractSection({
           <View className="flex-row items-start justify-between gap-3">
             <View className="flex-1">
               <Text className="text-sm font-bold text-[#3A1F04]">{contract.contractNumber}</Text>
-              <Text className="mt-1 text-xs text-[#877369]">Sent: {formatDate(contract.sentAt)}</Text>
+              <Text className="mt-1 text-xs text-[#877369]">Đã gửi: {formatDateWithoutSeconds(contract.sentAt)}</Text>
             </View>
-            <StatusBadge status={contract.status} />
+            <ContractStatusBadge status={contract.status} />
           </View>
 
           {contractFileUrl ? (
             <Pressable onPress={() => openContractFile(contractFileUrl)} className="flex-row items-center gap-2">
               <Ionicons name="document-attach-outline" size={16} color="#8B4513" />
-              <Text className="text-sm font-semibold text-[#8B4513]">Open contract file</Text>
+              <Text className="text-sm font-semibold text-[#8B4513]">Xem hợp đồng</Text>
             </Pressable>
           ) : null}
 
           {status === 'DRAFT' || status === 'PENDING_SIGNATURE' ? (
-            <Text className="text-sm leading-6 text-[#877369]">Contract is being prepared by Sales.</Text>
+            <Text className="text-sm leading-6 text-[#877369]">Hợp đồng đang được bộ phận Sales chuẩn bị.</Text>
           ) : null}
 
           {canUpload ? (
             <View className="gap-3 rounded-2xl border border-[#DAC2B6]/60 bg-[#F8F9FA] p-4">
               <Text className="text-sm leading-6 text-[#877369]">
-                Please upload the signed PDF or image contract for Sales verification.
+                Vui lòng tải lên hợp đồng đã ký để bộ phận Sales xác nhận.
               </Text>
 
               <Pressable
@@ -740,12 +753,12 @@ function ContractSection({
                 className="h-12 flex-row items-center justify-center gap-2 rounded-xl border border-[#8B4513] bg-white"
               >
                 <Ionicons name="cloud-upload-outline" size={18} color="#8B4513" />
-                <Text className="font-bold text-[#8B4513]">Upload Signed Contract</Text>
+                <Text className="font-bold text-[#8B4513]">Chọn file hợp đồng đã ký</Text>
               </Pressable>
 
               {selectedFile ? (
                 <View className="rounded-xl border border-green-200 bg-green-50 p-3">
-                  <Text className="text-xs font-semibold uppercase text-green-700">Selected file</Text>
+                  <Text className="text-xs font-semibold uppercase text-green-700">File đã chọn</Text>
                   <Text className="mt-1 text-sm font-bold text-green-800">
                     {selectedFile.name || 'signed-contract.pdf'}
                   </Text>
@@ -761,7 +774,7 @@ function ContractSection({
                 ].join(' ')}
               >
                 <Text className="font-bold text-white">
-                  {isUploading ? 'SUBMITTING...' : 'Submit Signed Contract'}
+                  {isUploading ? 'ĐANG TẢI LÊN...' : 'Tải hợp đồng đã ký lên'}
                 </Text>
               </Pressable>
             </View>
@@ -770,27 +783,27 @@ function ContractSection({
           {status === 'PENDING_SALES_VERIFICATION' ? (
             <View className="rounded-xl border border-blue-200 bg-blue-50 p-3">
               <Text className="text-sm font-semibold leading-5 text-blue-700">
-                Signed contract uploaded. Waiting for Sales verification.
+                Hợp đồng đã ký đã được tải lên. Đang chờ bộ phận Sales xác nhận.
               </Text>
               {signedFileUrl ? (
                 <Pressable onPress={() => openContractFile(signedFileUrl)} className="mt-3 flex-row items-center gap-2">
                   <Ionicons name="document-attach-outline" size={16} color="#1d4ed8" />
-                  <Text className="text-sm font-semibold text-blue-700">Open signed contract</Text>
+                  <Text className="text-sm font-semibold text-blue-700">Xem hợp đồng đã ký</Text>
                 </Pressable>
               ) : null}
             </View>
           ) : null}
 
-          {status === 'ACTIVE' ? (
+          {status === 'ACTIVE' || status === 'VERIFIED' ? (
             <View className="rounded-xl border border-green-200 bg-green-50 p-3">
-              <Text className="text-sm font-semibold leading-5 text-green-700">Contract verified.</Text>
+              <Text className="text-sm font-semibold leading-5 text-green-700">Hợp đồng đã được xác nhận.</Text>
               {orderTrackingCode ? (
-                <Text className="mt-2 text-sm font-bold text-green-800">Tracking code: {orderTrackingCode}</Text>
+                <Text className="mt-2 text-sm font-bold text-green-800">Mã theo dõi: {orderTrackingCode}</Text>
               ) : null}
               {signedFileUrl ? (
                 <Pressable onPress={() => openContractFile(signedFileUrl)} className="mt-3 flex-row items-center gap-2">
                   <Ionicons name="document-attach-outline" size={16} color="#15803d" />
-                  <Text className="text-sm font-semibold text-green-700">Open signed contract</Text>
+                  <Text className="text-sm font-semibold text-green-700">Xem hợp đồng đã ký</Text>
                 </Pressable>
               ) : null}
             </View>
@@ -859,7 +872,7 @@ function AppendixSection({
           <View className="flex-row items-start justify-between gap-3">
             <View className="flex-1">
               <Text className="text-sm font-bold text-[#3A1F04]">{appendix.appendixNumber}</Text>
-              <Text className="mt-1 text-xs text-[#877369]">Gửi lúc: {formatDate(appendix.sentAt)}</Text>
+              <Text className="mt-1 text-xs text-[#877369]">Gửi lúc: {formatDateWithoutSeconds(appendix.sentAt)}</Text>
             </View>
             <StatusBadge status={appendix.status} />
           </View>
@@ -881,7 +894,7 @@ function AppendixSection({
           {isAccepted ? (
             <View className="rounded-xl border border-green-200 bg-green-50 p-3">
               <Text className="text-sm font-semibold leading-5 text-green-700">
-                Bạn đã chấp nhận phụ lục. Đang chờ Sales thực thi xử lý nhập kho.
+                Bạn đã chấp nhận phụ lục. Đang chờ bộ phận Sales thực thi xử lý nhập kho.
               </Text>
             </View>
           ) : null}
@@ -961,8 +974,6 @@ function AppendixSection({
   );
 }
 
-
-
 function InfoCard({
   title,
   icon,
@@ -982,8 +993,6 @@ function InfoCard({
     </View>
   );
 }
-
-
 
 function InfoRow({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
   return (
@@ -1006,6 +1015,50 @@ function StatusBadge({ status }: { status: string }) {
       </Text>
     </View>
   );
+}
+
+function ContractStatusBadge({ status }: { status: string }) {
+  const presentation = getContractStatusPresentation(status);
+
+  return (
+    <View className={`rounded-full border px-2.5 py-1 ${presentation.containerClass}`}>
+      <Text className={`text-[10px] font-bold uppercase tracking-wider ${presentation.textClass}`}>
+        {presentation.label}
+      </Text>
+    </View>
+  );
+}
+
+function getStageAwareHeaderDescription(status?: string | null, hasMasterTrip?: boolean): string {
+  if (hasMasterTrip) return 'Đơn hàng đã được gán vào chuyến xe giám sát.';
+  const upper = status?.trim().toUpperCase();
+  switch (upper) {
+    case 'PENDING':
+    case 'PENDING_REVIEW':
+      return 'Đơn hàng đang chờ Sales duyệt.';
+    case 'QUOTING':
+    case 'SENT':
+      return 'Đang chờ xác nhận báo giá.';
+    case 'CONTRACT_PENDING':
+    case 'PENDING_CUSTOMER_SIGNATURE':
+      return 'Đơn hàng đang ở bước hợp đồng.';
+    case 'PENDING_SALES_VERIFICATION':
+      return 'Hợp đồng đang được bộ phận Sales xác minh.';
+    case 'CONTRACT_SIGNED':
+    case 'ACCEPTED':
+    case 'ACTIVE':
+    case 'EXECUTED':
+      return 'Hợp đồng đã xác nhận, sẵn sàng điều phối.';
+    case 'SCHEDULED':
+    case 'DISPATCHED_PENDING':
+      return 'Lịch vận chuyển đã được xác nhận.';
+    case 'IN_TRANSIT':
+      return 'Đơn hàng đang được vận chuyển.';
+    case 'DELIVERED':
+      return 'Đơn hàng đã giao thành công.';
+    default:
+      return 'Đơn hàng đang trong quá trình xử lý.';
+  }
 }
 
 function isAcceptableQuote(status: string) {
@@ -1071,7 +1124,7 @@ function getPickerMimeType(asset: Record<string, unknown>) {
 
 async function openContractFile(url?: string | null) {
   if (!url) {
-    Alert.alert('No contract file', 'Contract file is not available yet.');
+    Alert.alert('Không có file hợp đồng', 'File hợp đồng chưa sẵn sàng.');
     return;
   }
 
@@ -1079,8 +1132,8 @@ async function openContractFile(url?: string | null) {
     await WebBrowser.openBrowserAsync(encodeURI(url));
   } catch (error) {
     Alert.alert(
-      'Cannot open file',
-      error instanceof Error ? error.message : 'Unable to open contract file.'
+      'Không thể mở file',
+      error instanceof Error ? error.message : 'Không thể mở file hợp đồng.'
     );
   }
 }
@@ -1092,8 +1145,21 @@ function getFullAssetUrl(url?: string | null) {
   return `${assetBaseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
 }
 
-function formatDate(value?: string | null) {
-  return value ? new Date(value).toLocaleString('vi-VN') : 'Chưa cập nhật';
+function formatDateWithoutSeconds(value?: string | null) {
+  if (!value) return 'Chưa cập nhật';
+  let iso = value.trim();
+  if (!iso.endsWith('Z') && !/[+-]\d{2}:?\d{2}$/.test(iso)) {
+    iso += 'Z';
+  }
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return 'Chưa cập nhật';
+
+  const day = date.getDate().toString().padStart(2, '0');
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const year = date.getFullYear();
+  const hours = date.getHours().toString().padStart(2, '0');
+  const minutes = date.getMinutes().toString().padStart(2, '0');
+  return `${day}/${month}/${year} · ${hours}:${minutes}`;
 }
 
 function formatCutOffTime(value?: string | null) {
@@ -1105,9 +1171,12 @@ function formatMoney(value?: number | null) {
   return `${Number(value).toLocaleString('vi-VN')} đ`;
 }
 
-function formatTemperature(value: string | number) {
-  const text = String(value);
-  return text.includes('°') ? text : `${text} °C`;
+function formatTemperature(value?: string | number | null) {
+  if (value === null || value === undefined || value === '') return 'Chưa cập nhật';
+  const text = String(value).trim();
+  const num = parseFloat(text);
+  const cleanVal = Number.isNaN(num) ? text : `${num}`;
+  return cleanVal.includes('°') ? cleanVal : `${cleanVal}°C`;
 }
 
 function formatCategory(category: string) {

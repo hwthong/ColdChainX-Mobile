@@ -11,7 +11,6 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
-import { localizeCustomerOrderStatusesInText } from '../../constants/customerOrderPresentation';
 import { getApiErrorMessage } from '../../services/apiClient';
 import {
   getNotificationById,
@@ -20,13 +19,18 @@ import {
   markNotificationRead,
   NotificationResponse,
 } from '../../services/notificationApi';
+import { getMyCustomerOrders, OrderResponse } from '../../services/orderApi';
 import { useAuthStore } from '../../store/useAuthStore';
+import {
+  getNotificationPresentation,
+} from '../../utils/notificationPresenter';
 
 export default function NotificationsScreen() {
   const router = useRouter();
   const accessToken = useAuthStore((state) => state.token);
 
   const [notifications, setNotifications] = useState<NotificationResponse[]>([]);
+  const [ordersMap, setOrdersMap] = useState<Map<string, OrderResponse>>(new Map());
   const [selectedNotification, setSelectedNotification] = useState<NotificationResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -46,16 +50,26 @@ export default function NotificationsScreen() {
 
     try {
       setError(null);
-      const response = await getUserNotifications(accessToken, {
-        unreadOnly: false,
-        pageNumber: 1,
-        pageSize: 20,
-      });
+      const [notifResponse, ordersResponse] = await Promise.all([
+        getUserNotifications(accessToken, {
+          unreadOnly: false,
+          pageNumber: 1,
+          pageSize: 30,
+        }),
+        getMyCustomerOrders(accessToken, 1, 50).catch(() => null),
+      ]);
 
-      if (response.success && response.data) {
-        setNotifications(response.data.items);
+      if (ordersResponse?.success && ordersResponse.data) {
+        const map = new Map(
+          ordersResponse.data.map((o) => [o.orderId.toLowerCase(), o])
+        );
+        setOrdersMap(map);
+      }
+
+      if (notifResponse.success && notifResponse.data) {
+        setNotifications(notifResponse.data.items);
       } else {
-        setError(response.message || 'Không thể tải danh sách thông báo.');
+        setError(notifResponse.message || 'Không thể tải danh sách thông báo.');
       }
     } catch (err) {
       setError(getApiErrorMessage(err));
@@ -146,46 +160,63 @@ export default function NotificationsScreen() {
 
   const renderNotification = ({ item }: { item: NotificationResponse }) => {
     const unread = !isNotificationRead(item);
+    const p = getNotificationPresentation(item, ordersMap);
 
     return (
       <Pressable
         onPress={() => handlePressNotification(item)}
         className={[
-          'mb-3 rounded-2xl border p-4 shadow-sm',
-          unread ? 'border-[#8B4513]/30 bg-white' : 'border-[#DAC2B6]/50 bg-[#F8F9FA]',
+          'mb-2.5 rounded-2xl border p-3.5 shadow-sm',
+          unread ? 'border-[#8B4513]/30 bg-white' : 'border-[#DAC2B6]/40 bg-[#F8F9FA]',
         ].join(' ')}
       >
         <View className="flex-row items-start gap-3">
           <View
             className={[
-              'h-10 w-10 items-center justify-center rounded-full',
+              'h-9 w-9 items-center justify-center rounded-full',
               unread ? 'bg-[#8B4513]/10' : 'bg-[#DAC2B6]/30',
             ].join(' ')}
           >
-            <Ionicons name={getNotificationIcon(item)} size={20} color={unread ? '#8B4513' : '#877369'} />
+            <Ionicons name={p.iconName} size={18} color={unread ? '#8B4513' : '#877369'} />
           </View>
 
           <View className="flex-1">
-            <View className="flex-row items-start justify-between gap-2">
-              <Text className="flex-1 text-[15px] font-bold text-[#3A1F04]">
-                {getNotificationTitle(item)}
-              </Text>
-              {unread ? <View className="mt-1 h-2.5 w-2.5 rounded-full bg-[#8B4513]" /> : null}
+            <View className="flex-row items-center justify-between gap-2">
+              <View className="rounded-full bg-[#8B4513]/10 px-2.5 py-0.5">
+                <Text className="text-[10px] font-bold text-[#8B4513]">
+                  {p.categoryBadge}
+                </Text>
+              </View>
+              {unread ? <View className="h-2.5 w-2.5 rounded-full bg-[#8B4513]" /> : null}
             </View>
 
-            <Text className="mt-1 text-sm leading-5 text-[#877369]" numberOfLines={3}>
-              {getNotificationMessage(item)}
+            <Text className="mt-1 text-[15px] font-bold text-[#3A1F04]">
+              {p.title}
             </Text>
 
-            <View className="mt-3 flex-row items-center justify-between gap-3">
-              <Text className="text-xs font-medium text-[#877369]">{formatDate(item.createdAt)}</Text>
-              {getNotificationType(item) ? (
-                <View className="rounded-full bg-[#8B4513]/10 px-2.5 py-1">
-                  <Text className="text-[10px] font-bold uppercase text-[#8B4513]">
-                    {getNotificationType(item)}
-                  </Text>
-                </View>
-              ) : null}
+            {p.itemName ? (
+              <Text className="mt-0.5 text-xs font-semibold text-[#8B4513]">
+                {p.itemName}
+              </Text>
+            ) : null}
+
+            {p.description ? (
+              <Text className="mt-1 text-xs leading-4 text-[#877369]" numberOfLines={2}>
+                {p.description}
+              </Text>
+            ) : null}
+
+            {p.importantValue ? (
+              <Text className="mt-1 text-xs font-bold text-[#8B4513]">
+                {p.importantValue}
+              </Text>
+            ) : null}
+
+            <View className="mt-2 flex-row items-center gap-1.5">
+              <Ionicons name="time-outline" size={12} color="#877369" />
+              <Text className="text-[11px] font-medium text-[#877369]">
+                {p.orderRef ? `${p.orderRef} · ` : ''}{p.formattedTime}
+              </Text>
             </View>
           </View>
         </View>
@@ -202,19 +233,20 @@ export default function NotificationsScreen() {
     );
   }
 
+  const selectedP = selectedNotification ? getNotificationPresentation(selectedNotification, ordersMap) : null;
+
   return (
     <View className="flex-1 bg-[#F5F2F0]">
-      <View className="border-b border-[#DAC2B6]/40 bg-white px-5 py-4">
+      <View className="border-b border-[#DAC2B6]/40 bg-white px-5 py-3">
         <View className="flex-row items-center justify-between">
-          <View>
-            <Text className="text-lg font-bold text-[#3A1F04]">Trung tâm thông báo</Text>
-            <Text className="mt-1 text-xs text-[#877369]">{unreadCount} thông báo chưa đọc</Text>
-          </View>
+          <Text className="text-xs font-semibold text-[#877369]">
+            {unreadCount > 0 ? `${unreadCount} thông báo chưa đọc` : 'Tất cả thông báo đã được đọc'}
+          </Text>
           <Pressable
             onPress={handleMarkAllRead}
             disabled={isMarkingAll || unreadCount === 0}
             className={[
-              'rounded-xl px-3 py-2',
+              'rounded-xl px-3 py-1.5',
               unreadCount === 0 ? 'bg-[#DAC2B6]/30' : 'bg-[#8B4513]',
             ].join(' ')}
           >
@@ -238,14 +270,17 @@ export default function NotificationsScreen() {
           data={notifications}
           keyExtractor={(item, index) => getNotificationId(item) ?? `notification-${index}`}
           renderItem={renderNotification}
-          contentContainerStyle={{ padding: 20, paddingBottom: 100 }}
+          contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
           refreshControl={
             <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor="#8B4513" />
           }
           ListEmptyComponent={
-            <View className="items-center justify-center py-20">
-              <Ionicons name="notifications-outline" size={64} color="#877369" />
-              <Text className="mt-4 text-center font-medium text-[#877369]">Bạn chưa có thông báo nào.</Text>
+            <View className="items-center justify-center py-20 px-6">
+              <Ionicons name="notifications-outline" size={56} color="#877369" />
+              <Text className="mt-4 text-center text-base font-bold text-[#3A1F04]">Chưa có thông báo</Text>
+              <Text className="mt-2 text-center text-xs leading-5 text-[#877369]">
+                Các cập nhật về đơn hàng và vận chuyển sẽ xuất hiện tại đây.
+              </Text>
             </View>
           }
         />
@@ -254,20 +289,44 @@ export default function NotificationsScreen() {
       <Modal visible={!!selectedNotification} transparent animationType="fade">
         <View className="flex-1 items-center justify-center bg-black/60 px-5">
           <View className="w-full rounded-3xl bg-white p-6">
-            <View className="mb-4 flex-row items-start justify-between gap-3">
-              <Text className="flex-1 text-xl font-bold text-[#3A1F04]">
-                {selectedNotification ? getNotificationTitle(selectedNotification) : ''}
-              </Text>
-              <Pressable onPress={() => setSelectedNotification(null)} className="h-9 w-9 items-center justify-center">
-                <Ionicons name="close" size={22} color="#877369" />
+            <View className="mb-3 flex-row items-start justify-between gap-3">
+              <View className="flex-1">
+                <Text className="text-lg font-bold text-[#3A1F04]">
+                  {selectedP?.title || ''}
+                </Text>
+                {selectedP?.itemName ? (
+                  <Text className="mt-0.5 text-xs font-semibold text-[#8B4513]">
+                    {selectedP.itemName}
+                  </Text>
+                ) : null}
+              </View>
+              <Pressable onPress={() => setSelectedNotification(null)} className="h-9 w-9 items-center justify-center rounded-full bg-gray-100">
+                <Ionicons name="close" size={20} color="#877369" />
               </Pressable>
             </View>
-            <Text className="text-sm leading-6 text-[#877369]">
-              {selectedNotification ? getNotificationMessage(selectedNotification) : ''}
-            </Text>
-            <Text className="mt-4 text-xs font-medium text-[#877369]">
-              {selectedNotification ? formatDate(selectedNotification.createdAt) : ''}
-            </Text>
+
+            {selectedP?.description ? (
+              <Text className="text-sm leading-6 text-[#877369]">
+                {selectedP.description}
+              </Text>
+            ) : null}
+
+            {selectedP?.importantValue ? (
+              <Text className="mt-2 text-sm font-bold text-[#8B4513]">
+                {selectedP.importantValue}
+              </Text>
+            ) : null}
+
+            <View className="mt-4 flex-row items-center justify-between border-t border-[#DAC2B6]/30 pt-3">
+              <Text className="text-xs font-medium text-[#877369]">
+                {selectedP?.orderRef ? `${selectedP.orderRef} · ` : ''}{selectedP?.formattedTime || ''}
+              </Text>
+              <View className="rounded-full bg-[#8B4513]/10 px-2.5 py-0.5">
+                <Text className="text-[10px] font-bold text-[#8B4513]">
+                  {selectedP?.categoryBadge || ''}
+                </Text>
+              </View>
+            </View>
           </View>
         </View>
       </Modal>
@@ -279,29 +338,8 @@ function getNotificationId(notification: NotificationResponse) {
   return notification.notificationId ?? notification.notiId ?? notification.id ?? null;
 }
 
-function getNotificationTitle(notification: NotificationResponse) {
-  return notification.title?.trim() || getNotificationType(notification) || 'Thông báo ColdChainX';
-}
-
-function getNotificationMessage(notification: NotificationResponse) {
-  const message = notification.message?.trim() || notification.content?.trim();
-  return message ? localizeCustomerOrderStatusesInText(message) : 'Bạn có cập nhật mới từ ColdChainX.';
-}
-
-function getNotificationType(notification: NotificationResponse) {
-  return notification.type?.trim() || notification.category?.trim() || null;
-}
-
 function isNotificationRead(notification: NotificationResponse) {
   return Boolean(notification.isRead || notification.readAt);
-}
-
-function getNotificationIcon(notification: NotificationResponse): keyof typeof Ionicons.glyphMap {
-  const type = (getNotificationType(notification) ?? '').toUpperCase();
-  if (type.includes('QUOTE')) return 'receipt-outline';
-  if (type.includes('ORDER')) return 'cube-outline';
-  if (type.includes('CONTRACT')) return 'document-text-outline';
-  return 'notifications-outline';
 }
 
 function getNotificationOrderId(notification: NotificationResponse) {
@@ -328,8 +366,4 @@ function getOrderIdFromUnknown(value: unknown): string | null {
   const record = value as Record<string, unknown>;
   const orderId = record.orderId ?? record.OrderId;
   return typeof orderId === 'string' && orderId.trim() ? orderId : null;
-}
-
-function formatDate(value?: string | null) {
-  return value ? new Date(value).toLocaleString('vi-VN') : 'Chưa cập nhật';
 }
