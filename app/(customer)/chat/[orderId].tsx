@@ -4,6 +4,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, FlatList, KeyboardAvoidingView, Platform, Pressable, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { colors } from '../../../constants/colors';
 import { getApiErrorMessage } from '../../../services/apiClient';
 import { ChatMessage, findChatCounterpart, getChatMessages, markChatMessagesRead, sendChatMessage } from '../../../services/chatApi';
 import { getUserIdFromToken } from '../../../services/jwt';
@@ -60,25 +61,71 @@ export default function CustomerChatThreadScreen() {
   }, [counterpart, draft, load, orderId, token]);
 
   return (
-    <SafeAreaView edges={['bottom']} className="flex-1 bg-[#F5F2F0]">
+    <SafeAreaView edges={['bottom']} style={{ backgroundColor: colors.surface.page }} className="flex-1">
       <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={88}>
-        <View className="border-b border-[#DAC2B6]/60 bg-white px-5 py-3"><Text className="font-bold text-[#3A1F04]">Đơn {trackingCode || orderId?.slice(0, 8).toUpperCase() || '--'}</Text><Text className="mt-1 text-xs text-[#877369]">{counterpart?.name || 'Bộ phận phụ trách đơn hàng'}</Text></View>
-        {loading ? <View className="flex-1 items-center justify-center"><ActivityIndicator size="large" color="#8B4513" /></View> : error ? <View className="flex-1 items-center justify-center p-6"><Text className="text-center text-red-800">{error}</Text><Pressable onPress={() => void load()} className="mt-4 rounded-xl bg-[#8B4513] px-5 py-3"><Text className="font-bold text-white">Thử lại</Text></Pressable></View> : (
+        <View style={{ backgroundColor: colors.surface.card, borderBottomColor: colors.border.default }} className="border-b px-5 py-3">
+          <Text style={{ color: colors.text.primary }} className="font-bold">Đơn {trackingCode || orderId?.slice(0, 8).toUpperCase() || '--'}</Text>
+          <Text style={{ color: colors.text.secondary }} className="mt-1 text-xs">{counterpart?.name || 'Bộ phận phụ trách đơn hàng'}</Text>
+        </View>
+        {loading ? (
+          <View className="flex-1 items-center justify-center">
+            <ActivityIndicator size="large" color={colors.brand.primary} />
+          </View>
+        ) : error ? (
+          <View className="flex-1 items-center justify-center p-6">
+            <Text className="text-center text-red-800">{error}</Text>
+            <Pressable onPress={() => void load()} style={{ backgroundColor: colors.brand.primary }} className="mt-4 rounded-xl px-5 py-3">
+              <Text style={{ color: colors.text.onPrimary }} className="font-bold">Thử lại</Text>
+            </Pressable>
+          </View>
+        ) : (
           <FlatList
             ref={listRef}
             data={messages}
             keyExtractor={(message) => message.id}
             contentContainerStyle={{ padding: 16, gap: 10, flexGrow: 1, justifyContent: messages.length ? 'flex-start' : 'center' }}
             renderItem={({ item }) => <MessageBubble message={item} mine={item.senderId.toLowerCase() === currentUserId?.toLowerCase()} />}
-            ListEmptyComponent={<View className="items-center"><Ionicons name="chatbubble-outline" size={44} color="#877369" /><Text className="mt-3 text-center text-[#877369]">Chưa có tin nhắn cho đơn hàng này.</Text></View>}
+            ListEmptyComponent={
+              <View className="items-center">
+                <Ionicons name="chatbubble-outline" size={44} color={colors.text.muted} />
+                <Text style={{ color: colors.text.secondary }} className="mt-3 text-center">Chưa có tin nhắn cho đơn hàng này.</Text>
+              </View>
+            }
             onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
           />
         )}
-        {!counterpart && !loading && !error ? <View className="border-t border-amber-200 bg-amber-50 px-4 py-3"><Text className="text-xs leading-5 text-amber-900">Backend chưa cung cấp danh sách nhân viên nhận tin cho hội thoại mới. Bạn có thể gửi sau khi bộ phận phụ trách bắt đầu trao đổi.</Text></View> : null}
+        {!counterpart && !loading && !error ? (
+          <View className="border-t border-amber-200 bg-amber-50 px-4 py-3">
+            <Text className="text-xs leading-5 text-amber-900">Backend chưa cung cấp danh sách nhân viên nhận tin cho hội thoại mới. Bạn có thể gửi sau khi bộ phận phụ trách bắt đầu trao đổi.</Text>
+          </View>
+        ) : null}
         {sendError ? <Text className="bg-red-50 px-4 py-2 text-xs text-red-800">{sendError}</Text> : null}
-        <View className="flex-row items-end gap-2 border-t border-[#DAC2B6]/60 bg-white p-3">
-          <TextInput value={draft} onChangeText={setDraft} editable={!sending && Boolean(counterpart)} multiline maxLength={2000} placeholder={counterpart ? 'Nhập tin nhắn...' : 'Chưa xác định người phụ trách'} className="max-h-28 min-h-11 flex-1 rounded-2xl bg-[#F5F2F0] px-4 py-3 text-[#3A1F04]" />
-          <Pressable accessibilityRole="button" accessibilityLabel="Gửi tin nhắn" disabled={!draft.trim() || sending || !counterpart} onPress={() => void send()} className={`h-11 w-11 items-center justify-center rounded-full ${draft.trim() && counterpart && !sending ? 'bg-[#8B4513]' : 'bg-[#DAC2B6]'}`}>{sending ? <ActivityIndicator size="small" color="white" /> : <Ionicons name="send" size={19} color="white" />}</Pressable>
+        <View style={{ backgroundColor: colors.surface.card, borderTopColor: colors.border.default }} className="flex-row items-end gap-2 border-t p-3">
+          <TextInput
+            value={draft}
+            onChangeText={setDraft}
+            editable={!sending && Boolean(counterpart)}
+            multiline
+            maxLength={2000}
+            placeholder={counterpart ? 'Nhập tin nhắn...' : 'Chưa xác định người phụ trách'}
+            placeholderTextColor={colors.text.muted}
+            style={{ backgroundColor: colors.surface.page, color: colors.text.primary }}
+            className="max-h-28 min-h-11 flex-1 rounded-2xl px-4 py-3"
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Gửi tin nhắn"
+            disabled={!draft.trim() || sending || !counterpart}
+            onPress={() => void send()}
+            style={{ backgroundColor: draft.trim() && counterpart && !sending ? colors.brand.primary : colors.surface.muted }}
+            className="h-11 w-11 items-center justify-center rounded-full"
+          >
+            {sending ? (
+              <ActivityIndicator size="small" color="white" />
+            ) : (
+              <Ionicons name="send" size={19} color={draft.trim() && counterpart && !sending ? 'white' : colors.text.muted} />
+            )}
+          </Pressable>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -86,9 +133,32 @@ export default function CustomerChatThreadScreen() {
 }
 
 function MessageBubble({ message, mine }: { message: ChatMessage; mine: boolean }) {
-  return <View className={`max-w-[82%] rounded-2xl px-4 py-3 ${mine ? 'self-end bg-[#8B4513]' : 'self-start border border-[#DAC2B6]/60 bg-white'}`}><Text className={`text-sm leading-5 ${mine ? 'text-white' : 'text-[#3A1F04]'}`}>{message.messageContent}</Text><Text className={`mt-1 text-[10px] ${mine ? 'text-white/70' : 'text-[#877369]'}`}>{formatTime(message.createdAt)}{mine ? message.isRead ? ' · Đã đọc' : ' · Đã gửi' : ''}</Text></View>;
+  return (
+    <View
+      style={{ backgroundColor: mine ? colors.brand.primary : colors.surface.card, borderColor: mine ? undefined : colors.border.default }}
+      className={`max-w-[82%] rounded-2xl px-4 py-3 ${mine ? 'self-end' : 'self-start border'}`}
+    >
+      <Text style={{ color: mine ? colors.text.onPrimary : colors.text.primary }} className="text-sm leading-5">
+        {message.messageContent}
+      </Text>
+      <Text style={{ color: mine ? 'rgba(248, 252, 255, 0.7)' : colors.text.muted }} className="mt-1 text-[10px]">
+        {formatTime(message.createdAt)}
+        {mine ? (message.isRead ? ' · Đã đọc' : ' · Đã gửi') : ''}
+      </Text>
+    </View>
+  );
 }
 
-function mergeMessages(current: ChatMessage[], incoming: ChatMessage[]) { const map = new Map([...current, ...incoming].map((message) => [message.id, message])); return Array.from(map.values()).sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt)); }
-function formatTime(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) ? '--' : date.toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }); }
-function single(value?: string | string[]) { return Array.isArray(value) ? value[0] : value; }
+function mergeMessages(current: ChatMessage[], incoming: ChatMessage[]) {
+  const map = new Map([...current, ...incoming].map((message) => [message.id, message]));
+  return Array.from(map.values()).sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt));
+}
+
+function formatTime(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '--' : date.toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+}
+
+function single(value?: string | string[]) {
+  return Array.isArray(value) ? value[0] : value;
+}

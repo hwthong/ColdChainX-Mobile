@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 
+import { colors } from '../../../../constants/colors';
 import { customerColors, customerRadius } from '../../../../constants/customerTheme';
 import { CustomerCard, CustomerSectionHeader } from '../../../../components/customer/ui/CustomerUi';
 import type {
@@ -153,9 +154,9 @@ export function RouteScheduleStep({
 
 function RouteSummary({ route }: { route: RouteOptionResponse }) {
   return (
-    <View className="gap-1 p-4" style={{ backgroundColor: customerColors.primarySoft, borderRadius: customerRadius.control }}>
-      <Text className="text-base font-bold text-[#3A1F04]">{getRouteLabel(route)}</Text>
-      <Text className="text-xs leading-5 text-[#877369]">{getRouteMeta(route)}</Text>
+    <View className="gap-1 p-4" style={{ backgroundColor: colors.surface.selected, borderRadius: customerRadius.control }}>
+      <Text style={{ color: colors.text.primary }} className="text-base font-bold">{getRouteLabel(route)}</Text>
+      <Text style={{ color: colors.text.secondary }} className="text-xs leading-5">{getRouteMeta(route)}</Text>
     </View>
   );
 }
@@ -179,7 +180,7 @@ function RouteOptionPicker({
 }: RouteOptionPickerProps) {
   return (
     <View className="gap-2">
-      {isLoading ? <View className="items-center py-1"><ActivityIndicator size="small" color="#8B4513" /></View> : null}
+      {isLoading ? <View className="items-center py-1"><ActivityIndicator size="small" color={colors.brand.primary} /></View> : null}
 
       {error ? <LoadError message={error} actionLabel="Tải lại tuyến" onRetry={onRetry} /> : null}
 
@@ -187,13 +188,13 @@ function RouteOptionPicker({
         <View
           className="p-4"
           style={{
-            backgroundColor: customerColors.surfaceNeutral,
-            borderColor: customerColors.border,
+            backgroundColor: colors.surface.page,
+            borderColor: colors.border.default,
             borderRadius: 14,
             borderWidth: 1,
           }}
         >
-          <Text className="text-sm leading-5 text-[#877369]">
+          <Text style={{ color: colors.text.secondary }} className="text-sm leading-5">
             Chưa có tuyến vận chuyển khả dụng. Vui lòng thử lại sau.
           </Text>
         </View>
@@ -291,8 +292,8 @@ function ScheduleOptions({
   if (isLoading) {
     return (
       <View className="items-center py-4">
-        <ActivityIndicator size="small" color="#8B4513" />
-        <Text className="mt-2 text-xs text-[#877369]">Đang tải lịch khởi hành...</Text>
+        <ActivityIndicator size="small" color={colors.brand.primary} />
+        <Text style={{ color: colors.text.secondary }} className="mt-2 text-xs">Đang tải lịch khởi hành...</Text>
       </View>
     );
   }
@@ -317,7 +318,7 @@ function ScheduleOptions({
     <View className="gap-4">
       {/* 1. DATE SELECTOR */}
       <View className="gap-1.5">
-        <Text className="text-xs font-semibold uppercase tracking-wider text-[#877369]">Ngày khởi hành</Text>
+        <Text style={{ color: colors.text.secondary }} className="text-xs font-semibold uppercase tracking-wider">Ngày khởi hành</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-2 py-1">
           {dateGroups.map((group) => {
             const isSelected = group.dateKey === activeDateKey;
@@ -328,8 +329,8 @@ function ScheduleOptions({
                 accessibilityRole="button"
                 accessibilityLabel={`Ngày ${group.dayOfWeekLabel} ${group.dateLabel}`}
                 style={{
-                  backgroundColor: isSelected ? '#8B4513' : '#F8F9FA',
-                  borderColor: isSelected ? '#8B4513' : '#E5DEB6',
+                  backgroundColor: isSelected ? colors.surface.selected : colors.surface.card,
+                  borderColor: isSelected ? colors.border.selected : colors.border.default,
                   borderWidth: 1,
                   borderRadius: customerRadius.control,
                   paddingVertical: 8,
@@ -338,10 +339,10 @@ function ScheduleOptions({
                   minWidth: 64,
                 }}
               >
-                <Text className={`text-xs font-bold ${isSelected ? 'text-white' : 'text-[#3A1F04]'}`}>
+                <Text style={{ color: isSelected ? colors.text.brand : colors.text.primary }} className="text-xs font-bold">
                   {group.dayOfWeekLabel}
                 </Text>
-                <Text className={`text-xs ${isSelected ? 'text-amber-100' : 'text-[#877369]'}`}>
+                <Text style={{ color: isSelected ? colors.brand.primary : colors.text.secondary }} className="text-xs">
                   {group.dateLabel}
                 </Text>
               </Pressable>
@@ -353,7 +354,7 @@ function ScheduleOptions({
       {/* 2. TIME SELECTOR */}
       {activeGroup ? (
         <View className="gap-1.5">
-          <Text className="text-xs font-semibold uppercase tracking-wider text-[#877369]">Giờ khởi hành</Text>
+          <Text style={{ color: colors.text.secondary }} className="text-xs font-semibold uppercase tracking-wider">Giờ khởi hành</Text>
           <View className="flex-row flex-wrap gap-2 py-1">
             {activeGroup.schedules.map((schedule) => {
               const isSelected = schedule.scheduleId === selectedScheduleId;
@@ -365,8 +366,8 @@ function ScheduleOptions({
                   accessibilityRole="button"
                   accessibilityLabel={`Khởi hành lúc ${timeDisplay}`}
                   style={{
-                    backgroundColor: isSelected ? '#8B4513' : '#F5F0EB',
-                    borderColor: isSelected ? '#8B4513' : '#D9C8B4',
+                    backgroundColor: isSelected ? colors.surface.selected : colors.surface.card,
+                    borderColor: isSelected ? colors.border.selected : colors.border.default,
                     borderWidth: 1,
                     borderRadius: customerRadius.control,
                     paddingVertical: 10,
@@ -374,7 +375,7 @@ function ScheduleOptions({
                     alignItems: 'center',
                   }}
                 >
-                  <Text className={`text-sm font-bold ${isSelected ? 'text-white' : 'text-[#3A1F04]'}`}>
+                  <Text style={{ color: isSelected ? colors.text.brand : colors.text.primary }} className="text-sm font-bold">
                     {timeDisplay}
                   </Text>
                 </Pressable>
@@ -388,8 +389,8 @@ function ScheduleOptions({
       {currentSchedule ? (
         <View
           style={{
-            backgroundColor: '#FAF5EE',
-            borderColor: '#E8DEC9',
+            backgroundColor: colors.surface.selected,
+            borderColor: colors.border.focus,
             borderWidth: 1,
             borderRadius: customerRadius.control,
             padding: 12,
@@ -397,14 +398,14 @@ function ScheduleOptions({
           }}
         >
           <View className="flex-row items-center justify-between">
-            <Text className="text-xs font-semibold text-[#8B4513]">
+            <Text style={{ color: colors.brand.primary }} className="text-xs font-semibold">
               Nhận hàng trước {currentSchedule.cutOffTime.slice(0, 5)}
             </Text>
-            <Text className="text-xs font-bold text-[#3A1F04]">
+            <Text style={{ color: colors.text.primary }} className="text-xs font-bold">
               {calculateEtaText(currentSchedule.departureDate, currentSchedule.departureTime, selectedRoute?.transitTime)}
             </Text>
           </View>
-          <Text className="text-[11px] leading-4 text-[#877369]">
+          <Text style={{ color: colors.text.secondary }} className="text-[11px] leading-4">
             * Lịch dự kiến, sẽ được xác nhận khi yêu cầu vận chuyển được xử lý.
           </Text>
         </View>
@@ -425,7 +426,7 @@ type DropoffOptionsProps = {
 };
 
 function DropoffOptions({ bookingOptions, isLoading, error, selectedStopId, stopError, onSelectStop }: DropoffOptionsProps) {
-  if (isLoading) return <Text className="text-xs leading-5 text-[#877369]">Đang tải điểm giao hàng...</Text>;
+  if (isLoading) return <Text style={{ color: colors.text.secondary }} className="text-xs leading-5">Đang tải điểm giao hàng...</Text>;
   if (error || !bookingOptions) return null;
   if (bookingOptions.availableStops.length === 0) return <AvailabilityNotice>Tuyến này chưa có điểm giao. Vui lòng chọn tuyến khác.</AvailabilityNotice>;
 
@@ -463,9 +464,10 @@ function LoadError({
         onPress={onRetry}
         accessibilityRole="button"
         accessibilityLabel={actionLabel}
-        className="min-h-10 self-start justify-center rounded-lg bg-[#8B4513] px-3"
+        style={{ backgroundColor: colors.brand.primary }}
+        className="min-h-10 self-start justify-center rounded-lg px-3"
       >
-        <Text className="text-xs font-bold text-white">{actionLabel}</Text>
+        <Text style={{ color: colors.text.onPrimary }} className="text-xs font-bold">{actionLabel}</Text>
       </Pressable>
     </View>
   );
@@ -473,8 +475,8 @@ function LoadError({
 
 function AvailabilityNotice({ children }: { children: React.ReactNode }) {
   return (
-    <View className="rounded-2xl bg-[#F8F9FA] p-4">
-      <Text className="text-sm leading-5 text-[#877369]">{children}</Text>
+    <View style={{ backgroundColor: colors.surface.page }} className="rounded-2xl p-4">
+      <Text style={{ color: colors.text.secondary }} className="text-sm leading-5">{children}</Text>
     </View>
   );
 }

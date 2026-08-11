@@ -2,6 +2,7 @@ import React from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { CustomerHeader } from '../../components/CustomerHeader';
+import { colors } from '../../constants/colors';
 
 export default function CustomerLayout() {
   return (
@@ -26,8 +27,8 @@ export default function CustomerLayout() {
 
           return <CustomerHeader title={title} showBackButton={showBackButton} />;
         },
-        tabBarActiveTintColor: '#8B4513',
-        tabBarInactiveTintColor: '#6F6A66',
+        tabBarActiveTintColor: colors.brand.primary,
+        tabBarInactiveTintColor: colors.text.muted,
         tabBarHideOnKeyboard: true,
         tabBarLabelStyle: {
           fontSize: 12,
@@ -39,8 +40,8 @@ export default function CustomerLayout() {
           paddingVertical: 4,
         },
         tabBarStyle: {
-          backgroundColor: '#ffffff',
-          borderTopColor: 'rgba(218, 194, 182, 0.5)',
+          backgroundColor: colors.surface.card,
+          borderTopColor: colors.border.default,
           elevation: 10,
           shadowColor: '#000000',
           shadowOffset: { width: 0, height: -4 },

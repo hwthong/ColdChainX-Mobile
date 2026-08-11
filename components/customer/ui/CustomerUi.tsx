@@ -2,7 +2,8 @@ import React, { type ReactNode } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, type AccessibilityRole } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-import { customerColors, customerControl, customerRadius, customerSpacing } from '../../../constants/customerTheme';
+import { colors } from '../../../constants/colors';
+import { customerControl, customerRadius, customerSpacing } from '../../../constants/customerTheme';
 
 type CustomerCardProps = {
   children: ReactNode;
@@ -14,10 +15,10 @@ type CustomerCardProps = {
 
 export function CustomerCard({ children, variant = 'default', padding = customerSpacing.lg, onPress, accessibilityLabel }: CustomerCardProps) {
   const style = {
-    backgroundColor: variant === 'soft' ? customerColors.primarySoft : customerColors.surface,
-    borderColor: variant === 'outlined' ? customerColors.borderStrong : customerColors.borderSubtle,
+    backgroundColor: variant === 'soft' ? colors.surface.cardSoft : colors.surface.card,
+    borderColor: variant === 'outlined' ? colors.border.strong : colors.border.default,
     borderRadius: customerRadius.card,
-    borderWidth: variant === 'soft' ? 0 : 1,
+    borderWidth: 1,
     padding,
   } as const;
 
@@ -38,12 +39,16 @@ export function CustomerSectionHeader({ title, description, icon, actionLabel, o
     <View>
       <View className="flex-row items-center justify-between gap-3">
         <View className="flex-1 flex-row items-center gap-2">
-          {icon ? <Ionicons name={icon} size={18} color={customerColors.primary} /> : null}
-          <Text className="flex-1 text-base font-bold text-[#3A1F04]">{title}</Text>
+          {icon ? <Ionicons name={icon} size={18} color={colors.brand.primary} /> : null}
+          <Text style={{ color: colors.text.primary }} className="flex-1 text-base font-bold">{title}</Text>
         </View>
-        {actionLabel && onAction ? <Pressable onPress={onAction} accessibilityRole="button" accessibilityLabel={actionLabel} className="min-h-11 justify-center px-1"><Text className="text-sm font-bold text-[#8B4513]">{actionLabel}</Text></Pressable> : null}
+        {actionLabel && onAction ? (
+          <Pressable onPress={onAction} accessibilityRole="button" accessibilityLabel={actionLabel} className="min-h-11 justify-center px-1">
+            <Text style={{ color: colors.brand.primary }} className="text-sm font-bold">{actionLabel}</Text>
+          </Pressable>
+        ) : null}
       </View>
-      {description ? <Text className="mt-1 text-xs leading-5 text-[#877369]">{description}</Text> : null}
+      {description ? <Text style={{ color: colors.text.secondary }} className="mt-1 text-xs leading-5">{description}</Text> : null}
     </View>
   );
 }
@@ -62,14 +67,6 @@ type CustomerButtonProps = {
 export function CustomerButton({ label, variant = 'primary', loading = false, disabled = false, onPress, icon, fullWidth = false, accessibilityLabel }: CustomerButtonProps) {
   const isPrimary = variant === 'primary';
   const isDisabled = disabled || loading;
-  const buttonStyle = [
-    styles.buttonBase,
-    fullWidth && styles.buttonFullWidth,
-    variant === 'primary' && styles.buttonPrimary,
-    variant === 'secondary' && styles.buttonSecondary,
-    variant === 'ghost' && styles.buttonGhost,
-    isDisabled && styles.buttonDisabled,
-  ];
 
   return (
     <Pressable
@@ -78,19 +75,30 @@ export function CustomerButton({ label, variant = 'primary', loading = false, di
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel || label}
       accessibilityState={{ busy: loading, disabled: isDisabled }}
-      style={buttonStyle}
+      style={({ pressed }) => [
+        styles.buttonBase,
+        fullWidth && styles.buttonFullWidth,
+        variant === 'primary' && (pressed ? styles.buttonPrimaryPressed : styles.buttonPrimary),
+        variant === 'secondary' && (pressed ? styles.buttonSecondaryPressed : styles.buttonSecondary),
+        variant === 'ghost' && styles.buttonGhost,
+        isDisabled && styles.buttonDisabled,
+      ]}
     >
       <View style={styles.buttonContent}>
-        {loading ? <ActivityIndicator color={isPrimary ? '#FFFFFF' : customerColors.primary} /> : icon}
+        {loading ? <ActivityIndicator color={isPrimary ? colors.text.onPrimary : colors.brand.primary} /> : icon}
         <Text style={[styles.buttonText, isPrimary ? styles.buttonTextPrimary : styles.buttonTextSecondary]} numberOfLines={1}>{label}</Text>
       </View>
     </Pressable>
   );
 }
 
-type CustomerChoiceCardProps = {
+export type CustomerChoiceCardProps = {
   title: string;
   description?: string;
+  subtitle?: string;
+  helperText?: string;
+  icon?: keyof typeof Ionicons.glyphMap;
+  rightElement?: ReactNode;
   selected: boolean;
   disabled?: boolean;
   onPress: () => void;
@@ -101,31 +109,56 @@ type CustomerChoiceCardProps = {
   accessibilityHint?: string;
 };
 
-export function CustomerChoiceCard({ title, description, selected, disabled = false, onPress, leading, trailingContent, selectionMode = 'button', accessibilityLabel, accessibilityHint }: CustomerChoiceCardProps) {
+export function CustomerChoiceCard({
+  title,
+  description,
+  subtitle,
+  helperText,
+  icon,
+  rightElement,
+  selected,
+  disabled = false,
+  onPress,
+  leading,
+  trailingContent,
+  selectionMode = 'button',
+  accessibilityLabel,
+  accessibilityHint,
+}: CustomerChoiceCardProps) {
+  const descText = description || subtitle || helperText;
+  const leadIcon = leading || (icon ? <Ionicons name={icon} size={20} color={selected ? colors.brand.primary : colors.text.muted} /> : null);
+  const trailContent = trailingContent || rightElement;
+
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
       accessibilityRole={selectionMode}
-      accessibilityLabel={accessibilityLabel || `${title}${description ? `, ${description}` : ''}`}
+      accessibilityLabel={accessibilityLabel || `${title}${descText ? `, ${descText}` : ''}`}
       accessibilityHint={accessibilityHint}
       accessibilityState={{ disabled, selected }}
       className="flex-row items-center gap-3 px-4 py-3"
       style={({ pressed }) => ({
-        backgroundColor: selected ? customerColors.primarySoft : customerColors.surface,
-        borderColor: selected ? customerColors.primary : customerColors.border,
+        backgroundColor: selected ? colors.surface.selected : colors.surface.card,
+        borderColor: selected ? colors.border.selected : colors.border.default,
         borderRadius: customerRadius.control,
         borderWidth: 1,
         minHeight: 62,
         opacity: disabled ? 0.5 : pressed ? 0.76 : 1,
       })}
     >
-      {leading}
+      {leadIcon}
       <View className="flex-1">
-        <Text className={['text-sm font-bold', selected ? 'text-[#8B4513]' : 'text-[#3A1F04]'].join(' ')}>{title}</Text>
-        {description ? <Text className="mt-1 text-xs leading-5 text-[#877369]">{description}</Text> : null}
+        <Text style={{ color: selected ? colors.text.brand : colors.text.primary }} className="text-sm font-bold">{title}</Text>
+        {descText ? <Text style={{ color: colors.text.secondary }} className="mt-1 text-xs leading-5">{descText}</Text> : null}
       </View>
-      {trailingContent || (selected ? <View className="h-6 w-6 items-center justify-center rounded-full bg-[#8B4513]"><Ionicons name="checkmark" size={15} color="#FFFFFF" /></View> : <Ionicons name="chevron-forward" size={18} color="#A28A7D" />)}
+      {trailContent || (selected ? (
+        <View style={{ backgroundColor: colors.brand.primary }} className="h-6 w-6 items-center justify-center rounded-full">
+          <Ionicons name="checkmark" size={15} color={colors.text.onPrimary} />
+        </View>
+      ) : (
+        <Ionicons name="chevron-forward" size={18} color={colors.text.muted} />
+      ))}
     </Pressable>
   );
 }
@@ -160,8 +193,8 @@ export function CustomerBottomActionBar({ primaryLabel, onPrimaryPress, primaryL
 const styles = StyleSheet.create({
   actionBar: {
     alignItems: 'center',
-    backgroundColor: customerColors.surface,
-    borderTopColor: customerColors.border,
+    backgroundColor: colors.surface.card,
+    borderTopColor: colors.border.default,
     borderTopWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     flexShrink: 0,
@@ -197,11 +230,19 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   buttonPrimary: {
-    backgroundColor: customerColors.primary,
+    backgroundColor: colors.brand.primary,
+  },
+  buttonPrimaryPressed: {
+    backgroundColor: colors.brand.primaryPressed,
   },
   buttonSecondary: {
-    backgroundColor: customerColors.surface,
-    borderColor: customerColors.primary,
+    backgroundColor: colors.surface.card,
+    borderColor: colors.border.strong,
+    borderWidth: 1,
+  },
+  buttonSecondaryPressed: {
+    backgroundColor: colors.brand.primarySoft,
+    borderColor: colors.border.selected,
     borderWidth: 1,
   },
   buttonText: {
@@ -210,10 +251,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   buttonTextPrimary: {
-    color: '#FFFFFF',
+    color: colors.text.onPrimary,
   },
   buttonTextSecondary: {
-    color: customerColors.primary,
+    color: colors.brand.primary,
   },
   primaryAction: {
     flex: 1,

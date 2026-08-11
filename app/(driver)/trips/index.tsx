@@ -3,6 +3,7 @@ import { View, Text, FlatList, ActivityIndicator, Pressable, RefreshControl } fr
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
+import { colors } from '../../../constants/colors';
 import { driverApi, TripListDto } from '../../../services/driverApi';
 import { formatDateTimeVi } from '../../../constants/warehouseTheme';
 
@@ -55,18 +56,20 @@ export default function DriverTripsScreen() {
     return (
       <Pressable
         onPress={() => router.push(`/(driver)/trips/${item.tripId}` as any)}
-        className="mb-4 rounded-2xl border border-amber-200 bg-white p-4 shadow-sm"
         style={({ pressed }) => ({
+          backgroundColor: colors.surface.card,
+          borderColor: colors.border.default,
           opacity: pressed ? 0.7 : 1,
         })}
+        className="mb-4 rounded-2xl border p-4 shadow-sm"
       >
         <View className="mb-3 flex-row items-start justify-between">
           <View className="flex-1">
-            <Text className="text-base font-bold text-amber-900">
+            <Text style={{ color: colors.text.primary }} className="text-base font-bold">
               {item.tripCode || `Chuyến ${item.tripId.substring(0, 8).toUpperCase()}`}
             </Text>
             {item.vehiclePlate && (
-              <Text className="mt-1 text-sm font-medium text-amber-700">
+              <Text style={{ color: colors.text.secondary }} className="mt-1 text-sm font-medium">
                 Xe: {item.vehiclePlate}
               </Text>
             )}
@@ -79,28 +82,28 @@ export default function DriverTripsScreen() {
         </View>
 
         <View className="mb-1.5 flex-row items-center">
-          <Ionicons name="location" size={16} color="#8B4513" className="mr-2" />
-          <Text className="ml-2 flex-1 text-sm text-amber-900 line-clamp-1" numberOfLines={1}>
+          <Ionicons name="location" size={16} color={colors.brand.primary} className="mr-2" />
+          <Text style={{ color: colors.text.primary }} className="ml-2 flex-1 text-sm line-clamp-1" numberOfLines={1}>
             {item.origin || 'Chưa xác định'}
           </Text>
         </View>
         <View className="mb-3 flex-row items-center">
-          <Ionicons name="flag" size={16} color="#8B4513" className="mr-2" />
-          <Text className="ml-2 flex-1 text-sm text-amber-900 line-clamp-1" numberOfLines={1}>
+          <Ionicons name="flag" size={16} color={colors.brand.primary} className="mr-2" />
+          <Text style={{ color: colors.text.primary }} className="ml-2 flex-1 text-sm line-clamp-1" numberOfLines={1}>
             {item.destination || 'Chưa xác định'}
           </Text>
         </View>
 
-        <View className="flex-row items-center justify-between border-t border-amber-100 pt-3">
+        <View style={{ borderTopColor: colors.border.default }} className="flex-row items-center justify-between border-t pt-3">
           <View>
-            <Text className="text-xs text-amber-700">Khởi hành dự kiến</Text>
-            <Text className="mt-1 text-sm font-semibold text-amber-900">
+            <Text style={{ color: colors.text.muted }} className="text-xs">Khởi hành dự kiến</Text>
+            <Text style={{ color: colors.text.primary }} className="mt-1 text-sm font-semibold">
               {formatDateTimeVi(item.plannedStartTime)}
             </Text>
           </View>
           <View className="items-end">
-            <Text className="text-xs text-amber-700">Đơn hàng</Text>
-            <Text className="mt-1 text-sm font-semibold text-amber-900">
+            <Text style={{ color: colors.text.muted }} className="text-xs">Đơn hàng</Text>
+            <Text style={{ color: colors.text.primary }} className="mt-1 text-sm font-semibold">
               {item.totalOrders} đơn
             </Text>
           </View>
@@ -111,21 +114,21 @@ export default function DriverTripsScreen() {
 
   if (loading && !refreshing) {
     return (
-      <View className="flex-1 items-center justify-center bg-[#F6F8F2]">
-        <ActivityIndicator size="large" color="#8B4513" />
-        <Text className="mt-4 text-amber-800">Đang tải danh sách chuyến...</Text>
+      <View style={{ backgroundColor: colors.surface.page }} className="flex-1 items-center justify-center">
+        <ActivityIndicator size="large" color={colors.brand.primary} />
+        <Text style={{ color: colors.brand.primary }} className="mt-4 font-medium">Đang tải danh sách chuyến...</Text>
       </View>
     );
   }
 
   return (
-    <View className="flex-1 bg-[#F6F8F2]">
+    <View style={{ backgroundColor: colors.surface.page }} className="flex-1">
       <FlatList
         data={trips}
         keyExtractor={(item) => item.tripId}
         renderItem={renderTrip}
         contentContainerStyle={{ padding: 24, paddingBottom: 40 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchTrips(); }} tintColor="#8B4513" />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchTrips(); }} tintColor={colors.brand.primary} />}
         ListHeaderComponent={
           error ? (
             <View className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4">
@@ -138,12 +141,12 @@ export default function DriverTripsScreen() {
         }
         ListEmptyComponent={
           !loading && !error ? (
-            <View className="mt-10 items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 py-10">
-              <Ionicons name="car-sport-outline" size={64} color="#877369" />
-              <Text className="mt-4 text-base font-semibold text-amber-900">
+            <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="mt-10 items-center justify-center rounded-2xl border px-6 py-10">
+              <Ionicons name="car-sport-outline" size={64} color={colors.text.muted} />
+              <Text style={{ color: colors.text.primary }} className="mt-4 text-base font-semibold">
                 Chưa có chuyến được phân công.
               </Text>
-              <Text className="mt-1 text-sm text-amber-700 text-center px-6">
+              <Text style={{ color: colors.text.secondary }} className="mt-1 text-center text-sm">
                 Các chuyến xe được điều phối cho bạn sẽ xuất hiện tại đây.
               </Text>
             </View>

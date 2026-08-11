@@ -11,6 +11,7 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
+import { colors } from '../../constants/colors';
 import { getApiErrorMessage } from '../../services/apiClient';
 import {
   getNotificationById,
@@ -165,56 +166,55 @@ export default function NotificationsScreen() {
     return (
       <Pressable
         onPress={() => handlePressNotification(item)}
-        className={[
-          'mb-2.5 rounded-2xl border p-3.5 shadow-sm',
-          unread ? 'border-[#8B4513]/30 bg-white' : 'border-[#DAC2B6]/40 bg-[#F8F9FA]',
-        ].join(' ')}
+        style={{
+          backgroundColor: unread ? colors.surface.card : colors.surface.page,
+          borderColor: unread ? colors.border.selected : colors.border.default,
+        }}
+        className="mb-2.5 rounded-2xl border p-3.5 shadow-sm"
       >
         <View className="flex-row items-start gap-3">
           <View
-            className={[
-              'h-9 w-9 items-center justify-center rounded-full',
-              unread ? 'bg-[#8B4513]/10' : 'bg-[#DAC2B6]/30',
-            ].join(' ')}
+            style={{ backgroundColor: unread ? colors.brand.primarySoft : colors.surface.muted }}
+            className="h-9 w-9 items-center justify-center rounded-full"
           >
-            <Ionicons name={p.iconName} size={18} color={unread ? '#8B4513' : '#877369'} />
+            <Ionicons name={p.iconName} size={18} color={unread ? colors.brand.primary : colors.text.secondary} />
           </View>
 
           <View className="flex-1">
             <View className="flex-row items-center justify-between gap-2">
-              <View className="rounded-full bg-[#8B4513]/10 px-2.5 py-0.5">
-                <Text className="text-[10px] font-bold text-[#8B4513]">
+              <View style={{ backgroundColor: colors.brand.primarySoft }} className="rounded-full px-2.5 py-0.5">
+                <Text style={{ color: colors.brand.primary }} className="text-[10px] font-bold">
                   {p.categoryBadge}
                 </Text>
               </View>
-              {unread ? <View className="h-2.5 w-2.5 rounded-full bg-[#8B4513]" /> : null}
+              {unread ? <View style={{ backgroundColor: colors.brand.primary }} className="h-2.5 w-2.5 rounded-full" /> : null}
             </View>
 
-            <Text className="mt-1 text-[15px] font-bold text-[#3A1F04]">
+            <Text style={{ color: colors.text.primary }} className="mt-1 text-[15px] font-bold">
               {p.title}
             </Text>
 
             {p.itemName ? (
-              <Text className="mt-0.5 text-xs font-semibold text-[#8B4513]">
+              <Text style={{ color: colors.brand.primary }} className="mt-0.5 text-xs font-semibold">
                 {p.itemName}
               </Text>
             ) : null}
 
             {p.description ? (
-              <Text className="mt-1 text-xs leading-4 text-[#877369]" numberOfLines={2}>
+              <Text style={{ color: colors.text.secondary }} className="mt-1 text-xs leading-4" numberOfLines={2}>
                 {p.description}
               </Text>
             ) : null}
 
             {p.importantValue ? (
-              <Text className="mt-1 text-xs font-bold text-[#8B4513]">
+              <Text style={{ color: colors.brand.primary }} className="mt-1 text-xs font-bold">
                 {p.importantValue}
               </Text>
             ) : null}
 
             <View className="mt-2 flex-row items-center gap-1.5">
-              <Ionicons name="time-outline" size={12} color="#877369" />
-              <Text className="text-[11px] font-medium text-[#877369]">
+              <Ionicons name="time-outline" size={12} color={colors.text.muted} />
+              <Text style={{ color: colors.text.muted }} className="text-[11px] font-medium">
                 {p.orderRef ? `${p.orderRef} · ` : ''}{p.formattedTime}
               </Text>
             </View>
@@ -226,9 +226,9 @@ export default function NotificationsScreen() {
 
   if (isLoading) {
     return (
-      <View className="flex-1 items-center justify-center bg-[#F5F2F0]">
-        <ActivityIndicator size="large" color="#8B4513" />
-        <Text className="mt-4 font-medium text-[#8B4513]">Đang tải thông báo...</Text>
+      <View style={{ backgroundColor: colors.surface.page }} className="flex-1 items-center justify-center">
+        <ActivityIndicator size="large" color={colors.brand.primary} />
+        <Text style={{ color: colors.brand.primary }} className="mt-4 font-medium">Đang tải thông báo...</Text>
       </View>
     );
   }
@@ -236,21 +236,19 @@ export default function NotificationsScreen() {
   const selectedP = selectedNotification ? getNotificationPresentation(selectedNotification, ordersMap) : null;
 
   return (
-    <View className="flex-1 bg-[#F5F2F0]">
-      <View className="border-b border-[#DAC2B6]/40 bg-white px-5 py-3">
+    <View style={{ backgroundColor: colors.surface.page }} className="flex-1">
+      <View style={{ backgroundColor: colors.surface.card, borderBottomColor: colors.border.default }} className="border-b px-5 py-3">
         <View className="flex-row items-center justify-between">
-          <Text className="text-xs font-semibold text-[#877369]">
+          <Text style={{ color: colors.text.secondary }} className="text-xs font-semibold">
             {unreadCount > 0 ? `${unreadCount} thông báo chưa đọc` : 'Tất cả thông báo đã được đọc'}
           </Text>
           <Pressable
             onPress={handleMarkAllRead}
             disabled={isMarkingAll || unreadCount === 0}
-            className={[
-              'rounded-xl px-3 py-1.5',
-              unreadCount === 0 ? 'bg-[#DAC2B6]/30' : 'bg-[#8B4513]',
-            ].join(' ')}
+            style={{ backgroundColor: unreadCount === 0 ? colors.surface.muted : colors.brand.primary }}
+            className="rounded-xl px-3 py-1.5"
           >
-            <Text className={['text-xs font-bold', unreadCount === 0 ? 'text-[#877369]' : 'text-white'].join(' ')}>
+            <Text style={{ color: unreadCount === 0 ? colors.text.muted : colors.text.onPrimary }} className="text-xs font-bold">
               {isMarkingAll ? 'Đang xử lý...' : 'Đánh dấu tất cả đã đọc'}
             </Text>
           </Pressable>
@@ -259,10 +257,10 @@ export default function NotificationsScreen() {
 
       {error ? (
         <View className="flex-1 items-center justify-center p-6">
-          <Ionicons name="alert-circle-outline" size={48} color="#dc2626" />
-          <Text className="mt-4 text-center font-medium leading-6 text-red-600">{error}</Text>
-          <Pressable onPress={fetchNotifications} className="mt-4 rounded-xl bg-[#8B4513] px-6 py-3">
-            <Text className="font-bold text-white">Thử lại</Text>
+          <Ionicons name="alert-circle-outline" size={48} color={colors.status.danger.main} />
+          <Text style={{ color: colors.status.danger.main }} className="mt-4 text-center font-medium leading-6">{error}</Text>
+          <Pressable onPress={fetchNotifications} style={{ backgroundColor: colors.brand.primary }} className="mt-4 rounded-xl px-6 py-3">
+            <Text style={{ color: colors.text.onPrimary }} className="font-bold">Thử lại</Text>
           </Pressable>
         </View>
       ) : (
@@ -272,13 +270,13 @@ export default function NotificationsScreen() {
           renderItem={renderNotification}
           contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
           refreshControl={
-            <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor="#8B4513" />
+            <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor={colors.brand.primary} />
           }
           ListEmptyComponent={
             <View className="items-center justify-center py-20 px-6">
-              <Ionicons name="notifications-outline" size={56} color="#877369" />
-              <Text className="mt-4 text-center text-base font-bold text-[#3A1F04]">Chưa có thông báo</Text>
-              <Text className="mt-2 text-center text-xs leading-5 text-[#877369]">
+              <Ionicons name="notifications-outline" size={56} color={colors.text.muted} />
+              <Text style={{ color: colors.text.primary }} className="mt-4 text-center text-base font-bold">Chưa có thông báo</Text>
+              <Text style={{ color: colors.text.secondary }} className="mt-2 text-center text-xs leading-5">
                 Các cập nhật về đơn hàng và vận chuyển sẽ xuất hiện tại đây.
               </Text>
             </View>
@@ -288,41 +286,41 @@ export default function NotificationsScreen() {
 
       <Modal visible={!!selectedNotification} transparent animationType="fade">
         <View className="flex-1 items-center justify-center bg-black/60 px-5">
-          <View className="w-full rounded-3xl bg-white p-6">
+          <View style={{ backgroundColor: colors.surface.card }} className="w-full rounded-3xl p-6">
             <View className="mb-3 flex-row items-start justify-between gap-3">
               <View className="flex-1">
-                <Text className="text-lg font-bold text-[#3A1F04]">
+                <Text style={{ color: colors.text.primary }} className="text-lg font-bold">
                   {selectedP?.title || ''}
                 </Text>
                 {selectedP?.itemName ? (
-                  <Text className="mt-0.5 text-xs font-semibold text-[#8B4513]">
+                  <Text style={{ color: colors.brand.primary }} className="mt-0.5 text-xs font-semibold">
                     {selectedP.itemName}
                   </Text>
                 ) : null}
               </View>
               <Pressable onPress={() => setSelectedNotification(null)} className="h-9 w-9 items-center justify-center rounded-full bg-gray-100">
-                <Ionicons name="close" size={20} color="#877369" />
+                <Ionicons name="close" size={20} color={colors.text.secondary} />
               </Pressable>
             </View>
 
             {selectedP?.description ? (
-              <Text className="text-sm leading-6 text-[#877369]">
+              <Text style={{ color: colors.text.secondary }} className="text-sm leading-6">
                 {selectedP.description}
               </Text>
             ) : null}
 
             {selectedP?.importantValue ? (
-              <Text className="mt-2 text-sm font-bold text-[#8B4513]">
+              <Text style={{ color: colors.brand.primary }} className="mt-2 text-sm font-bold">
                 {selectedP.importantValue}
               </Text>
             ) : null}
 
-            <View className="mt-4 flex-row items-center justify-between border-t border-[#DAC2B6]/30 pt-3">
-              <Text className="text-xs font-medium text-[#877369]">
+            <View style={{ borderTopColor: colors.border.default }} className="mt-4 flex-row items-center justify-between border-t pt-3">
+              <Text style={{ color: colors.text.muted }} className="text-xs font-medium">
                 {selectedP?.orderRef ? `${selectedP.orderRef} · ` : ''}{selectedP?.formattedTime || ''}
               </Text>
-              <View className="rounded-full bg-[#8B4513]/10 px-2.5 py-0.5">
-                <Text className="text-[10px] font-bold text-[#8B4513]">
+              <View style={{ backgroundColor: colors.brand.primarySoft }} className="rounded-full px-2.5 py-0.5">
+                <Text style={{ color: colors.brand.primary }} className="text-[10px] font-bold">
                   {selectedP?.categoryBadge || ''}
                 </Text>
               </View>

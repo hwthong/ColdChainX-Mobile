@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 
 import { AuthBackground } from '../../components/AuthBackground';
+import { colors } from '../../constants/colors';
 import { getApiErrorMessage } from '../../services/apiClient';
 import { registerCustomer } from '../../services/authApi';
 
@@ -76,7 +77,7 @@ export default function RegisterScreen() {
           onPress={() => router.back()}
           className="h-10 w-10 items-center justify-center"
         >
-          <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
+          <Ionicons name="chevron-back" size={22} color={colors.brand.primaryForeground} />
         </Pressable>
       </View>
 
@@ -116,92 +117,98 @@ export default function RegisterScreen() {
               </View>
             </View>
 
-            <View className="w-full rounded-2xl bg-white/10 border border-white/10 p-6 shadow-xl gap-3">
+            <View className="w-full rounded-2xl bg-slate-900/40 border border-white/10 p-6 shadow-xl gap-3">
               <View className="relative h-14 w-full justify-center">
-                <View className="h-14 w-full flex-row items-center rounded-xl bg-[#F8F9FA] px-3 shadow-sm">
-                  <Ionicons name="person-outline" size={18} color="#877369" className="mr-3" />
+                <View style={{ borderColor: colors.border.default }} className="h-14 w-full flex-row items-center rounded-xl bg-white px-3 border shadow-sm">
+                  <Ionicons name="person-outline" size={18} color={colors.text.secondary} className="mr-3" />
                   <TextInput
                     placeholder="Tên người đại diện"
-                    placeholderTextColor="#877369"
+                    placeholderTextColor={colors.text.muted}
                     returnKeyType="next"
                     value={fullName}
                     onChangeText={setFullName}
-                    className="flex-1 text-[#877369] text-base leading-[19px]"
+                    style={{ color: colors.text.primary }}
+                    className="flex-1 text-base leading-[19px]"
                   />
                 </View>
               </View>
 
               <View className="relative h-14 w-full justify-center">
-                <View className="h-14 w-full flex-row items-center rounded-xl bg-[#F8F9FA] px-3 shadow-sm">
-                  <Ionicons name="business-outline" size={18} color="#877369" className="mr-3" />
+                <View style={{ borderColor: colors.border.default }} className="h-14 w-full flex-row items-center rounded-xl bg-white px-3 border shadow-sm">
+                  <Ionicons name="business-outline" size={18} color={colors.text.secondary} className="mr-3" />
                   <TextInput
                     placeholder="Tên doanh nghiệp"
-                    placeholderTextColor="#877369"
+                    placeholderTextColor={colors.text.muted}
                     returnKeyType="next"
                     value={companyName}
                     onChangeText={setCompanyName}
-                    className="flex-1 text-[#877369] text-base leading-[19px]"
+                    style={{ color: colors.text.primary }}
+                    className="flex-1 text-base leading-[19px]"
                   />
                 </View>
               </View>
 
               <View className="relative h-14 w-full justify-center">
-                <View className="h-14 w-full flex-row items-center rounded-xl bg-[#F8F9FA] px-3 shadow-sm">
-                  <Ionicons name="card-outline" size={18} color="#877369" className="mr-3" />
+                <View style={{ borderColor: colors.border.default }} className="h-14 w-full flex-row items-center rounded-xl bg-white px-3 border shadow-sm">
+                  <Ionicons name="card-outline" size={18} color={colors.text.secondary} className="mr-3" />
                   <TextInput
                     placeholder="Mã số thuế"
-                    placeholderTextColor="#877369"
+                    placeholderTextColor={colors.text.muted}
                     returnKeyType="next"
                     value={taxCode}
                     onChangeText={setTaxCode}
-                    className="flex-1 text-[#877369] text-base leading-[19px]"
+                    style={{ color: colors.text.primary }}
+                    className="flex-1 text-base leading-[19px]"
                   />
                 </View>
               </View>
 
               <View className="relative h-14 w-full justify-center">
-                <View className="h-14 w-full flex-row items-center rounded-xl bg-[#F8F9FA] px-3 shadow-sm">
-                  <Ionicons name="call-outline" size={20} color="#877369" className="mr-3" />
+                <View style={{ borderColor: colors.border.default }} className="h-14 w-full flex-row items-center rounded-xl bg-white px-3 border shadow-sm">
+                  <Ionicons name="call-outline" size={20} color={colors.text.secondary} className="mr-3" />
                   <TextInput
                     keyboardType="phone-pad"
                     placeholder="Số điện thoại"
-                    placeholderTextColor="#877369"
+                    placeholderTextColor={colors.text.muted}
                     returnKeyType="next"
                     value={phoneNumber}
                     onChangeText={setPhoneNumber}
-                    className="flex-1 text-[#877369] text-base leading-[19px]"
+                    style={{ color: colors.text.primary }}
+                    className="flex-1 text-base leading-[19px]"
                   />
                 </View>
               </View>
 
               <View className="relative h-14 w-full justify-center">
-                <View className="h-14 w-full flex-row items-center rounded-xl bg-[#F8F9FA] px-3 shadow-sm">
-                  <Ionicons name="mail-outline" size={22} color="#877369" className="mr-3" />
+                <View style={{ borderColor: colors.border.default }} className="h-14 w-full flex-row items-center rounded-xl bg-white px-3 border shadow-sm">
+                  <Ionicons name="mail-outline" size={22} color={colors.text.secondary} className="mr-3" />
                   <TextInput
                     autoCapitalize="none"
                     keyboardType="email-address"
                     placeholder="Email"
-                    placeholderTextColor="#877369"
+                    placeholderTextColor={colors.text.muted}
                     returnKeyType="next"
                     value={email}
                     onChangeText={setEmail}
-                    className="flex-1 text-[#877369] text-base leading-[19px]"
+                    style={{ color: colors.text.primary }}
+                    className="flex-1 text-base leading-[19px]"
                   />
                 </View>
               </View>
 
               <View className="relative h-14 w-full justify-center">
-                <View className="h-14 w-full flex-row items-center rounded-xl bg-[#F8F9FA] px-3 shadow-sm">
-                  <Ionicons name="lock-closed-outline" size={22} color="#877369" className="mr-3" />
+                <View style={{ borderColor: colors.border.default }} className="h-14 w-full flex-row items-center rounded-xl bg-white px-3 border shadow-sm">
+                  <Ionicons name="lock-closed-outline" size={22} color={colors.text.secondary} className="mr-3" />
                   <TextInput
                     placeholder="Mật khẩu"
-                    placeholderTextColor="#877369"
+                    placeholderTextColor={colors.text.muted}
                     returnKeyType="done"
                     secureTextEntry={!passwordVisible}
                     value={password}
                     onChangeText={setPassword}
                     onSubmitEditing={handleRegister}
-                    className="flex-1 pr-3 text-[#877369] text-base leading-[19px]"
+                    style={{ color: colors.text.primary }}
+                    className="flex-1 pr-3 text-base leading-[19px]"
                   />
                   <Pressable
                     accessibilityRole="button"
@@ -212,7 +219,7 @@ export default function RegisterScreen() {
                     <Ionicons
                       name={passwordVisible ? 'eye-off-outline' : 'eye-outline'}
                       size={20}
-                      color="#877369"
+                      color={colors.text.secondary}
                     />
                   </Pressable>
                 </View>
@@ -227,13 +234,14 @@ export default function RegisterScreen() {
                 >
                   <View className="pt-0.5">
                     <View
-                      className={[
-                        'h-5 w-5 items-center justify-center rounded border-2',
-                        acceptedTerms ? 'border-[#75FF68] bg-[#75FF68]' : 'border-white/50',
-                      ].join(' ')}
+                      style={{
+                        backgroundColor: acceptedTerms ? colors.brand.primary : 'transparent',
+                        borderColor: acceptedTerms ? colors.brand.primary : 'rgba(255,255,255,0.5)',
+                      }}
+                      className="h-5 w-5 items-center justify-center rounded border-2"
                     >
                       {acceptedTerms ? (
-                        <Ionicons name="checkmark" size={14} color="#002201" />
+                        <Ionicons name="checkmark" size={14} color={colors.text.onPrimary} />
                       ) : null}
                     </View>
                   </View>
@@ -254,18 +262,19 @@ export default function RegisterScreen() {
                   accessibilityRole="button"
                   onPress={handleRegister}
                   disabled={isLoading}
-                  className={[
-                    'h-14 w-full items-center justify-center rounded-xl bg-[#75FF68]',
-                    isLoading ? 'opacity-70' : '',
-                  ].join(' ')}
-                  style={{
-                    shadowColor: '#75FF68',
+                  style={({ pressed }) => ({
+                    backgroundColor: pressed ? colors.brand.primaryPressed : colors.brand.primary,
+                    shadowColor: colors.brand.primary,
                     shadowOffset: { width: 0, height: 4 },
                     shadowOpacity: 0.3,
                     shadowRadius: 14,
-                  }}
+                  })}
+                  className={[
+                    'h-14 w-full items-center justify-center rounded-xl',
+                    isLoading ? 'opacity-70' : '',
+                  ].join(' ')}
                 >
-                  <Text className="text-[#002201] text-sm leading-5 font-semibold uppercase tracking-[0.7px]">
+                  <Text className="text-white text-sm leading-5 font-semibold uppercase tracking-[0.7px]">
                     {isLoading ? 'ĐANG TẠO...' : 'TẠO TÀI KHOẢN'}
                   </Text>
                 </Pressable>

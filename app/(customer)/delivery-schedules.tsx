@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 
+import { colors } from '../../constants/colors';
 import { getApiErrorMessage } from '../../services/apiClient';
 import { getCustomerAsns, type AsnResponse } from '../../services/asnApi';
 import { getCustomerIdFromToken } from '../../services/jwt';
@@ -108,18 +109,18 @@ export default function DeliverySchedulesScreen() {
 
   if (isLoading) {
     return (
-      <View className="flex-1 items-center justify-center bg-[#F5F2F0]">
-        <ActivityIndicator size="large" color="#8B4513" />
-        <Text className="mt-4 font-medium text-[#8B4513]">Đang tải lịch vận chuyển...</Text>
+      <View style={{ backgroundColor: colors.surface.page }} className="flex-1 items-center justify-center">
+        <ActivityIndicator size="large" color={colors.brand.primary} />
+        <Text style={{ color: colors.brand.primary }} className="mt-4 font-medium">Đang tải lịch vận chuyển...</Text>
       </View>
     );
   }
 
   return (
-    <View className="flex-1 bg-[#F5F2F0]">
-      <View className="border-b border-[#DAC2B6]/40 bg-white px-5 py-4">
-        <Text className="text-lg font-extrabold text-[#3A1F04]">Lịch vận chuyển của bạn</Text>
-        <Text className="mt-1 text-xs font-medium text-[#877369]">
+    <View style={{ backgroundColor: colors.surface.page }} className="flex-1">
+      <View style={{ backgroundColor: colors.surface.card, borderBottomColor: colors.border.default }} className="border-b px-5 py-4">
+        <Text style={{ color: colors.text.primary }} className="text-lg font-extrabold">Lịch vận chuyển của bạn</Text>
+        <Text style={{ color: colors.text.secondary }} className="mt-1 text-xs font-medium">
           Theo dõi toàn bộ ASN đã đặt lịch giao kho.
         </Text>
 
@@ -131,10 +132,10 @@ export default function DeliverySchedulesScreen() {
 
       {error ? (
         <View className="flex-1 items-center justify-center p-6">
-          <Ionicons name="alert-circle-outline" size={48} color="#dc2626" />
-          <Text selectable className="mt-4 text-center font-medium leading-6 text-red-600">{error}</Text>
-          <Pressable onPress={fetchSchedules} className="mt-4 rounded-xl bg-[#8B4513] px-6 py-3">
-            <Text className="font-bold text-white">Thử lại</Text>
+          <Ionicons name="alert-circle-outline" size={48} color={colors.status.danger.main} />
+          <Text style={{ color: colors.status.danger.main }} className="mt-4 text-center font-medium leading-6">{error}</Text>
+          <Pressable onPress={fetchSchedules} style={{ backgroundColor: colors.brand.primary }} className="mt-4 rounded-xl px-6 py-3">
+            <Text style={{ color: colors.text.onPrimary }} className="font-bold">Thử lại</Text>
           </Pressable>
         </View>
       ) : (
@@ -144,12 +145,12 @@ export default function DeliverySchedulesScreen() {
           renderItem={renderSchedule}
           contentContainerStyle={{ padding: 20, paddingBottom: 110 }}
           refreshControl={
-            <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor="#8B4513" />
+            <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor={colors.brand.primary} />
           }
           ListEmptyComponent={
             <View className="items-center justify-center py-20">
-              <Ionicons name="calendar-outline" size={64} color="#877369" />
-              <Text className="mt-4 text-center font-medium text-[#877369]">
+              <Ionicons name="calendar-outline" size={64} color={colors.text.muted} />
+              <Text style={{ color: colors.text.secondary }} className="mt-4 text-center font-medium">
                 Bạn chưa có lịch vận chuyển nào.
               </Text>
             </View>
@@ -172,7 +173,8 @@ function DeliveryScheduleCard({
   return (
     <Pressable
       onPress={onPress}
-      className="mb-4 rounded-2xl border border-[#DAC2B6]/50 bg-white p-5 shadow-sm"
+      style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }}
+      className="mb-4 rounded-2xl border p-5 shadow-sm"
     >
       <View className="flex-row items-start justify-between gap-3">
         <View className="flex-1 gap-2">
@@ -181,7 +183,7 @@ function DeliveryScheduleCard({
           <ScheduleInfoLine icon="business-outline" label="Kho nhận" value={warehouseName || 'Chưa xác định'} />
           <ScheduleInfoLine icon="time-outline" label="Giờ giao kho" value={formatDateTime(asn.requestedDropoffTime)} />
         </View>
-        <Ionicons name="chevron-forward" size={20} color="#8B4513" />
+        <Ionicons name="chevron-forward" size={20} color={colors.brand.primary} />
       </View>
     </Pressable>
   );
@@ -198,9 +200,9 @@ function ScheduleInfoLine({
 }) {
   return (
     <View className="flex-row items-start gap-2">
-      <Ionicons name={icon} size={16} color="#8B4513" />
-      <Text className="flex-1 text-sm leading-5 text-[#877369]" numberOfLines={2}>
-        <Text className="font-bold text-[#3A1F04]">{label}: </Text>
+      <Ionicons name={icon} size={16} color={colors.brand.primary} />
+      <Text style={{ color: colors.text.secondary }} className="flex-1 text-sm leading-5" numberOfLines={2}>
+        <Text style={{ color: colors.text.primary }} className="font-bold">{label}: </Text>
         {value || 'Chưa cập nhật'}
       </Text>
     </View>
@@ -217,12 +219,12 @@ function SummaryChip({
   value: string;
 }) {
   return (
-    <View className="flex-1 rounded-2xl bg-[#F8F3EF] p-4">
+    <View style={{ backgroundColor: colors.surface.muted }} className="flex-1 rounded-2xl p-4">
       <View className="flex-row items-center gap-2">
-        <Ionicons name={icon} size={18} color="#8B4513" />
-        <Text className="text-[11px] font-bold uppercase tracking-wider text-[#877369]">{label}</Text>
+        <Ionicons name={icon} size={18} color={colors.brand.primary} />
+        <Text style={{ color: colors.text.secondary }} className="text-[11px] font-bold uppercase tracking-wider">{label}</Text>
       </View>
-      <Text className="mt-2 text-2xl font-extrabold text-[#3A1F04]">{value}</Text>
+      <Text style={{ color: colors.text.primary }} className="mt-2 text-2xl font-extrabold">{value}</Text>
     </View>
   );
 }

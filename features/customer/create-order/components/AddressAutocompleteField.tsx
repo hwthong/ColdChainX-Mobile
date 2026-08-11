@@ -2,7 +2,8 @@ import React, { forwardRef, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-import { customerColors, customerControl, customerRadius } from '../../../../constants/customerTheme';
+import { colors } from '../../../../constants/colors';
+import { customerControl, customerRadius } from '../../../../constants/customerTheme';
 import { searchGoongAddressSuggestions, type GoongAddressSuggestion } from '../../../../services/goongPlacesApi';
 
 type AddressAutocompleteFieldProps = {
@@ -29,45 +30,44 @@ export const AddressAutocompleteField = forwardRef<TextInput, AddressAutocomplet
   },
   ref
 ) {
+  const [isFocused, setIsFocused] = useState(false);
   const [suggestions, setSuggestions] = useState<GoongAddressSuggestion[]>([]);
   const [searchState, setSearchState] = useState<SearchState>('idle');
-  const [isFocused, setIsFocused] = useState(false);
   const requestIdRef = useRef(0);
   const selectedAddressRef = useRef<string | null>(null);
 
   useEffect(() => {
+    if (selectedAddressRef.current && value === selectedAddressRef.current) return;
+    selectedAddressRef.current = null;
+
     const query = value.trim();
-    if (selectedAddressRef.current === query) {
-      selectedAddressRef.current = null;
-      return;
-    }
-    if (query.length < 3 || disabled) {
+    if (query.length < 3) {
       setSuggestions([]);
       setSearchState('idle');
       return;
     }
 
-    const requestId = ++requestIdRef.current;
-    const controller = new AbortController();
-    const timer = setTimeout(async () => {
-      setSearchState('loading');
-      try {
-        const results = await searchGoongAddressSuggestions(query, controller.signal);
-        if (requestId !== requestIdRef.current) return;
-        setSuggestions(results);
-        setSearchState(results.length ? 'idle' : 'empty');
-      } catch {
-        if (controller.signal.aborted || requestId !== requestIdRef.current) return;
-        setSuggestions([]);
-        setSearchState('error');
-      }
-    }, 400);
+    const currentRequestId = requestIdRef.current + 1;
+    requestIdRef.current = currentRequestId;
+    setSearchState('loading');
 
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [disabled, value]);
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const results = await searchGoongAddressSuggestions(query);
+          if (requestIdRef.current !== currentRequestId) return;
+          setSuggestions(results);
+          setSearchState(results.length > 0 ? 'idle' : 'empty');
+        } catch {
+          if (requestIdRef.current !== currentRequestId) return;
+          setSuggestions([]);
+          setSearchState('error');
+        }
+      })();
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [value]);
 
   const clearValue = () => {
     requestIdRef.current += 1;
@@ -89,42 +89,42 @@ export const AddressAutocompleteField = forwardRef<TextInput, AddressAutocomplet
 
   return (
     <View className="gap-1.5">
-      <Text className="text-[13px] font-bold text-[#3A1F04]">
+      <Text style={{ color: colors.text.primary }} className="text-[13px] font-bold">
         {label} {required ? <Text className="text-red-600">*</Text> : null}
       </Text>
       <View
         className="flex-row items-center px-4"
         style={{
-          backgroundColor: customerColors.surface,
-          borderColor: error ? '#FCA5A5' : isFocused ? customerColors.primary : customerColors.border,
+          backgroundColor: colors.surface.card,
+          borderColor: error ? '#FCA5A5' : isFocused ? colors.border.focus : colors.border.default,
           borderRadius: customerRadius.control,
           borderWidth: 1,
           minHeight: customerControl.height,
           opacity: disabled ? 0.6 : 1,
         }}
       >
-        <Ionicons name="location-outline" size={18} color="#8B4513" />
+        <Ionicons name="location-outline" size={18} color={colors.brand.primary} />
         <TextInput
           ref={ref}
-          className="flex-1 px-3 text-[14px] font-medium text-[#3A1F04]"
-          style={{ minHeight: customerControl.height }}
+          className="flex-1 px-3 text-[14px] font-medium"
+          style={{ minHeight: customerControl.height, color: colors.text.primary }}
           value={value}
           onChangeText={onChangeText}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
           editable={!disabled}
           placeholder="Nhập số nhà, đường, phường/xã..."
-          placeholderTextColor="#877369"
+          placeholderTextColor={colors.text.muted}
           accessibilityLabel={`${label}${required ? ', bắt buộc' : ''}`}
           accessibilityHint={error || 'Nhập ít nhất 3 ký tự để nhận gợi ý địa chỉ'}
           accessibilityState={{ disabled }}
-          selectionColor="#8B4513"
+          selectionColor={colors.brand.primary}
           returnKeyType="done"
         />
-        {searchState === 'loading' ? <ActivityIndicator size="small" color="#8B4513" accessibilityLabel="Đang tải gợi ý địa chỉ" /> : null}
+        {searchState === 'loading' ? <ActivityIndicator size="small" color={colors.brand.primary} accessibilityLabel="Đang tải gợi ý địa chỉ" /> : null}
         {value.length > 0 && !disabled ? (
           <Pressable onPress={clearValue} accessibilityRole="button" accessibilityLabel="Xóa địa chỉ giao hàng" className="h-10 w-10 items-center justify-center">
-            <Ionicons name="close-circle" size={19} color="#877369" />
+            <Ionicons name="close-circle" size={19} color={colors.text.secondary} />
           </Pressable>
         ) : null}
       </View>
@@ -133,8 +133,8 @@ export const AddressAutocompleteField = forwardRef<TextInput, AddressAutocomplet
         <View
           className="overflow-hidden shadow-sm"
           style={{
-            backgroundColor: customerColors.surface,
-            borderColor: customerColors.border,
+            backgroundColor: colors.surface.card,
+            borderColor: colors.border.default,
             borderRadius: customerRadius.control,
             borderWidth: 1,
           }}
@@ -145,20 +145,20 @@ export const AddressAutocompleteField = forwardRef<TextInput, AddressAutocomplet
               onPress={() => selectSuggestion(suggestion)}
               accessibilityRole="button"
               accessibilityLabel={`Chọn địa chỉ ${suggestion.address}`}
-              className="flex-row gap-3 px-4 py-3 active:bg-[#F8F3EF]"
-              style={index > 0 ? { borderTopColor: customerColors.borderSubtle, borderTopWidth: 1 } : undefined}
+              style={({ pressed }) => ({ backgroundColor: pressed ? colors.surface.selected : colors.surface.card })}
+              className="flex-row gap-3 px-4 py-3"
             >
-              <Ionicons name="location-outline" size={18} color="#8B4513" />
+              <Ionicons name="location-outline" size={18} color={colors.brand.primary} />
               <View className="flex-1">
-                <Text className="text-sm font-semibold text-[#3A1F04]" numberOfLines={2}>{suggestion.primaryText}</Text>
-                {suggestion.secondaryText ? <Text className="mt-0.5 text-xs leading-5 text-[#877369]" numberOfLines={2}>{suggestion.secondaryText}</Text> : null}
+                <Text style={{ color: colors.text.primary }} className="text-sm font-semibold" numberOfLines={2}>{suggestion.primaryText}</Text>
+                {suggestion.secondaryText ? <Text style={{ color: colors.text.secondary }} className="mt-0.5 text-xs leading-5" numberOfLines={2}>{suggestion.secondaryText}</Text> : null}
               </View>
             </Pressable>
           ))}
         </View>
       ) : null}
-      {showSuggestions && searchState === 'empty' ? <Text className="text-xs leading-5 text-[#877369]">Không tìm thấy địa chỉ phù hợp.</Text> : null}
-      {showSuggestions && searchState === 'error' ? <Text accessibilityLiveRegion="polite" className="text-xs leading-5 text-[#877369]">Không thể tải gợi ý địa chỉ. Bạn vẫn có thể nhập địa chỉ thủ công.</Text> : null}
+      {showSuggestions && searchState === 'empty' ? <Text style={{ color: colors.text.secondary }} className="text-xs leading-5">Không tìm thấy địa chỉ phù hợp.</Text> : null}
+      {showSuggestions && searchState === 'error' ? <Text accessibilityLiveRegion="polite" style={{ color: colors.text.secondary }} className="text-xs leading-5">Không thể tải gợi ý địa chỉ. Bạn vẫn có thể nhập địa chỉ thủ công.</Text> : null}
     </View>
   );
 });

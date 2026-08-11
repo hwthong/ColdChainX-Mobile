@@ -2,6 +2,7 @@ import React from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { WarehouseHeader } from '../../components/WarehouseHeader';
+import { colors } from '../../constants/colors';
 
 export default function DriverLayout() {
   return (
@@ -27,11 +28,11 @@ export default function DriverLayout() {
 
           return <WarehouseHeader title={title} showBackButton={showBackButton} />;
         },
-        tabBarActiveTintColor: '#8B4513',
-        tabBarInactiveTintColor: '#877369',
+        tabBarActiveTintColor: colors.brand.primary,
+        tabBarInactiveTintColor: colors.text.muted,
         tabBarStyle: {
-          backgroundColor: '#ffffff',
-          borderTopColor: 'rgba(218, 194, 182, 0.5)',
+          backgroundColor: colors.surface.card,
+          borderTopColor: colors.border.default,
           elevation: 20,
           shadowColor: '#000000',
           shadowOffset: { width: 0, height: -10 },

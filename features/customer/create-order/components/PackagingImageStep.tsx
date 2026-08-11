@@ -2,7 +2,8 @@ import React from 'react';
 import { Image, Pressable, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-import { customerColors, customerRadius } from '../../../../constants/customerTheme';
+import { colors } from '../../../../constants/colors';
+import { customerRadius } from '../../../../constants/customerTheme';
 import {
   parseCreateOrderDecimal,
   type CreateOrderFieldKey,
@@ -16,7 +17,7 @@ import {
   type RegisterCreateOrderInput,
 } from './CreateOrderUi';
 
-const PACKAGING_OPTIONS = [
+export const PACKAGING_OPTIONS = [
   { label: 'Thùng carton', value: 'Carton Box' },
   { label: 'Thùng xốp giữ nhiệt', value: 'Foam Box' },
   { label: 'Thùng nhựa', value: 'Plastic Box' },
@@ -24,6 +25,11 @@ const PACKAGING_OPTIONS = [
   { label: 'Thùng', value: 'Thùng' },
   { label: 'Bao', value: 'Bao' },
 ];
+
+export function getPackagingTypeLabel(type: string): string {
+  const option = PACKAGING_OPTIONS.find((opt) => opt.value === type);
+  return option?.label || type;
+}
 
 type PackagingImageStepProps = {
   packagingTypes: string[];
@@ -81,7 +87,7 @@ export function PackagingImageStep({
         description="Chọn loại bao bì phù hợp với lô hàng."
       >
         <View ref={(node) => registerField('packagingType', node)} className="gap-2">
-          <Text className="text-[13px] font-bold text-[#3A1F04]">
+          <Text style={{ color: colors.text.primary }} className="text-[13px] font-bold">
             Loại bao bì <Text className="text-red-600">*</Text>
           </Text>
           <View className="flex-row flex-wrap gap-2">
@@ -96,16 +102,16 @@ export function PackagingImageStep({
                   accessibilityState={{ selected }}
                   className="max-w-full flex-row items-center justify-center gap-1.5 px-4"
                   style={({ pressed }) => ({
-                    backgroundColor: selected ? customerColors.surfaceSoft : customerColors.surface,
-                    borderColor: selected ? customerColors.primary : customerColors.border,
+                    backgroundColor: selected ? colors.surface.selected : colors.surface.card,
+                    borderColor: selected ? colors.border.selected : colors.border.default,
                     borderRadius: customerRadius.pill,
                     borderWidth: 1,
                     minHeight: 44,
                     opacity: pressed ? 0.76 : 1,
                   })}
                 >
-                  {selected ? <Ionicons name="checkmark" size={15} color="#8B4513" /> : null}
-                  <Text className={['flex-shrink text-[13px] font-bold', selected ? 'text-[#8B4513]' : 'text-[#3A1F04]'].join(' ')}>
+                  {selected ? <Ionicons name="checkmark" size={15} color={colors.brand.primary} /> : null}
+                  <Text style={{ color: selected ? colors.brand.primary : colors.text.primary }} className="flex-shrink text-[13px] font-bold">
                     {option.label}
                   </Text>
                 </Pressable>
@@ -114,7 +120,6 @@ export function PackagingImageStep({
           </View>
           {errors.packagingType ? <FieldError message={errors.packagingType} /> : null}
         </View>
-
       </CreateOrderFormSection>
 
       <CreateOrderFormSection
@@ -202,24 +207,25 @@ export function PackagingImageStep({
                   onPress={onPickImage}
                   accessibilityRole="button"
                   accessibilityLabel="Thay ảnh lô hàng"
-                  className="min-h-11 flex-1 items-center justify-center rounded-2xl bg-[#F8F3EF]"
+                  style={{ backgroundColor: colors.surface.muted }}
+                  className="min-h-11 flex-1 items-center justify-center rounded-2xl"
                 >
-                  <Text className="text-sm font-bold text-[#8B4513]">Thay ảnh</Text>
+                  <Text style={{ color: colors.brand.primary }} className="text-sm font-bold">Thay ảnh</Text>
                 </Pressable>
                 <Pressable
                   onPress={onRemoveImage}
                   accessibilityRole="button"
                   accessibilityLabel="Xóa ảnh lô hàng"
-                  className="flex-1 items-center justify-center"
                   style={{
-                    backgroundColor: customerColors.surface,
-                    borderColor: customerColors.border,
+                    backgroundColor: colors.surface.card,
+                    borderColor: colors.border.default,
                     borderRadius: customerRadius.control,
                     borderWidth: 1,
                     minHeight: 44,
                   }}
+                  className="flex-1 items-center justify-center"
                 >
-                  <Text className="text-sm font-bold text-[#3A1F04]">Xóa ảnh</Text>
+                  <Text style={{ color: colors.text.primary }} className="text-sm font-bold">Xóa ảnh</Text>
                 </Pressable>
               </View>
             </>
@@ -229,21 +235,21 @@ export function PackagingImageStep({
               accessibilityRole="button"
               accessibilityLabel="Thêm ảnh lô hàng"
               accessibilityHint="Chụp ảnh hoặc chọn ảnh rõ kiện hàng"
-              className="items-center justify-center px-5"
               style={{
-                backgroundColor: errors.documentImage ? '#FEF2F2' : customerColors.surfaceNeutral,
-                borderColor: errors.documentImage ? '#FCA5A5' : customerColors.border,
+                backgroundColor: errors.documentImage ? '#FEF2F2' : colors.surface.page,
+                borderColor: errors.documentImage ? '#FCA5A5' : colors.border.default,
                 borderRadius: customerRadius.control,
                 borderStyle: 'dashed',
                 borderWidth: 2,
                 minHeight: 132,
               }}
+              className="items-center justify-center px-5"
             >
-              <View className="h-12 w-12 items-center justify-center rounded-full bg-[#8B4513]/10">
-                <Ionicons name="camera-outline" size={25} color="#8B4513" />
+              <View style={{ backgroundColor: colors.surface.muted }} className="h-12 w-12 items-center justify-center rounded-full">
+                <Ionicons name="camera-outline" size={25} color={colors.brand.primary} />
               </View>
-              <Text className="mt-3 text-center text-sm font-bold text-[#3A1F04]">Thêm ảnh lô hàng</Text>
-              <Text className="mt-1 text-center text-xs leading-5 text-[#877369]">
+              <Text style={{ color: colors.text.primary }} className="mt-3 text-center text-sm font-bold">Thêm ảnh lô hàng</Text>
+              <Text style={{ color: colors.text.secondary }} className="mt-1 text-center text-xs leading-5">
                 Chỉ chọn ảnh rõ kiện hàng, không chọn video.
               </Text>
             </Pressable>
@@ -291,23 +297,15 @@ export function calculateCbmPreview(
 
 function CbmPreviewStrip({ preview }: { preview: CbmPreview }) {
   return (
-    <View className="gap-1 px-4 py-3" style={{ backgroundColor: customerColors.primarySoft, borderRadius: customerRadius.control }}>
-      <Text className="text-xs font-medium leading-5 text-[#877369]">
+    <View style={{ backgroundColor: colors.surface.selected, borderRadius: customerRadius.control }} className="gap-1 px-4 py-3">
+      <Text style={{ color: colors.text.secondary }} className="text-xs font-medium leading-5">
         {preview.packageCount} kiện · {preview.perPackageLabel} m³/kiện
       </Text>
-      <Text className="text-sm font-bold leading-5 text-[#3A1F04]">
+      <Text style={{ color: colors.text.primary }} className="text-sm font-bold leading-5">
         Tổng thể tích dự kiến: {preview.totalLabel} m³
       </Text>
     </View>
   );
-}
-
-function formatCbm(value: number, maximumFractionDigits: number) {
-  return value
-    .toFixed(maximumFractionDigits)
-    .replace(/0+$/, '')
-    .replace(/\.$/, '')
-    .replace('.', ',');
 }
 
 function FieldError({ message }: { message: string }) {
@@ -318,6 +316,9 @@ function FieldError({ message }: { message: string }) {
   );
 }
 
-export function getPackagingTypeLabel(value: string) {
-  return PACKAGING_OPTIONS.find((option) => option.value === value)?.label ?? value;
+function formatCbm(value: number, decimalDigits: number) {
+  return value.toLocaleString('vi-VN', {
+    maximumFractionDigits: decimalDigits,
+    minimumFractionDigits: 0,
+  });
 }

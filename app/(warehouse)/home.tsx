@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
+import { colors } from '../../constants/colors';
 import { WH_COLORS } from '../../constants/warehouseTheme';
 import { getWarehouseIdFromToken } from '../../services/jwt';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -35,32 +36,32 @@ export default function WarehouseHomeScreen() {
           style={{
             borderRadius: 12,
             borderWidth: 1,
-            borderColor: 'rgba(139, 69, 19, 0.2)',
-            backgroundColor: '#FFFFFF',
+            borderColor: colors.border.default,
+            backgroundColor: colors.surface.card,
             paddingHorizontal: 16,
             paddingVertical: 8,
           }}
         >
-          <Text style={{ fontWeight: '600', color: WH_COLORS.primary }}>Đăng xuất</Text>
+          <Text style={{ fontWeight: '600', color: colors.brand.primary }}>Đăng xuất</Text>
         </Pressable>
       </View>
 
       {/* Hero card */}
       <View style={{ borderRadius: 20, backgroundColor: WH_COLORS.headerBg, padding: 20 }}>
-        <Text style={{ fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1.5, color: 'rgba(255, 194, 159, 0.7)' }}>
+        <Text style={{ fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1.5, color: colors.brand.primarySoft }}>
           Kho lạnh ColdChainX
         </Text>
         <Text style={{ marginTop: 12, fontSize: 24, fontWeight: '700', color: WH_COLORS.headerText }}>
           Quản lý kho
         </Text>
-        <Text style={{ marginTop: 8, fontSize: 14, lineHeight: 22, color: 'rgba(255, 255, 255, 0.7)' }}>
+        <Text style={{ marginTop: 8, fontSize: 14, lineHeight: 22, color: 'rgba(248, 252, 255, 0.8)' }}>
           Tiếp nhận hàng, kiểm tra chất lượng, nhập vị trí, quản lý tồn kho và bốc hàng xuất kho.
         </Text>
-        <View style={{ marginTop: 16, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.1)', padding: 14 }}>
-          <Text style={{ fontSize: 11, fontWeight: '600', color: 'rgba(255, 194, 159, 0.8)' }}>Khu vực làm việc</Text>
-          <Text style={{ marginTop: 4, fontSize: 14, fontWeight: '700', color: '#FFFFFF' }}>Kho hàng</Text>
-          <Text style={{ marginTop: 8, fontSize: 11, fontWeight: '600', color: 'rgba(255, 194, 159, 0.8)' }}>Mã kho</Text>
-          <Text style={{ marginTop: 2, fontSize: 12, color: '#FFFFFF' }}>{warehouseId || 'Chưa xác định'}</Text>
+        <View style={{ marginTop: 16, borderRadius: 12, backgroundColor: 'rgba(255, 255, 255, 0.1)', padding: 14 }}>
+          <Text style={{ fontSize: 11, fontWeight: '600', color: colors.brand.primarySoft }}>Khu vực làm việc</Text>
+          <Text style={{ marginTop: 4, fontSize: 14, fontWeight: '700', color: colors.brand.primaryForeground }}>Kho hàng</Text>
+          <Text style={{ marginTop: 8, fontSize: 11, fontWeight: '600', color: colors.brand.primarySoft }}>Mã kho</Text>
+          <Text style={{ marginTop: 2, fontSize: 12, color: colors.brand.primaryForeground }}>{warehouseId || 'Chưa xác định'}</Text>
         </View>
       </View>
 

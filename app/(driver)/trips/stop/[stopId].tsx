@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { colors } from '../../../../constants/colors';
 import { AppButton } from '../../../../components/AppButton';
 import { AppInput } from '../../../../components/AppInput';
 import { TemperatureChart } from '../../../../components/customer/TemperatureChart';
@@ -617,7 +618,7 @@ export default function StopDetailScreen() {
     }
   };
 
-  const confirmCloseShift = () => {
+const confirmCloseShift = () => {
     if (!selectedWarehouseId || !canCloseShift || isProcessing) return;
     const warehouse = warehouses?.find((item) => item.warehouseId === selectedWarehouseId);
     Alert.alert(
@@ -646,18 +647,18 @@ export default function StopDetailScreen() {
 
   if (loading) {
     return (
-      <View className="flex-1 items-center justify-center bg-[#F6F8F2]">
-        <ActivityIndicator size="large" color="#8B4513" />
-        <Text className="mt-3 text-amber-800">Đang tải điểm dừng...</Text>
+      <View style={{ backgroundColor: colors.surface.page }} className="flex-1 items-center justify-center">
+        <ActivityIndicator size="large" color={colors.brand.primary} />
+        <Text style={{ color: colors.brand.primary }} className="mt-3 font-medium">Đang tải điểm dừng...</Text>
       </View>
     );
   }
 
   if (loadError || !driverStop) {
     return (
-      <View className="flex-1 items-center justify-center bg-[#F6F8F2] px-6">
-        <Ionicons name="alert-circle-outline" size={48} color="#991B1B" />
-        <Text className="mt-4 text-center text-red-800">
+      <View style={{ backgroundColor: colors.surface.page }} className="flex-1 items-center justify-center px-6">
+        <Ionicons name="alert-circle-outline" size={48} color={colors.status.danger.main} />
+        <Text style={{ color: colors.status.danger.main }} className="mt-4 text-center font-semibold">
           {loadError || 'Không tìm thấy dữ liệu điểm dừng.'}
         </Text>
         <View className="mt-5 w-full">
@@ -668,16 +669,16 @@ export default function StopDetailScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-[#F6F8F2]" edges={['bottom']}>
+    <SafeAreaView style={{ backgroundColor: colors.surface.page }} className="flex-1" edges={['bottom']}>
       <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 100 }}>
         <StopHeader stop={driverStop} orderCount={orders.length} />
 
-        <View className="mb-6 rounded-2xl border border-amber-200 bg-white p-4">
+        <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="mb-6 rounded-2xl border p-4 shadow-sm">
           <View className="flex-row items-center gap-3">
-            <Ionicons name="thermometer-outline" size={24} color="#92400E" />
+            <Ionicons name="thermometer-outline" size={24} color={colors.brand.primary} />
             <View className="flex-1">
-              <Text className="font-bold text-amber-950">Nhiệt độ hành trình đến điểm giao</Text>
-              <Text className="mt-1 text-sm text-amber-700">Dữ liệu được giới hạn đến thời điểm xe đến điểm dừng.</Text>
+              <Text style={{ color: colors.text.primary }} className="font-bold">Nhiệt độ hành trình đến điểm giao</Text>
+              <Text style={{ color: colors.text.secondary }} className="mt-1 text-sm">Dữ liệu được giới hạn đến thời điểm xe đến điểm dừng.</Text>
             </View>
           </View>
           {!temperatureChart && !temperatureError ? (
@@ -700,7 +701,7 @@ export default function StopDetailScreen() {
           ) : null}
           {temperatureChart ? (
             <View className="mt-4 gap-3">
-              <Text className="text-sm text-amber-700">
+              <Text style={{ color: colors.text.secondary }} className="text-sm">
                 Đến {formatDateTime(temperatureChart.endTime)} · {temperatureChart.sampledPointCount}/{temperatureChart.rawPointCount} điểm
               </Text>
               <TemperatureChart points={temperatureChart.points} />
@@ -720,8 +721,8 @@ export default function StopDetailScreen() {
           </View>
         ) : !hasCheckedIn ? (
           <View className="mt-10 items-center">
-            <Ionicons name="location" size={64} color="#8B4513" />
-            <Text className="mb-6 mt-4 text-center text-base text-amber-900">
+            <Ionicons name="location" size={64} color={colors.brand.primary} />
+            <Text style={{ color: colors.text.primary }} className="mb-6 mt-4 text-center text-base font-medium">
               Thêm ảnh xác nhận. Vị trí check-in được Backend đối chiếu từ thiết bị IoT của xe.
             </Text>
             <ProofPicker

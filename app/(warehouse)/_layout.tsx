@@ -3,7 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 
 import { WarehouseHeader } from '../../components/WarehouseHeader';
-import { WH_COLORS } from '../../constants/warehouseTheme';
+import { colors } from '../../constants/colors';
 
 const TITLE_MAP: Record<string, string> = {
   home: 'ColdChainX',
@@ -21,11 +21,11 @@ export default function WarehouseLayout() {
           const title = TITLE_MAP[route.name] || 'ColdChainX';
           return <WarehouseHeader title={title} />;
         },
-        tabBarActiveTintColor: WH_COLORS.primary,
-        tabBarInactiveTintColor: WH_COLORS.textSecondary,
+        tabBarActiveTintColor: colors.brand.primary,
+        tabBarInactiveTintColor: colors.text.secondary,
         tabBarStyle: {
-          backgroundColor: '#FFFFFF',
-          borderTopColor: WH_COLORS.tabBorder,
+          backgroundColor: colors.surface.card,
+          borderTopColor: colors.border.default,
           elevation: 20,
           shadowColor: '#000000',
           shadowOffset: { width: 0, height: -10 },

@@ -15,6 +15,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 import { API_BASE_URL, ApiClientError, getApiErrorMessage } from '../../../services/apiClient';
+import { colors } from '../../../constants/colors';
 import {
   acceptAppendix,
   ContractAppendixResponse,
@@ -384,18 +385,18 @@ export default function OrderDetailScreen() {
 
   if (isLoading) {
     return (
-      <View className="flex-1 items-center justify-center bg-[#F5F2F0]">
-        <ActivityIndicator size="large" color="#8B4513" />
-        <Text className="mt-4 font-medium text-[#8B4513]">Đang tải chi tiết đơn...</Text>
+      <View style={{ backgroundColor: colors.surface.page }} className="flex-1 items-center justify-center">
+        <ActivityIndicator size="large" color={colors.brand.primary} />
+        <Text style={{ color: colors.brand.primary }} className="mt-4 font-medium">Đang tải chi tiết đơn...</Text>
       </View>
     );
   }
 
   if (error && !order) {
     return (
-      <View className="flex-1 items-center justify-center bg-[#F5F2F0] p-6">
-        <Ionicons name="alert-circle-outline" size={48} color="#dc2626" />
-        <Text className="mt-4 text-center font-medium leading-6 text-red-600">{error}</Text>
+      <View style={{ backgroundColor: colors.surface.page }} className="flex-1 items-center justify-center p-6">
+        <Ionicons name="alert-circle-outline" size={48} color={colors.status.danger.main} />
+        <Text style={{ color: colors.status.danger.main }} className="mt-4 text-center font-medium leading-6">{error}</Text>
         <Pressable onPress={() => router.back()} className="mt-4 rounded-xl bg-gray-200 px-6 py-2">
           <Text className="font-bold text-gray-800">Quay lại</Text>
         </Pressable>
@@ -405,8 +406,8 @@ export default function OrderDetailScreen() {
 
   if (!order) {
     return (
-      <View className="flex-1 items-center justify-center bg-[#F5F2F0] p-6">
-        <Text className="text-center font-medium text-[#877369]">Không tìm thấy đơn hàng.</Text>
+      <View style={{ backgroundColor: colors.surface.page }} className="flex-1 items-center justify-center p-6">
+        <Text style={{ color: colors.text.secondary }} className="text-center font-medium">Không tìm thấy đơn hàng.</Text>
       </View>
     );
   }
@@ -414,7 +415,7 @@ export default function OrderDetailScreen() {
   const stageDescription = getStageAwareHeaderDescription(order.status, Boolean(order.masterTripId));
 
   return (
-    <ScrollView className="flex-1 bg-[#F5F2F0]" contentContainerStyle={{ padding: 20, paddingBottom: 80 }}>
+    <ScrollView style={{ backgroundColor: colors.surface.page }} className="flex-1" contentContainerStyle={{ padding: 20, paddingBottom: 80 }}>
       {error ? (
         <View className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4">
           <Text className="font-semibold leading-5 text-red-700">{error}</Text>
@@ -427,14 +428,14 @@ export default function OrderDetailScreen() {
         </View>
       ) : null}
 
-      <View className="mb-4 rounded-2xl border border-[#DAC2B6]/50 bg-white p-5 shadow-sm">
+      <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="mb-4 rounded-2xl border p-5 shadow-sm">
         <View className="mb-4 flex-row items-start justify-between gap-3">
           <View className="flex-1">
             <View className="flex-row items-center gap-2">
-              <Ionicons name="barcode-outline" size={20} color="#8B4513" />
-              <Text className="text-xl font-bold text-[#8B4513]">{order.trackingCode}</Text>
+              <Ionicons name="barcode-outline" size={20} color={colors.brand.primary} />
+              <Text style={{ color: colors.brand.primary }} className="text-xl font-bold">{order.trackingCode}</Text>
             </View>
-            <Text className="mt-2 text-xs text-[#877369]">{formatDateWithoutSeconds(order.createdAt)}</Text>
+            <Text style={{ color: colors.text.secondary }} className="mt-2 text-xs">{formatDateWithoutSeconds(order.createdAt)}</Text>
           </View>
           <StatusBadge status={order.status} />
         </View>
@@ -447,13 +448,14 @@ export default function OrderDetailScreen() {
                 params: { orderId: order.orderId },
               })
             }
-            className="flex-row items-center justify-center gap-2 rounded-xl bg-[#8B4513] px-4 py-3"
+            style={{ backgroundColor: colors.brand.primary }}
+            className="flex-row items-center justify-center gap-2 rounded-xl px-4 py-3"
           >
-            <Ionicons name="navigate-outline" size={18} color="#FFFFFF" />
-            <Text className="font-bold text-white">Mở giám sát chuyến</Text>
+            <Ionicons name="navigate-outline" size={18} color={colors.text.onPrimary} />
+            <Text style={{ color: colors.text.onPrimary }} className="font-bold">Mở giám sát chuyến</Text>
           </Pressable>
         ) : (
-          <Text className="text-sm font-medium leading-6 text-[#877369]">
+          <Text style={{ color: colors.text.secondary }} className="text-sm font-medium leading-6">
             {stageDescription}
           </Text>
         )}
@@ -475,15 +477,15 @@ export default function OrderDetailScreen() {
           <InfoRow label="Thời gian vận chuyển" value={formatTransitDuration(order.route.transitTime)} />
           <InfoRow label="Hạn nhận hàng tại kho" value={formatCutOffTime(order.route.cutOffTime)} />
           {order.route.routeCode ? (
-            <View className="mt-1 border-t border-gray-100 pt-2">
-              <Text className="text-[11px] text-gray-400">Mã tuyến: {order.route.routeCode}</Text>
+            <View style={{ borderTopColor: colors.border.default }} className="mt-1 border-t pt-2">
+              <Text style={{ color: colors.text.muted }} className="text-[11px]">Mã tuyến: {order.route.routeCode}</Text>
             </View>
           ) : null}
         </InfoCard>
       ) : null}
 
       <InfoCard title="Giao hàng đến" icon="location-sharp">
-        <Text className="text-sm font-semibold leading-5 text-[#3A1F04]">
+        <Text style={{ color: colors.text.primary }} className="text-sm font-semibold leading-5">
           {order.destination?.address || 'Chưa cập nhật địa chỉ'}
         </Text>
       </InfoCard>
@@ -492,30 +494,30 @@ export default function OrderDetailScreen() {
         <InfoCard title="Vị trí giao hàng" icon="map-outline">
           <InfoRow label="Vĩ độ (Latitude)" value={`${order.destination?.latitude}`} />
           <InfoRow label="Kinh độ (Longitude)" value={`${order.destination?.longitude}`} />
-          <Text className="mt-2 text-xs leading-5 text-[#877369]">
+          <Text style={{ color: colors.text.secondary }} className="mt-2 text-xs leading-5">
             Bản đồ sẽ được hiển thị khi ứng dụng tích hợp thư viện bản đồ phù hợp.
           </Text>
         </InfoCard>
       ) : null}
 
       {documentImage ? (
-        <View className="mb-4 rounded-2xl border border-[#DAC2B6]/50 bg-white p-5 shadow-sm">
-          <View className="mb-3 flex-row items-center gap-2 border-b border-[#DAC2B6]/30 pb-3">
-            <Ionicons name="image-outline" size={18} color="#8B4513" />
-            <Text className="text-base font-bold text-[#8B4513]">Ảnh kiện hàng</Text>
+        <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="mb-4 rounded-2xl border p-5 shadow-sm">
+          <View style={{ borderBottomColor: colors.border.default }} className="mb-3 flex-row items-center gap-2 border-b pb-3">
+            <Ionicons name="image-outline" size={18} color={colors.brand.primary} />
+            <Text style={{ color: colors.brand.primary }} className="text-base font-bold">Ảnh kiện hàng</Text>
           </View>
           <Image source={{ uri: documentImage }} className="h-52 w-full rounded-xl bg-gray-100" resizeMode="cover" />
         </View>
       ) : null}
 
-      <View className="mb-4 rounded-2xl border border-[#DAC2B6]/50 bg-white p-5 shadow-sm">
-        <View className="mb-3 flex-row items-center gap-2 border-b border-[#DAC2B6]/30 pb-3">
-          <Ionicons name="receipt-outline" size={18} color="#8B4513" />
-          <Text className="text-base font-bold text-[#8B4513]">Báo giá</Text>
+      <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="mb-4 rounded-2xl border p-5 shadow-sm">
+        <View style={{ borderBottomColor: colors.border.default }} className="mb-3 flex-row items-center gap-2 border-b pb-3">
+          <Ionicons name="receipt-outline" size={18} color={colors.brand.primary} />
+          <Text style={{ color: colors.brand.primary }} className="text-base font-bold">Báo giá</Text>
         </View>
 
         {displayedQuotations.length === 0 ? (
-          <Text className="text-sm leading-6 text-[#877369]">
+          <Text style={{ color: colors.text.secondary }} className="text-sm leading-6">
             Đơn hàng đang chờ bộ phận Sales kiểm duyệt và gửi báo giá.
           </Text>
         ) : (
@@ -622,11 +624,11 @@ function QuotationCard({
   const fullFileUrl = getFullAssetUrl(quote.fileUrl);
 
   return (
-    <View className="rounded-2xl border border-[#DAC2B6]/60 bg-[#F8F9FA] p-4">
+    <View style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default }} className="rounded-2xl border p-4">
       <View className="mb-3 flex-row items-start justify-between gap-3">
         <View>
-          <Text className="text-sm font-bold text-[#3A1F04]">Báo giá chi tiết</Text>
-          <Text className="mt-1 text-xs text-[#877369]">{formatDateWithoutSeconds(quote.createdAt)}</Text>
+          <Text style={{ color: colors.text.primary }} className="text-sm font-bold">Báo giá chi tiết</Text>
+          <Text style={{ color: colors.text.secondary }} className="mt-1 text-xs">{formatDateWithoutSeconds(quote.createdAt)}</Text>
         </View>
         <StatusBadge status={quote.status} />
       </View>
@@ -641,8 +643,8 @@ function QuotationCard({
 
       {fullFileUrl ? (
         <Pressable onPress={() => Linking.openURL(fullFileUrl)} className="mt-4 flex-row items-center gap-2">
-          <Ionicons name="document-attach-outline" size={16} color="#8B4513" />
-          <Text className="text-sm font-semibold text-[#8B4513]">Xem báo giá</Text>
+          <Ionicons name="document-attach-outline" size={16} color={colors.brand.primary} />
+          <Text style={{ color: colors.brand.primary }} className="text-sm font-semibold">Xem báo giá</Text>
         </Pressable>
       ) : null}
 
@@ -650,12 +652,13 @@ function QuotationCard({
         <Pressable
           onPress={onAccept}
           disabled={isAccepting}
+          style={{ backgroundColor: colors.brand.primary }}
           className={[
-            'mt-4 h-12 items-center justify-center rounded-xl bg-[#8B4513]',
+            'mt-4 h-12 items-center justify-center rounded-xl',
             isAccepting ? 'opacity-70' : '',
           ].join(' ')}
         >
-          <Text className="font-bold text-white">
+          <Text style={{ color: colors.text.onPrimary }} className="font-bold">
             {isAccepting ? 'ĐANG XỬ LÝ...' : 'Chấp nhận báo giá'}
           </Text>
         </Pressable>
@@ -697,16 +700,16 @@ function ContractSection({
   const canUpload = status === 'PENDING_CUSTOMER_SIGNATURE';
 
   return (
-    <View className="mb-4 rounded-2xl border border-[#DAC2B6]/50 bg-white p-5 shadow-sm">
-      <View className="mb-3 flex-row items-center gap-2 border-b border-[#DAC2B6]/30 pb-3">
-        <Ionicons name="document-text-outline" size={18} color="#8B4513" />
-        <Text className="text-base font-bold text-[#8B4513]">Hợp đồng</Text>
+    <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="mb-4 rounded-2xl border p-5 shadow-sm">
+      <View style={{ borderBottomColor: colors.border.default }} className="mb-3 flex-row items-center gap-2 border-b pb-3">
+        <Ionicons name="document-text-outline" size={18} color={colors.brand.primary} />
+        <Text style={{ color: colors.brand.primary }} className="text-base font-bold">Hợp đồng</Text>
       </View>
 
       {isLoading ? (
-        <View className="flex-row items-center gap-3 rounded-xl bg-[#F8F9FA] p-3">
-          <ActivityIndicator size="small" color="#8B4513" />
-          <Text className="text-sm font-semibold text-[#877369]">Đang tải hợp đồng...</Text>
+        <View style={{ backgroundColor: colors.surface.page }} className="flex-row items-center gap-3 rounded-xl p-3">
+          <ActivityIndicator size="small" color={colors.brand.primary} />
+          <Text style={{ color: colors.text.secondary }} className="text-sm font-semibold">Đang tải hợp đồng...</Text>
         </View>
       ) : null}
 
@@ -717,43 +720,44 @@ function ContractSection({
       ) : null}
 
       {!isLoading && !contract ? (
-        <Text className="text-sm leading-6 text-[#877369]">Chưa có hợp đồng cho đơn hàng này.</Text>
+        <Text style={{ color: colors.text.secondary }} className="text-sm leading-6">Chưa có hợp đồng cho đơn hàng này.</Text>
       ) : null}
 
       {!isLoading && contract ? (
         <View className="gap-3">
           <View className="flex-row items-start justify-between gap-3">
             <View className="flex-1">
-              <Text className="text-sm font-bold text-[#3A1F04]">{contract.contractNumber}</Text>
-              <Text className="mt-1 text-xs text-[#877369]">Đã gửi: {formatDateWithoutSeconds(contract.sentAt)}</Text>
+              <Text style={{ color: colors.text.primary }} className="text-sm font-bold">{contract.contractNumber}</Text>
+              <Text style={{ color: colors.text.secondary }} className="mt-1 text-xs">Đã gửi: {formatDateWithoutSeconds(contract.sentAt)}</Text>
             </View>
             <ContractStatusBadge status={contract.status} />
           </View>
 
           {contractFileUrl ? (
             <Pressable onPress={() => openContractFile(contractFileUrl)} className="flex-row items-center gap-2">
-              <Ionicons name="document-attach-outline" size={16} color="#8B4513" />
-              <Text className="text-sm font-semibold text-[#8B4513]">Xem hợp đồng</Text>
+              <Ionicons name="document-attach-outline" size={16} color={colors.brand.primary} />
+              <Text style={{ color: colors.brand.primary }} className="text-sm font-semibold">Xem hợp đồng</Text>
             </Pressable>
           ) : null}
 
           {status === 'DRAFT' || status === 'PENDING_SIGNATURE' ? (
-            <Text className="text-sm leading-6 text-[#877369]">Hợp đồng đang được bộ phận Sales chuẩn bị.</Text>
+            <Text style={{ color: colors.text.secondary }} className="text-sm leading-6">Hợp đồng đang được bộ phận Sales chuẩn bị.</Text>
           ) : null}
 
           {canUpload ? (
-            <View className="gap-3 rounded-2xl border border-[#DAC2B6]/60 bg-[#F8F9FA] p-4">
-              <Text className="text-sm leading-6 text-[#877369]">
+            <View style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default }} className="gap-3 rounded-2xl border p-4">
+              <Text style={{ color: colors.text.secondary }} className="text-sm leading-6">
                 Vui lòng tải lên hợp đồng đã ký để bộ phận Sales xác nhận.
               </Text>
 
               <Pressable
                 onPress={onPickFile}
                 disabled={isUploading}
-                className="h-12 flex-row items-center justify-center gap-2 rounded-xl border border-[#8B4513] bg-white"
+                style={{ backgroundColor: colors.surface.card, borderColor: colors.brand.primary }}
+                className="h-12 flex-row items-center justify-center gap-2 rounded-xl border"
               >
-                <Ionicons name="cloud-upload-outline" size={18} color="#8B4513" />
-                <Text className="font-bold text-[#8B4513]">Chọn file hợp đồng đã ký</Text>
+                <Ionicons name="cloud-upload-outline" size={18} color={colors.brand.primary} />
+                <Text style={{ color: colors.brand.primary }} className="font-bold">Chọn file hợp đồng đã ký</Text>
               </Pressable>
 
               {selectedFile ? (
@@ -768,44 +772,28 @@ function ContractSection({
               <Pressable
                 onPress={onSubmit}
                 disabled={!selectedFile || isUploading}
+                style={{ backgroundColor: colors.brand.primary }}
                 className={[
-                  'h-12 items-center justify-center rounded-xl bg-[#8B4513]',
+                  'h-12 items-center justify-center rounded-xl',
                   !selectedFile || isUploading ? 'opacity-60' : '',
                 ].join(' ')}
               >
-                <Text className="font-bold text-white">
+                <Text style={{ color: colors.text.onPrimary }} className="font-bold">
                   {isUploading ? 'ĐANG TẢI LÊN...' : 'Tải hợp đồng đã ký lên'}
                 </Text>
               </Pressable>
             </View>
           ) : null}
 
-          {status === 'PENDING_SALES_VERIFICATION' ? (
-            <View className="rounded-xl border border-blue-200 bg-blue-50 p-3">
-              <Text className="text-sm font-semibold leading-5 text-blue-700">
-                Hợp đồng đã ký đã được tải lên. Đang chờ bộ phận Sales xác nhận.
-              </Text>
-              {signedFileUrl ? (
-                <Pressable onPress={() => openContractFile(signedFileUrl)} className="mt-3 flex-row items-center gap-2">
-                  <Ionicons name="document-attach-outline" size={16} color="#1d4ed8" />
-                  <Text className="text-sm font-semibold text-blue-700">Xem hợp đồng đã ký</Text>
-                </Pressable>
-              ) : null}
-            </View>
-          ) : null}
-
-          {status === 'ACTIVE' || status === 'VERIFIED' ? (
+          {signedFileUrl ? (
             <View className="rounded-xl border border-green-200 bg-green-50 p-3">
-              <Text className="text-sm font-semibold leading-5 text-green-700">Hợp đồng đã được xác nhận.</Text>
-              {orderTrackingCode ? (
-                <Text className="mt-2 text-sm font-bold text-green-800">Mã theo dõi: {orderTrackingCode}</Text>
-              ) : null}
-              {signedFileUrl ? (
-                <Pressable onPress={() => openContractFile(signedFileUrl)} className="mt-3 flex-row items-center gap-2">
-                  <Ionicons name="document-attach-outline" size={16} color="#15803d" />
-                  <Text className="text-sm font-semibold text-green-700">Xem hợp đồng đã ký</Text>
-                </Pressable>
-              ) : null}
+              <Text className="text-sm font-semibold leading-5 text-green-800">
+                Hợp đồng đã ký đã được gửi thành công.
+              </Text>
+              <Pressable onPress={() => openContractFile(signedFileUrl)} className="mt-2 flex-row items-center gap-2">
+                <Ionicons name="document-attach-outline" size={16} color="#15803D" />
+                <Text className="text-sm font-bold text-green-800">Xem file đã ký</Text>
+              </Pressable>
             </View>
           ) : null}
         </View>
@@ -848,16 +836,16 @@ function AppendixSection({
   const orderIsReceiving = orderStatus.toUpperCase() === 'RECEIVING';
 
   return (
-    <View className="mb-4 rounded-2xl border border-[#DAC2B6]/50 bg-white p-5 shadow-sm">
-      <View className="mb-3 flex-row items-center gap-2 border-b border-[#DAC2B6]/30 pb-3">
-        <Ionicons name="document-attach-outline" size={18} color="#8B4513" />
-        <Text className="text-base font-bold text-[#8B4513]">Phụ lục điều chỉnh cước</Text>
+    <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="mb-4 rounded-2xl border p-5 shadow-sm">
+      <View style={{ borderBottomColor: colors.border.default }} className="mb-3 flex-row items-center gap-2 border-b pb-3">
+        <Ionicons name="document-attach-outline" size={18} color={colors.brand.primary} />
+        <Text style={{ color: colors.brand.primary }} className="text-base font-bold">Phụ lục điều chỉnh cước</Text>
       </View>
 
       {isLoading ? (
-        <View className="flex-row items-center gap-3 rounded-xl bg-[#F8F9FA] p-3">
-          <ActivityIndicator size="small" color="#8B4513" />
-          <Text className="text-sm font-semibold text-[#877369]">Đang kiểm tra phụ lục...</Text>
+        <View style={{ backgroundColor: colors.surface.page }} className="flex-row items-center gap-3 rounded-xl p-3">
+          <ActivityIndicator size="small" color={colors.brand.primary} />
+          <Text style={{ color: colors.text.secondary }} className="text-sm font-semibold">Đang kiểm tra phụ lục...</Text>
         </View>
       ) : null}
 
@@ -871,13 +859,13 @@ function AppendixSection({
         <View className="gap-3">
           <View className="flex-row items-start justify-between gap-3">
             <View className="flex-1">
-              <Text className="text-sm font-bold text-[#3A1F04]">{appendix.appendixNumber}</Text>
-              <Text className="mt-1 text-xs text-[#877369]">Gửi lúc: {formatDateWithoutSeconds(appendix.sentAt)}</Text>
+              <Text style={{ color: colors.text.primary }} className="text-sm font-bold">{appendix.appendixNumber}</Text>
+              <Text style={{ color: colors.text.secondary }} className="mt-1 text-xs">Gửi lúc: {formatDateWithoutSeconds(appendix.sentAt)}</Text>
             </View>
             <StatusBadge status={appendix.status} />
           </View>
 
-          <Text className="text-sm leading-6 text-[#877369]">
+          <Text style={{ color: colors.text.secondary }} className="text-sm leading-6">
             {appendix.reason || 'Phát hiện chênh lệch thực tế khi kiểm đếm QC tại Hub.'}
           </Text>
 
@@ -918,22 +906,24 @@ function AppendixSection({
           <View className="flex-row flex-wrap gap-3">
             <Pressable
               onPress={onView}
-              className="h-11 flex-row items-center justify-center gap-2 rounded-xl border border-[#8B4513] bg-white px-4"
+              style={{ backgroundColor: colors.surface.card, borderColor: colors.brand.primary }}
+              className="h-11 flex-row items-center justify-center gap-2 rounded-xl border px-4"
             >
-              <Ionicons name="eye-outline" size={16} color="#8B4513" />
-              <Text className="text-sm font-bold text-[#8B4513]">Xem phụ lục</Text>
+              <Ionicons name="eye-outline" size={16} color={colors.brand.primary} />
+              <Text style={{ color: colors.brand.primary }} className="text-sm font-bold">Xem phụ lục</Text>
             </Pressable>
 
             <Pressable
               onPress={onOpenPdf}
               disabled={!hasPdf}
-              className={[
-                'h-11 flex-row items-center justify-center gap-2 rounded-xl border px-4',
-                hasPdf ? 'border-[#8B4513] bg-white' : 'border-[#DAC2B6] bg-[#F8F9FA]',
-              ].join(' ')}
+              style={{
+                backgroundColor: hasPdf ? colors.surface.card : colors.surface.page,
+                borderColor: hasPdf ? colors.brand.primary : colors.border.default,
+              }}
+              className="h-11 flex-row items-center justify-center gap-2 rounded-xl border px-4"
             >
-              <Ionicons name="open-outline" size={16} color={hasPdf ? '#8B4513' : '#877369'} />
-              <Text className={['text-sm font-bold', hasPdf ? 'text-[#8B4513]' : 'text-[#877369]'].join(' ')}>
+              <Ionicons name="open-outline" size={16} color={hasPdf ? colors.brand.primary : colors.text.muted} />
+              <Text style={{ color: hasPdf ? colors.brand.primary : colors.text.muted }} className="text-sm font-bold">
                 Mở PDF
               </Text>
             </Pressable>
@@ -984,10 +974,10 @@ function InfoCard({
   children: React.ReactNode;
 }) {
   return (
-    <View className="mb-4 rounded-2xl border border-[#DAC2B6]/50 bg-white p-5 shadow-sm">
-      <View className="mb-3 flex-row items-center gap-2 border-b border-[#DAC2B6]/30 pb-3">
-        <Ionicons name={icon} size={18} color="#8B4513" />
-        <Text className="text-base font-bold text-[#8B4513]">{title}</Text>
+    <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="mb-4 rounded-2xl border p-5 shadow-sm">
+      <View style={{ borderBottomColor: colors.border.default }} className="mb-3 flex-row items-center gap-2 border-b pb-3">
+        <Ionicons name={icon} size={18} color={colors.brand.primary} />
+        <Text style={{ color: colors.brand.primary }} className="text-base font-bold">{title}</Text>
       </View>
       <View className="gap-3">{children}</View>
     </View>
@@ -997,8 +987,8 @@ function InfoCard({
 function InfoRow({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
   return (
     <View className="flex-row items-start justify-between gap-4">
-      <Text className="text-sm text-[#877369]">{label}</Text>
-      <Text className={['flex-1 text-right text-sm', strong ? 'font-bold text-[#006E0A]' : 'font-semibold text-[#3A1F04]'].join(' ')}>
+      <Text style={{ color: colors.text.secondary }} className="text-sm">{label}</Text>
+      <Text style={{ color: strong ? '#006E0A' : colors.text.primary }} className={['flex-1 text-right text-sm', strong ? 'font-bold' : 'font-semibold'].join(' ')}>
         {value}
       </Text>
     </View>

@@ -5,6 +5,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 
+import { colors } from '../../../../constants/colors';
 import { createIncident, createIncidentWithEvidence, IncidentSeverity, IncidentType } from '../../../../services/incidentApi';
 import { useAuthStore } from '../../../../store/useAuthStore';
 
@@ -111,14 +112,14 @@ export default function DriverTripIncidentScreen() {
         if (photoUri) {
           const filename = photoUri.split('/').pop() || 'photo.jpg';
           const match = /\.(\w+)$/.exec(filename);
-          const type = match ? `image/${match[1]}` : 'image/jpeg';
-          formData.append('EvidenceFiles', { uri: photoUri, name: filename, type } as any);
+          const fileType = match ? `image/${match[1]}` : 'image/jpeg';
+          formData.append('EvidenceFiles', { uri: photoUri, name: filename, type: fileType } as any);
         }
         if (receiptUri) {
           const filename = receiptUri.split('/').pop() || 'receipt.jpg';
           const match = /\.(\w+)$/.exec(filename);
-          const type = match ? `image/${match[1]}` : 'image/jpeg';
-          formData.append('ReceiptFiles', { uri: receiptUri, name: filename, type } as any);
+          const fileType = match ? `image/${match[1]}` : 'image/jpeg';
+          formData.append('ReceiptFiles', { uri: receiptUri, name: filename, type: fileType } as any);
         }
 
         const res = await createIncidentWithEvidence(token, formData);
@@ -129,59 +130,79 @@ export default function DriverTripIncidentScreen() {
           Alert.alert('Lỗi', res.message || 'Không thể tạo sự cố.');
         }
       }
-    } catch (e: any) {
-      Alert.alert('Lỗi', e.message || 'Có lỗi xảy ra khi gọi API.');
+    } catch (err: any) {
+      Alert.alert('Thất bại', err.message || 'Không thể tạo báo cáo sự cố.');
     } finally {
       setSubmitting(false);
+      setLocationLoading(false);
     }
   };
 
   return (
-    <ScrollView className="flex-1 bg-[#F6F8F2]" contentContainerStyle={{ padding: 20, paddingBottom: 100, gap: 16 }}>
-      <Text className="text-2xl font-bold text-amber-950">Báo cáo Sự cố</Text>
-      <Text className="text-sm text-amber-700">Chuyến: {tripId?.slice(0, 8).toUpperCase()}</Text>
+    <ScrollView style={{ backgroundColor: colors.surface.page }} className="flex-1" contentContainerStyle={{ padding: 20, gap: 16 }}>
+      <Text style={{ color: colors.text.secondary }} className="text-xs font-bold uppercase tracking-wider">Tạo Báo Cáo Sự Cố</Text>
 
-      <View className="gap-4 rounded-3xl bg-white p-5">
-        <Text className="font-bold text-amber-950">Loại sự cố</Text>
+      <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-4 rounded-2xl border p-4 shadow-sm">
+        <Text style={{ color: colors.text.primary }} className="font-bold">Loại sự cố</Text>
         <View className="flex-row flex-wrap gap-2">
           {INCIDENT_TYPES.map((t) => (
-            <Pressable key={t.value} onPress={() => setType(t.value)} className={`rounded-xl border px-3 py-2 ${type === t.value ? 'border-amber-600 bg-amber-100' : 'border-gray-200'}`}>
-              <Text className={type === t.value ? 'font-bold text-amber-900' : 'text-gray-600'}>{t.label}</Text>
+            <Pressable
+              key={t.value}
+              onPress={() => setType(t.value)}
+              style={{
+                backgroundColor: type === t.value ? colors.surface.selected : colors.surface.card,
+                borderColor: type === t.value ? colors.border.selected : colors.border.default,
+              }}
+              className="rounded-xl border px-3 py-2"
+            >
+              <Text style={{ color: type === t.value ? colors.text.brand : colors.text.secondary }} className={type === t.value ? 'font-bold' : 'font-medium'}>{t.label}</Text>
             </Pressable>
           ))}
         </View>
 
-        <Text className="font-bold text-amber-950 mt-2">Mức độ</Text>
+        <Text style={{ color: colors.text.primary }} className="mt-2 font-bold">Mức độ</Text>
         <View className="flex-row flex-wrap gap-2">
           {SEVERITIES.map((s) => (
-            <Pressable key={s.value} onPress={() => setSeverity(s.value)} className={`rounded-xl border px-3 py-2 ${severity === s.value ? 'border-red-600 bg-red-100' : 'border-gray-200'}`}>
-              <Text className={severity === s.value ? 'font-bold text-red-900' : 'text-gray-600'}>{s.label}</Text>
+            <Pressable
+              key={s.value}
+              onPress={() => setSeverity(s.value)}
+              style={{
+                backgroundColor: severity === s.value ? colors.surface.selected : colors.surface.card,
+                borderColor: severity === s.value ? colors.border.selected : colors.border.default,
+              }}
+              className="rounded-xl border px-3 py-2"
+            >
+              <Text style={{ color: severity === s.value ? colors.text.brand : colors.text.secondary }} className={severity === s.value ? 'font-bold' : 'font-medium'}>{s.label}</Text>
             </Pressable>
           ))}
         </View>
 
-        <View className="mt-2 flex-row items-center justify-between rounded-xl bg-amber-50 p-4">
+        <View style={{ backgroundColor: colors.surface.muted }} className="mt-2 flex-row items-center justify-between rounded-xl p-4">
           <View className="flex-1 pr-4">
-            <Text className="font-bold text-amber-950">Yêu cầu xe thay thế (Cứu hộ)</Text>
-            <Text className="text-xs text-amber-700">Bật nếu xe không thể tiếp tục chạy</Text>
+            <Text style={{ color: colors.text.primary }} className="font-bold">Yêu cầu xe thay thế (Cứu hộ)</Text>
+            <Text style={{ color: colors.text.secondary }} className="text-xs">Bật nếu xe không thể tiếp tục chạy</Text>
           </View>
-          <Switch value={requiresRescue} onValueChange={setRequiresRescue} trackColor={{ true: '#8B4513' }} />
+          <Switch value={requiresRescue} onValueChange={setRequiresRescue} trackColor={{ true: colors.brand.primary }} />
         </View>
 
-        <Text className="font-bold text-amber-950 mt-2">Mô tả chi tiết *</Text>
+        <Text style={{ color: colors.text.primary }} className="mt-2 font-bold">Mô tả chi tiết *</Text>
         <TextInput
-          className="h-24 rounded-xl border border-gray-200 bg-gray-50 p-3 text-amber-950"
+          style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default, color: colors.text.primary }}
+          className="h-24 rounded-xl border p-3 font-medium"
           placeholder="Ví dụ: Xe hỏng lốp, tắc đường nghiêm trọng..."
+          placeholderTextColor={colors.text.muted}
           multiline
           value={description}
           onChangeText={setDescription}
           editable={!submitting}
         />
 
-        <Text className="font-bold text-amber-950 mt-2">Chi phí đã ứng (nếu có)</Text>
+        <Text style={{ color: colors.text.primary }} className="mt-2 font-bold">Chi phí đã ứng (nếu có)</Text>
         <TextInput
-          className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-amber-950"
+          style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default, color: colors.text.primary }}
+          className="rounded-xl border p-3 font-medium"
           placeholder="Nhập số tiền VNĐ"
+          placeholderTextColor={colors.text.muted}
           keyboardType="numeric"
           value={amount}
           onChangeText={setAmount}
@@ -189,23 +210,30 @@ export default function DriverTripIncidentScreen() {
         />
 
         <View className="mt-2 flex-row gap-3">
-          <Pressable onPress={() => pickImage(setPhotoUri)} className="flex-1 items-center justify-center rounded-xl border border-dashed border-gray-300 bg-gray-50 py-4">
-            <Ionicons name="camera-outline" size={24} color="#8B4513" />
-            <Text className="mt-1 text-xs text-amber-700">{photoUri ? 'Đã chọn ảnh sự cố' : 'Thêm ảnh sự cố'}</Text>
+          <Pressable onPress={() => pickImage(setPhotoUri)} style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="flex-1 items-center justify-center rounded-xl border border-dashed py-4">
+            <Ionicons name="camera-outline" size={24} color={colors.brand.primary} />
+            <Text style={{ color: colors.text.secondary }} className="mt-1 text-xs">{photoUri ? 'Đã chọn ảnh sự cố' : 'Thêm ảnh sự cố'}</Text>
           </Pressable>
-          <Pressable onPress={() => pickImage(setReceiptUri)} className="flex-1 items-center justify-center rounded-xl border border-dashed border-gray-300 bg-gray-50 py-4">
-            <Ionicons name="receipt-outline" size={24} color="#8B4513" />
-            <Text className="mt-1 text-xs text-amber-700">{receiptUri ? 'Đã chọn hóa đơn' : 'Thêm hóa đơn'}</Text>
+          <Pressable onPress={() => pickImage(setReceiptUri)} style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="flex-1 items-center justify-center rounded-xl border border-dashed py-4">
+            <Ionicons name="receipt-outline" size={24} color={colors.brand.primary} />
+            <Text style={{ color: colors.text.secondary }} className="mt-1 text-xs">{receiptUri ? 'Đã chọn hóa đơn' : 'Thêm hóa đơn'}</Text>
           </Pressable>
         </View>
       </View>
 
-      <Pressable onPress={handleSubmit} disabled={submitting || locationLoading} className={`items-center justify-center rounded-xl p-4 ${submitting || locationLoading ? 'bg-amber-800/70' : 'bg-amber-800'}`}>
-        {submitting || locationLoading ? <ActivityIndicator color="white" /> : <Text className="font-bold text-white">Gửi Báo Cáo</Text>}
+      <Pressable
+        onPress={handleSubmit}
+        disabled={submitting || locationLoading}
+        style={{
+          backgroundColor: submitting || locationLoading ? colors.surface.muted : colors.brand.primary,
+        }}
+        className="items-center justify-center rounded-xl p-4"
+      >
+        {submitting || locationLoading ? <ActivityIndicator color={colors.text.onPrimary} /> : <Text style={{ color: colors.text.onPrimary }} className="font-bold">Gửi Báo Cáo</Text>}
       </Pressable>
 
       <Pressable onPress={() => router.back()} disabled={submitting} className="items-center rounded-xl p-4">
-        <Text className="font-bold text-amber-800">Quay lại</Text>
+        <Text style={{ color: colors.brand.primary }} className="font-bold">Quay lại</Text>
       </Pressable>
     </ScrollView>
   );

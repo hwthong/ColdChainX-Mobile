@@ -1,6 +1,8 @@
 import React, { useMemo } from 'react';
 import { Text, View } from 'react-native';
 
+import { colors } from '../constants/colors';
+
 type QrCodeInstance = {
   addData: (data: string) => void;
   make: () => void;
@@ -33,18 +35,18 @@ export function LocalQrCode({ value, size = 220 }: LocalQrCodeProps) {
   if (!value || matrix.length === 0) {
     return (
       <View
-        className="items-center justify-center rounded-2xl border border-dashed border-[#DAC2B6] bg-white"
-        style={{ width: size, height: size }}
+        style={{ width: size, height: size, backgroundColor: colors.surface.card, borderColor: colors.border.default }}
+        className="items-center justify-center rounded-2xl border border-dashed"
       >
-        <Text className="px-4 text-center text-xs font-semibold text-[#877369]">Chưa có dữ liệu QR</Text>
+        <Text style={{ color: colors.text.secondary }} className="px-4 text-center text-xs font-semibold">Chưa có dữ liệu QR</Text>
       </View>
     );
   }
 
   return (
     <View
-      className="rounded-2xl border border-[#E8D8CF] bg-white p-3"
-      style={{ width: size, height: size }}
+      style={{ width: size, height: size, backgroundColor: colors.surface.card, borderColor: colors.border.default }}
+      className="rounded-2xl border p-3"
     >
       <View className="flex-1 bg-white">
         {matrix.map((row, rowIndex) => (

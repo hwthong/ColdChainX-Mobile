@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, TextInput } from 'react-native';
 import type { TextInputProps } from 'react-native';
 
-import { WH_COLORS } from '../constants/warehouseTheme';
+import { colors } from '../constants/colors';
 
 interface AppInputProps {
   label: string;
@@ -11,10 +11,11 @@ interface AppInputProps {
   placeholder?: string;
   keyboardType?: TextInputProps['keyboardType'];
   multiline?: boolean;
+  error?: string;
 }
 
 /**
- * Brown-themed text input with label. Replaces the inline Field component.
+ * Web Blue Palette text input with label and focus/error states.
  */
 export function AppInput({
   label,
@@ -23,14 +24,23 @@ export function AppInput({
   placeholder = '',
   keyboardType = 'default',
   multiline = false,
+  error,
 }: AppInputProps) {
+  const [isFocused, setIsFocused] = useState(false);
+
+  const getBorderColor = () => {
+    if (error) return colors.status.danger.main;
+    if (isFocused) return colors.border.focus;
+    return colors.border.default;
+  };
+
   return (
     <View style={{ flex: 1, gap: 4 }}>
       <Text
         style={{
           fontSize: 12,
           fontWeight: '700',
-          color: WH_COLORS.labelText,
+          color: error ? colors.status.danger.main : colors.text.secondary,
         }}
       >
         {label}
@@ -39,22 +49,29 @@ export function AppInput({
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor={WH_COLORS.placeholder}
+        placeholderTextColor={colors.text.muted}
         keyboardType={keyboardType}
         multiline={multiline}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
         style={{
           borderWidth: 1,
-          borderColor: WH_COLORS.inputBorder,
+          borderColor: getBorderColor(),
           borderRadius: 10,
-          backgroundColor: WH_COLORS.cardBg,
+          backgroundColor: colors.surface.card,
           paddingHorizontal: 14,
           paddingVertical: 10,
           fontSize: 14,
-          color: WH_COLORS.textPrimary,
+          color: colors.text.primary,
           minHeight: multiline ? 86 : 44,
           textAlignVertical: multiline ? 'top' : 'center',
         }}
       />
+      {error ? (
+        <Text style={{ fontSize: 11, color: colors.status.danger.main, marginTop: 2 }}>
+          {error}
+        </Text>
+      ) : null}
     </View>
   );
 }

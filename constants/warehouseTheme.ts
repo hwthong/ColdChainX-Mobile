@@ -1,37 +1,39 @@
+import { colors } from './colors';
+
 /**
- * Warehouse UI theme — brown palette synchronized with Customer app.
+ * Warehouse UI theme — synchronized with central Web blue palette.
  * Business codes (LPN, ASN, QC) are kept in English; all UI labels are Vietnamese.
  */
 
 export const WH_COLORS = {
-  /** Dark brown used for header background and hero cards */
-  headerBg: '#3A1F04',
-  /** Warm peach for header text / accent on dark bg */
-  headerText: '#FFC29F',
+  /** Dark navy used for header background and hero cards */
+  headerBg: colors.text.primary,
+  /** Soft primary text accent on dark bg */
+  headerText: colors.brand.primaryForeground,
   /** Primary action color (buttons, active tabs, icons) */
-  primary: '#8B4513',
+  primary: colors.brand.primary,
   /** Light tint of primary for secondary buttons / inactive tab bg */
-  primaryLight: '#F8F3EF',
+  primaryLight: colors.brand.primarySoft,
   /** Screen background */
-  background: '#F5F2F0',
+  background: colors.surface.page,
   /** Card / surface background */
-  cardBg: '#FFFFFF',
+  cardBg: colors.surface.card,
   /** Card border */
-  cardBorder: 'rgba(218, 194, 182, 0.5)',
+  cardBorder: colors.border.default,
   /** Main body text */
-  textPrimary: '#3A1F04',
+  textPrimary: colors.text.primary,
   /** Secondary / muted text */
-  textSecondary: '#877369',
+  textSecondary: colors.text.secondary,
   /** Label text inside forms */
-  labelText: '#6B5344',
+  labelText: colors.text.muted,
   /** Background for icon circles */
-  iconBg: 'rgba(139, 69, 19, 0.1)',
+  iconBg: colors.brand.primarySoft,
   /** Placeholder text */
-  placeholder: '#B8A99E',
+  placeholder: colors.text.muted,
   /** Input border */
-  inputBorder: '#DAC2B6',
+  inputBorder: colors.border.default,
   /** Tab bar border top */
-  tabBorder: 'rgba(218, 194, 182, 0.5)',
+  tabBorder: colors.border.default,
 } as const;
 
 export interface StatusStyle {
@@ -44,133 +46,133 @@ export interface StatusStyle {
 /** Maps LPN / ASN status codes to display styles and Vietnamese labels. */
 export const STATUS_STYLES: Record<string, StatusStyle> = {
   IN_STOCK: {
-    bg: '#F0FDF4',
-    text: '#166534',
-    border: '#BBF7D0',
+    bg: colors.status.success.bg,
+    text: colors.status.success.main,
+    border: colors.status.success.border,
     label: 'Đã nhập kho',
   },
   RECEIVING: {
-    bg: '#FFF8F0',
-    text: '#8B4513',
-    border: '#F5D4B3',
+    bg: colors.status.warning.bg,
+    text: colors.status.warning.main,
+    border: colors.status.warning.border,
     label: 'Đang chờ nhập vị trí',
   },
   DISCREPANCY_HOLD: {
-    bg: '#FFF7ED',
-    text: '#C2410C',
-    border: '#FED7AA',
+    bg: colors.status.warning.bg,
+    text: colors.status.warning.main,
+    border: colors.status.warning.border,
     label: 'Đang giữ do sai lệch',
   },
   RETURN_PENDING: {
-    bg: '#FEF2F2',
-    text: '#991B1B',
-    border: '#FECACA',
+    bg: colors.status.danger.bg,
+    text: colors.status.danger.main,
+    border: colors.status.danger.border,
     label: 'Chờ trả hàng',
   },
   SCHEDULED: {
-    bg: '#EEF2FF',
-    text: '#3730A3',
-    border: '#C7D2FE',
+    bg: colors.brand.primarySoft,
+    text: colors.brand.primary,
+    border: colors.border.default,
     label: 'Đã đặt lịch',
   },
   QC_PASSED: {
-    bg: '#F0FDF4',
-    text: '#166534',
-    border: '#BBF7D0',
+    bg: colors.status.success.bg,
+    text: colors.status.success.main,
+    border: colors.status.success.border,
     label: 'QC đạt',
   },
   ARRIVED: {
-    bg: '#FFF8F0',
-    text: '#8B4513',
-    border: '#F5D4B3',
+    bg: colors.status.warning.bg,
+    text: colors.status.warning.main,
+    border: colors.status.warning.border,
     label: 'Đã đến kho',
   },
   PLANNED: {
-    bg: '#EEF2FF',
-    text: '#3730A3',
-    border: '#C7D2FE',
+    bg: colors.brand.primarySoft,
+    text: colors.brand.primary,
+    border: colors.border.default,
     label: 'Chờ bốc hàng',
   },
   ALLOCATED: {
-    bg: '#F8F3EF',
-    text: '#8B4513',
-    border: '#DAC2B6',
+    bg: colors.brand.primarySoft,
+    text: colors.brand.primary,
+    border: colors.border.default,
     label: 'Đã phân chuyến',
   },
   PICKING: {
-    bg: '#ECFEFF',
-    text: '#0E7490',
-    border: '#A5F3FC',
+    bg: colors.status.info.bg,
+    text: colors.status.info.main,
+    border: colors.status.info.border,
     label: 'Đang bốc hàng',
   },
   LOADING: {
-    bg: '#FFF8F0',
-    text: '#8B4513',
-    border: '#F5D4B3',
+    bg: colors.status.warning.bg,
+    text: colors.status.warning.main,
+    border: colors.status.warning.border,
     label: 'Chờ bốc lên xe',
   },
   LOADING_COMPLETED: {
-    bg: '#F0FDF4',
-    text: '#166534',
-    border: '#BBF7D0',
+    bg: colors.status.success.bg,
+    text: colors.status.success.main,
+    border: colors.status.success.border,
     label: 'Đã bốc xong',
   },
   RELEASED: {
-    bg: '#ECFDF5',
-    text: '#047857',
-    border: '#A7F3D0',
+    bg: colors.status.success.bg,
+    text: colors.status.success.main,
+    border: colors.status.success.border,
     label: 'Đã xuất kho',
   },
   SEALED: {
-    bg: '#F5F3FF',
-    text: '#6D28D9',
-    border: '#DDD6FE',
+    bg: colors.brand.primarySoft,
+    text: colors.brand.primary,
+    border: colors.border.default,
     label: 'Đã kẹp chì',
   },
   DISPATCHED: {
-    bg: '#EFF6FF',
-    text: '#1D4ED8',
-    border: '#BFDBFE',
+    bg: colors.brand.primarySoft,
+    text: colors.brand.primary,
+    border: colors.border.default,
     label: 'Đã điều phối',
   },
   SHIPPING: {
-    bg: '#EFF6FF',
-    text: '#1D4ED8',
-    border: '#BFDBFE',
+    bg: colors.brand.primarySoft,
+    text: colors.brand.primary,
+    border: colors.border.default,
     label: 'Đang giao',
   },
   IN_TRANSIT: {
-    bg: '#ECFEFF',
-    text: '#0E7490',
-    border: '#A5F3FC',
+    bg: colors.status.info.bg,
+    text: colors.status.info.main,
+    border: colors.status.info.border,
     label: 'Đang di chuyển',
   },
   DELAYED: {
-    bg: '#FFF7ED',
-    text: '#C2410C',
-    border: '#FED7AA',
+    bg: colors.status.warning.bg,
+    text: colors.status.warning.main,
+    border: colors.status.warning.border,
     label: 'Bị trễ',
   },
   COMPLETED: {
-    bg: '#F0FDF4',
-    text: '#166534',
-    border: '#BBF7D0',
+    bg: colors.status.success.bg,
+    text: colors.status.success.main,
+    border: colors.status.success.border,
     label: 'Hoàn thành',
   },
   CANCELLED: {
-    bg: '#FEF2F2',
-    text: '#991B1B',
-    border: '#FECACA',
+    bg: colors.status.danger.bg,
+    text: colors.status.danger.main,
+    border: colors.status.danger.border,
     label: 'Đã hủy',
   },
 } as const;
 
 /** Message tone colors used by AppMessage component */
 export const TONE_COLORS = {
-  neutral: { bg: '#EEF2FF', border: '#C7D2FE', text: '#3730A3' },
-  success: { bg: '#F0FDF4', border: '#BBF7D0', text: '#166534' },
-  warning: { bg: '#FFFBEB', border: '#FDE68A', text: '#92400E' },
-  error: { bg: '#FEF2F2', border: '#FECACA', text: '#991B1B' },
+  neutral: { bg: colors.brand.primarySoft, border: colors.border.default, text: colors.brand.primary },
+  success: { bg: colors.status.success.bg, border: colors.status.success.border, text: colors.status.success.main },
+  warning: { bg: colors.status.warning.bg, border: colors.status.warning.border, text: colors.status.warning.main },
+  error: { bg: colors.status.danger.bg, border: colors.status.danger.border, text: colors.status.danger.main },
 } as const;
 
 export type MessageTone = keyof typeof TONE_COLORS;

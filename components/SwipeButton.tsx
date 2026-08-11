@@ -19,7 +19,7 @@ export function SwipeButton({
       disabled={disabled}
       onPress={onPress}
       className={[
-        'relative h-14 items-center justify-center overflow-hidden rounded-lg bg-brown-dark px-16',
+        'relative h-14 items-center justify-center overflow-hidden rounded-lg bg-primary-dark px-16',
         disabled ? 'opacity-60' : 'active:opacity-90',
         className,
       ]
@@ -27,7 +27,7 @@ export function SwipeButton({
         .join(' ')}
     >
       <View className="absolute left-1 top-1 h-12 w-12 items-center justify-center rounded-lg bg-white/90">
-        <Text className="text-xl font-bold text-brown-dark">{'>'}</Text>
+        <Text className="text-xl font-bold text-primary-dark">{'>'}</Text>
       </View>
       <Text className="text-center font-semibold text-white">{label}</Text>
     </Pressable>

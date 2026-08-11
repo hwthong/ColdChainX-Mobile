@@ -11,7 +11,7 @@ export function GlassWidget({ children, className = '', ...props }: GlassWidgetP
   return (
     <View
       className={[
-        'rounded-lg border border-white/60 bg-white/75 p-5 shadow-lg shadow-brown-dark/10',
+        'rounded-lg border border-white/60 bg-white/75 p-5 shadow-lg shadow-primary-dark/10',
         className,
       ]
         .filter(Boolean)

@@ -11,6 +11,7 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
+import { colors } from '../../constants/colors';
 import { getApiErrorMessage } from '../../services/apiClient';
 import { getCustomerAsns } from '../../services/asnApi';
 import { customerApi, CustomerOrderSummaryResponse } from '../../services/customerApi';
@@ -107,38 +108,39 @@ export default function StatusScreen() {
     return (
       <Pressable
         onPress={() => router.push(`/(customer)/orders/${item.orderId}` as never)}
-        className="mb-4 overflow-hidden rounded-2xl border border-[#DAC2B6]/50 bg-white shadow-sm"
+        style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }}
+        className="mb-4 overflow-hidden rounded-2xl border shadow-sm"
       >
         <View className="p-5">
           <View className="mb-3 flex-row items-start justify-between gap-3">
             <View className="flex-1">
-              <Text className="text-lg font-bold text-[#8B4513]">{item.trackingCode}</Text>
-              <Text className="mt-1 text-xs text-[#877369]">{formatDate(item.createdAt)}</Text>
+              <Text style={{ color: colors.brand.primary }} className="text-lg font-bold">{item.trackingCode}</Text>
+              <Text style={{ color: colors.text.muted }} className="mt-1 text-xs">{formatDate(item.createdAt)}</Text>
             </View>
             <StatusBadge status={item.status} />
           </View>
 
           <View className="flex-row gap-3">
-            <View className="h-20 w-20 items-center justify-center rounded-xl bg-[#F8F9FA]">
-              <Ionicons name="cube-outline" size={24} color="#877369" />
+            <View style={{ backgroundColor: colors.surface.muted }} className="h-20 w-20 items-center justify-center rounded-xl">
+              <Ionicons name="cube-outline" size={24} color={colors.brand.primary} />
             </View>
 
             <View className="flex-1 gap-2">
               <View className="flex-row items-center gap-2">
-                <Text className="flex-1 font-semibold text-[#3A1F04]">{item.itemName}</Text>
+                <Text style={{ color: colors.text.primary }} className="flex-1 font-semibold">{item.itemName}</Text>
               </View>
 
               {categoryLabel ? (
                 <View className="flex-row items-center gap-2">
-                  <Ionicons name="grid-outline" size={16} color="#8B4513" />
-                  <Text className="font-medium text-[#8B4513]">{categoryLabel}</Text>
+                  <Ionicons name="grid-outline" size={16} color={colors.brand.primary} />
+                  <Text style={{ color: colors.brand.primary }} className="font-medium">{categoryLabel}</Text>
                 </View>
               ) : null}
 
               {item.destinationAddress ? (
                 <View className="flex-row items-start gap-2">
-                  <Ionicons name="location-outline" size={16} color="#877369" />
-                  <Text className="flex-1 text-sm leading-5 text-[#877369]">
+                  <Ionicons name="location-outline" size={16} color={colors.text.secondary} />
+                  <Text style={{ color: colors.text.secondary }} className="flex-1 text-sm leading-5">
                     {item.destinationAddress}
                   </Text>
                 </View>
@@ -146,8 +148,8 @@ export default function StatusScreen() {
 
               {item.routeCode ? (
                 <View className="flex-row items-center gap-2">
-                  <Ionicons name="git-branch-outline" size={16} color="#8B4513" />
-                  <Text className="flex-1 text-sm font-semibold text-[#8B4513]">
+                  <Ionicons name="git-branch-outline" size={16} color={colors.brand.primary} />
+                  <Text style={{ color: colors.brand.primary }} className="flex-1 text-sm font-semibold">
                     {item.routeCode}
                   </Text>
                 </View>
@@ -162,10 +164,11 @@ export default function StatusScreen() {
                       params: { orderId: item.orderId },
                     } as never);
                   }}
-                  className="mt-2 flex-row items-center justify-center gap-2 rounded-xl bg-[#8B4513] px-4 py-3"
+                  style={{ backgroundColor: colors.brand.primary }}
+                  className="mt-2 flex-row items-center justify-center gap-2 rounded-xl px-4 py-3"
                 >
-                  <Ionicons name="document-text-outline" size={18} color="#FFFFFF" />
-                  <Text className="font-bold text-white">Tạo ASN</Text>
+                  <Ionicons name="document-text-outline" size={18} color={colors.text.onPrimary} />
+                  <Text style={{ color: colors.text.onPrimary }} className="font-bold">Tạo ASN</Text>
                 </Pressable>
               ) : null}
             </View>
@@ -177,38 +180,42 @@ export default function StatusScreen() {
 
   if (isLoading) {
     return (
-      <View className="flex-1 items-center justify-center bg-[#F5F2F0]">
-        <ActivityIndicator size="large" color="#8B4513" />
-        <Text className="mt-4 font-medium text-[#8B4513]">Đang tải danh sách...</Text>
+      <View style={{ backgroundColor: colors.surface.page }} className="flex-1 items-center justify-center">
+        <ActivityIndicator size="large" color={colors.brand.primary} />
+        <Text style={{ color: colors.brand.primary }} className="mt-4 font-medium">Đang tải danh sách...</Text>
       </View>
     );
   }
 
   return (
-    <View className="flex-1 bg-[#F5F2F0]">
+    <View style={{ backgroundColor: colors.surface.page }} className="flex-1">
       {/* TABS */}
-      <View className="bg-white px-2 pt-2 shadow-sm z-10">
+      <View style={{ backgroundColor: colors.surface.card, borderBottomColor: colors.border.default }} className="border-b px-2 pt-2 shadow-sm z-10">
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingHorizontal: 16, paddingBottom: 12 }}>
-          {TABS.map((tab) => (
-            <Pressable
-              key={tab.key}
-              onPress={() => setActiveTab(tab.key)}
-              className={`rounded-full px-5 py-2.5 ${activeTab === tab.key ? 'bg-[#8B4513]' : 'bg-gray-100'}`}
-            >
-              <Text className={`font-bold ${activeTab === tab.key ? 'text-white' : 'text-gray-600'}`}>
-                {tab.label}
-              </Text>
-            </Pressable>
-          ))}
+          {TABS.map((tab) => {
+            const isActive = activeTab === tab.key;
+            return (
+              <Pressable
+                key={tab.key}
+                onPress={() => setActiveTab(tab.key)}
+                style={{ backgroundColor: isActive ? colors.brand.primary : colors.surface.muted }}
+                className="rounded-full px-5 py-2.5"
+              >
+                <Text style={{ color: isActive ? colors.text.onPrimary : colors.text.secondary }} className="font-bold">
+                  {tab.label}
+                </Text>
+              </Pressable>
+            );
+          })}
         </ScrollView>
       </View>
 
       {error ? (
         <View className="flex-1 items-center justify-center p-6">
-          <Ionicons name="alert-circle-outline" size={48} color="#dc2626" />
-          <Text className="mt-4 text-center font-medium leading-6 text-red-600">{error}</Text>
-          <Pressable onPress={fetchOrders} className="mt-4 rounded-xl bg-[#8B4513] px-6 py-3">
-            <Text className="font-bold text-white">Thử lại</Text>
+          <Ionicons name="alert-circle-outline" size={48} color={colors.status.danger.main} />
+          <Text style={{ color: colors.status.danger.main }} className="mt-4 text-center font-medium leading-6">{error}</Text>
+          <Pressable onPress={fetchOrders} style={{ backgroundColor: colors.brand.primary }} className="mt-4 rounded-xl px-6 py-3">
+            <Text style={{ color: colors.text.onPrimary }} className="font-bold">Thử lại</Text>
           </Pressable>
         </View>
       ) : (
@@ -219,12 +226,12 @@ export default function StatusScreen() {
           contentContainerStyle={{ padding: 20, paddingBottom: 100 }}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor="#8B4513" />
+            <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={colors.brand.primary} />
           }
           ListEmptyComponent={
             <View className="items-center justify-center py-20">
-              <Ionicons name="document-text-outline" size={64} color="#877369" />
-              <Text className="mt-4 text-center font-medium text-[#877369]">
+              <Ionicons name="document-text-outline" size={64} color={colors.text.muted} />
+              <Text style={{ color: colors.text.secondary }} className="mt-4 text-center font-medium">
                 {activeTab === ASN_TAB
                   ? 'Không có đơn đã ký hợp đồng và chưa tạo ASN.'
                   : 'Bạn chưa có đơn hàng nào.'}

@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 
+import { colors } from '../../constants/colors';
 import { AsnResultCard } from '../../components/asn-result-card';
 import { createAsn, getCustomerAsns, type AsnResponse } from '../../services/asnApi';
 import { getApiErrorMessage } from '../../services/apiClient';
@@ -213,20 +214,20 @@ export default function ScheduleDeliveryScreen() {
 
   if (isLoading) {
     return (
-      <View className="flex-1 items-center justify-center bg-[#F5F2F0]">
-        <ActivityIndicator size="large" color="#8B4513" />
-        <Text className="mt-4 font-medium text-[#8B4513]">Đang chuẩn bị lịch giao...</Text>
+      <View style={{ backgroundColor: colors.surface.page }} className="flex-1 items-center justify-center">
+        <ActivityIndicator size="large" color={colors.brand.primary} />
+        <Text style={{ color: colors.brand.primary }} className="mt-4 font-medium">Đang chuẩn bị lịch giao...</Text>
       </View>
     );
   }
 
   return (
-    <ScrollView className="flex-1 bg-[#F5F2F0]" contentContainerStyle={{ padding: 20, paddingBottom: 100 }}>
+    <ScrollView style={{ backgroundColor: colors.surface.page }} className="flex-1" contentContainerStyle={{ padding: 20, paddingBottom: 100 }}>
       <View className="gap-5">
-        <View className="rounded-3xl bg-[#8B4513] p-5">
+        <View style={{ backgroundColor: colors.brand.primary }} className="rounded-3xl p-5">
           <View className="flex-row items-start justify-between gap-3">
             <View className="flex-1">
-              <Text className="text-xs font-bold uppercase tracking-wider text-[#F4D27A]">Đặt lịch giao kho</Text>
+              <Text style={{ color: colors.brand.primaryForeground }} className="text-xs font-bold uppercase tracking-wider">Đặt lịch giao kho</Text>
               <Text className="mt-2 text-2xl font-extrabold text-white">
                 {order?.trackingCode || 'Đơn hàng'}
               </Text>
@@ -247,8 +248,8 @@ export default function ScheduleDeliveryScreen() {
         ) : null}
 
         {order ? (
-          <View className="gap-3 rounded-3xl border border-[#DAC2B6]/70 bg-white p-5">
-            <Text className="text-lg font-extrabold text-[#3A1F04]">Thông tin tuyến</Text>
+          <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-3 rounded-3xl border p-5">
+            <Text style={{ color: colors.text.primary }} className="text-lg font-extrabold">Thông tin tuyến</Text>
             <InfoRow label="Trạng thái" value={translateOrderStatus(order.status)} />
             <InfoRow label="Tuyến" value={order.route ? `${order.route.originCity} → ${order.route.destCity}` : 'Chưa có tuyến'} />
             <InfoRow label="Route code" value={order.route?.routeCode || 'Chưa có'} />
@@ -260,12 +261,12 @@ export default function ScheduleDeliveryScreen() {
         {displayedAsn ? (
           <AsnResultCard asn={displayedAsn} warehouseName={selectedWarehouse?.warehouseName} />
         ) : (
-          <View className="gap-4 rounded-3xl border border-[#DAC2B6]/70 bg-white p-5">
-            <Text className="text-lg font-extrabold text-[#3A1F04]">Thông tin đặt lịch</Text>
+          <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-4 rounded-3xl border p-5">
+            <Text style={{ color: colors.text.primary }} className="text-lg font-extrabold">Thông tin đặt lịch</Text>
 
             {warehouseMessage ? (
-              <View className="rounded-2xl bg-[#F8F3EF] p-4">
-                <Text className="text-sm font-semibold leading-5 text-[#8B4513]">{warehouseMessage}</Text>
+              <View style={{ backgroundColor: colors.surface.muted }} className="rounded-2xl p-4">
+                <Text style={{ color: colors.brand.primary }} className="text-sm font-semibold leading-5">{warehouseMessage}</Text>
               </View>
             ) : null}
 
@@ -277,19 +278,21 @@ export default function ScheduleDeliveryScreen() {
                   <Pressable
                     key={warehouse.warehouseId}
                     onPress={() => setSelectedWarehouseId(warehouse.warehouseId)}
-                    className={`rounded-2xl border p-4 ${
-                      isSelected ? 'border-[#8B4513] bg-[#FFF7ED]' : 'border-[#DAC2B6]/60 bg-white'
-                    }`}
+                    style={{
+                      backgroundColor: isSelected ? colors.surface.selected : colors.surface.card,
+                      borderColor: isSelected ? colors.border.selected : colors.border.default,
+                    }}
+                    className="rounded-2xl border p-4"
                   >
                     <View className="flex-row items-start justify-between gap-3">
                       <View className="flex-1">
-                        <Text className="text-base font-bold text-[#3A1F04]">{warehouse.warehouseName}</Text>
-                        <Text className="mt-1 text-xs font-semibold text-[#8B4513]">{warehouse.warehouseCode}</Text>
-                        <Text className="mt-2 text-sm leading-5 text-[#877369]">
+                        <Text style={{ color: colors.text.primary }} className="text-base font-bold">{warehouse.warehouseName}</Text>
+                        <Text style={{ color: colors.brand.primary }} className="mt-1 text-xs font-semibold">{warehouse.warehouseCode}</Text>
+                        <Text style={{ color: colors.text.secondary }} className="mt-2 text-sm leading-5">
                           {warehouse.address || 'Chưa có địa chỉ'}
                         </Text>
                       </View>
-                      {isSelected ? <Ionicons name="checkmark-circle" size={24} color="#8B4513" /> : null}
+                      {isSelected ? <Ionicons name="checkmark-circle" size={24} color={colors.brand.primary} /> : null}
                     </View>
                   </Pressable>
                 );
@@ -297,31 +300,33 @@ export default function ScheduleDeliveryScreen() {
             </View>
 
             <View className="gap-3">
-              <Text className="text-xs font-bold uppercase tracking-wider text-[#877369]">Ngày/giờ giao kho</Text>
+              <Text style={{ color: colors.text.secondary }} className="text-xs font-bold uppercase tracking-wider">Ngày/giờ giao kho</Text>
               <View className="flex-row gap-3">
                 <Pressable
                   onPress={() => setVisiblePicker((currentMode) => (currentMode === 'date' ? null : 'date'))}
-                  className="flex-1 rounded-2xl border border-[#DAC2B6]/70 bg-[#FFFDFB] px-4 py-3"
+                  style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }}
+                  className="flex-1 rounded-2xl border px-4 py-3"
                 >
-                  <Text className="text-[11px] font-bold uppercase tracking-wider text-[#877369]">Ngày</Text>
-                  <Text className="mt-1 text-base font-extrabold text-[#3A1F04]">
+                  <Text style={{ color: colors.text.muted }} className="text-[11px] font-bold uppercase tracking-wider">Ngày</Text>
+                  <Text style={{ color: colors.text.primary }} className="mt-1 text-base font-extrabold">
                     {formatDisplayDate(dropoffDateTime)}
                   </Text>
                 </Pressable>
 
                 <Pressable
                   onPress={() => setVisiblePicker((currentMode) => (currentMode === 'time' ? null : 'time'))}
-                  className="w-32 rounded-2xl border border-[#DAC2B6]/70 bg-[#FFFDFB] px-4 py-3"
+                  style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }}
+                  className="w-32 rounded-2xl border px-4 py-3"
                 >
-                  <Text className="text-[11px] font-bold uppercase tracking-wider text-[#877369]">Giờ</Text>
-                  <Text className="mt-1 text-base font-extrabold text-[#3A1F04]">
+                  <Text style={{ color: colors.text.muted }} className="text-[11px] font-bold uppercase tracking-wider">Giờ</Text>
+                  <Text style={{ color: colors.text.primary }} className="mt-1 text-base font-extrabold">
                     {formatDisplayTime(dropoffDateTime)}
                   </Text>
                 </Pressable>
               </View>
 
-              <View className="rounded-2xl bg-[#F8F3EF] p-4">
-                <Text className="text-sm font-semibold leading-5 text-[#8B4513]">{dropoffWindowText}</Text>
+              <View style={{ backgroundColor: colors.surface.muted }} className="rounded-2xl p-4">
+                <Text style={{ color: colors.brand.primary }} className="text-sm font-semibold leading-5">{dropoffWindowText}</Text>
               </View>
 
               {isAndroid ? (
@@ -337,7 +342,7 @@ export default function ScheduleDeliveryScreen() {
                   />
                 ) : null
               ) : (
-                <View className="gap-3 rounded-2xl border border-[#DAC2B6]/60 bg-[#FFFDFB] p-3">
+                <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-3 rounded-2xl border p-3">
                   <DateTimePicker
                     value={dropoffDateTime}
                     mode="date"
@@ -369,12 +374,18 @@ export default function ScheduleDeliveryScreen() {
             <Pressable
               onPress={handleCreateAsn}
               disabled={!canSubmit}
-              className={`flex-row items-center justify-center gap-2 rounded-2xl px-4 py-4 ${
-                canSubmit ? 'bg-[#8B4513]' : 'bg-[#C8B7AE]'
-              }`}
+              style={({ pressed }) => ({
+                backgroundColor: canSubmit
+                  ? pressed
+                    ? colors.brand.primaryPressed
+                    : colors.brand.primary
+                  : colors.surface.muted,
+                opacity: pressed && canSubmit ? 0.8 : 1,
+              })}
+              className="flex-row items-center justify-center gap-2 rounded-2xl px-4 py-4"
             >
-              {isSubmitting ? <ActivityIndicator color="#FFFFFF" /> : <Ionicons name="calendar-outline" size={20} color="#FFFFFF" />}
-              <Text className="text-base font-extrabold text-white">
+              {isSubmitting ? <ActivityIndicator color={colors.text.onPrimary} /> : <Ionicons name="calendar-outline" size={20} color={canSubmit ? colors.text.onPrimary : colors.text.muted} />}
+              <Text style={{ color: canSubmit ? colors.text.onPrimary : colors.text.muted }} className="text-base font-extrabold">
                 {isSubmitting ? 'Đang tạo ASN...' : 'Xác nhận đặt lịch giao'}
               </Text>
             </Pressable>
@@ -387,9 +398,9 @@ export default function ScheduleDeliveryScreen() {
 
 function InfoRow({ label, value }: { label: string; value?: string | null }) {
   return (
-    <View className="rounded-2xl bg-[#F8F3EF] px-4 py-3">
-      <Text className="text-[11px] font-bold uppercase tracking-wider text-[#877369]">{label}</Text>
-      <Text selectable className="mt-1 text-sm font-semibold leading-5 text-[#3A1F04]">
+    <View style={{ backgroundColor: colors.surface.muted }} className="rounded-2xl px-4 py-3">
+      <Text style={{ color: colors.text.secondary }} className="text-[11px] font-bold uppercase tracking-wider">{label}</Text>
+      <Text selectable style={{ color: colors.text.primary }} className="mt-1 text-sm font-semibold leading-5">
         {value || 'Chưa cập nhật'}
       </Text>
     </View>
@@ -411,14 +422,15 @@ function Field({
 }) {
   return (
     <View className="gap-2">
-      <Text className="text-xs font-bold uppercase tracking-wider text-[#877369]">{label}</Text>
+      <Text style={{ color: colors.text.secondary }} className="text-xs font-bold uppercase tracking-wider">{label}</Text>
       <TextInput
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
         keyboardType={keyboardType ?? 'default'}
-        placeholderTextColor="#B8A79E"
-        className="rounded-2xl border border-[#DAC2B6]/70 bg-[#FFFDFB] px-4 py-3 font-semibold text-[#3A1F04]"
+        placeholderTextColor={colors.text.muted}
+        style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default, color: colors.text.primary }}
+        className="rounded-2xl border px-4 py-3 font-semibold"
       />
     </View>
   );

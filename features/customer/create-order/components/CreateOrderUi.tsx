@@ -10,7 +10,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-import { customerColors, customerControl, customerRadius } from '../../../../constants/customerTheme';
+import { colors } from '../../../../constants/colors';
+import { customerRadius } from '../../../../constants/customerTheme';
 import {
   CustomerBottomActionBar,
   CustomerCard,
@@ -55,78 +56,82 @@ export function CreateOrderFormSection({
 type CreateOrderChoiceCardProps = {
   title: string;
   subtitle?: string;
+  helperText?: string;
+  icon?: keyof typeof Ionicons.glyphMap;
   selected: boolean;
   accessibilityLabel?: string;
   accessibilityHint?: string;
-  selectionMode?: 'radio' | 'checkbox';
-  leading?: ReactNode;
-  trailingContent?: ReactNode;
+  rightElement?: ReactNode;
   onPress: () => void;
 };
 
 export function CreateOrderChoiceCard({
   title,
   subtitle,
+  helperText,
+  icon,
   selected,
   accessibilityLabel,
   accessibilityHint,
-  selectionMode = 'radio',
-  leading,
-  trailingContent,
+  rightElement,
   onPress,
 }: CreateOrderChoiceCardProps) {
   return (
     <CustomerChoiceCard
       title={title}
-      description={subtitle}
+      subtitle={subtitle}
+      helperText={helperText}
+      icon={icon}
       selected={selected}
-      leading={leading}
-      trailingContent={trailingContent}
-      selectionMode={selectionMode}
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
+      rightElement={rightElement}
       onPress={onPress}
     />
   );
 }
 
 type CreateOrderTextFieldProps = {
-  field: CreateOrderFieldKey;
+  fieldKey?: CreateOrderFieldKey;
+  field?: CreateOrderFieldKey;
   label: string;
-  placeholder: string;
+  required?: boolean;
+  placeholder?: string;
   value: string;
-  onChangeText: (value: string) => void;
   error?: string;
+  helperText?: string;
   keyboardType?: KeyboardTypeOptions;
   returnKeyType?: ReturnKeyTypeOptions;
-  onSubmitEditing?: () => void;
+  onChangeText: (value: string) => void;
   onBlur?: () => void;
-  helperText?: string;
+  onSubmitEditing?: () => void;
   registerField: RegisterCreateOrderField;
   registerInput: RegisterCreateOrderInput;
 };
 
 export function CreateOrderTextField({
-  field,
+  fieldKey,
+  field = fieldKey!,
   label,
+  required = false,
   placeholder,
   value,
-  onChangeText,
   error,
-  keyboardType = 'default',
-  returnKeyType = 'done',
-  onSubmitEditing,
-  onBlur,
   helperText,
   registerField,
   registerInput,
+  onChangeText,
+  onBlur,
+  onSubmitEditing,
+  keyboardType = 'default',
+  returnKeyType = 'next',
 }: CreateOrderTextFieldProps) {
   const [isFocused, setIsFocused] = useState(false);
 
   return (
     <View ref={(node) => registerField(field, node)} className="gap-1.5">
-      <Text className="text-[13px] font-bold text-[#3A1F04]">
-        {label} <Text className="text-red-600">*</Text>
+      <Text style={{ color: colors.text.primary }} className="text-[13px] font-bold">
+        {label} {required ? <Text className="text-red-600">*</Text> : null}
       </Text>
       <TextInput
         ref={(node) => registerInput(field, node)}
@@ -141,26 +146,27 @@ export function CreateOrderTextField({
           setIsFocused(false);
           onBlur?.();
         }}
-        selectionColor="#8B4513"
+        selectionColor={colors.brand.primary}
         placeholder={placeholder}
-        placeholderTextColor="#877369"
-        accessibilityLabel={`${label}, bắt buộc`}
+        placeholderTextColor={colors.text.muted}
+        accessibilityLabel={`${label}${required ? ', bắt buộc' : ''}`}
         accessibilityHint={error}
-        className="px-4 text-[14px] font-medium text-[#3A1F04]"
         style={{
-          backgroundColor: customerColors.surface,
-          borderColor: error ? '#FCA5A5' : isFocused ? customerColors.primary : customerColors.border,
+          color: colors.text.primary,
+          backgroundColor: colors.surface.card,
+          borderColor: error ? '#FCA5A5' : isFocused ? colors.border.focus : colors.border.default,
           borderRadius: customerRadius.control,
           borderWidth: 1,
-          minHeight: customerControl.height,
+          minHeight: 48,
         }}
+        className="px-4 text-[14px] font-medium"
       />
       {error ? (
         <Text accessibilityLiveRegion="polite" className="text-xs font-medium text-red-600">
           {error}
         </Text>
       ) : helperText ? (
-        <Text className="text-xs leading-5 text-[#877369]">{helperText}</Text>
+        <Text style={{ color: colors.text.secondary }} className="text-xs leading-5">{helperText}</Text>
       ) : null}
     </View>
   );
@@ -207,25 +213,25 @@ export function CreateOrderSuccessModal({
   return (
     <Modal visible={Boolean(data)} transparent animationType="fade">
       <View className="flex-1 items-center justify-center bg-black/60 px-5">
-        <View className="w-full rounded-3xl bg-white p-6">
+        <View style={{ backgroundColor: colors.surface.card }} className="w-full rounded-3xl p-6 shadow-xl">
           <View className="items-center">
             <View className="mb-4 h-16 w-16 items-center justify-center rounded-full bg-emerald-50">
-              <Ionicons name="checkmark-circle" size={42} color="#15803D" />
+              <Ionicons name="checkmark-circle" size={42} color={colors.status.success.main} />
             </View>
-            <Text className="text-center text-xl font-bold text-[#3A1F04]">Gửi yêu cầu thành công</Text>
-            <Text className="mt-2 text-center text-sm leading-6 text-[#877369]">
+            <Text style={{ color: colors.text.primary }} className="text-center text-xl font-bold">Gửi yêu cầu thành công</Text>
+            <Text style={{ color: colors.text.secondary }} className="mt-2 text-center text-sm leading-6">
               Bộ phận Sales sẽ kiểm duyệt yêu cầu và gửi báo giá cho bạn.
             </Text>
           </View>
 
           <View
-            className="my-6 gap-3 p-4"
             style={{
-              backgroundColor: customerColors.surfaceNeutral,
-              borderColor: customerColors.borderSubtle,
+              backgroundColor: colors.surface.selected,
+              borderColor: colors.border.default,
               borderRadius: customerRadius.control,
               borderWidth: 1,
             }}
+            className="my-6 gap-3 p-4"
           >
             <InfoRow label="Mã yêu cầu" value={data?.trackingCode || 'Đang cập nhật'} />
             <InfoRow label="Trạng thái" value={translateStatus(data?.status || 'PENDING_REVIEW')} />
@@ -236,10 +242,10 @@ export function CreateOrderSuccessModal({
               onPress={onViewOrder}
               accessibilityRole="button"
               accessibilityLabel={data?.orderId ? 'Xem chi tiết đơn vừa tạo' : 'Xem trạng thái đơn vừa tạo'}
+              style={{ backgroundColor: colors.brand.primary, borderRadius: 12, minHeight: 48 }}
               className="w-full items-center justify-center"
-              style={{ backgroundColor: customerColors.primary, borderRadius: 12, minHeight: 48 }}
             >
-              <Text className="text-[15px] font-bold text-white">
+              <Text style={{ color: colors.text.onPrimary }} className="text-[15px] font-bold">
                 {data?.orderId ? 'Xem chi tiết đơn' : 'Xem trạng thái đơn'}
               </Text>
             </Pressable>
@@ -247,16 +253,16 @@ export function CreateOrderSuccessModal({
               onPress={onCreateAnother}
               accessibilityRole="button"
               accessibilityLabel="Tạo đơn khác"
-              className="w-full items-center justify-center"
               style={{
-                backgroundColor: customerColors.surface,
-                borderColor: customerColors.primary,
+                backgroundColor: colors.surface.card,
+                borderColor: colors.brand.primary,
                 borderRadius: 12,
                 borderWidth: 1,
                 minHeight: 48,
               }}
+              className="w-full items-center justify-center"
             >
-              <Text className="text-[15px] font-bold text-[#8B4513]">Tạo đơn khác</Text>
+              <Text style={{ color: colors.brand.primary }} className="text-[15px] font-bold">Tạo đơn khác</Text>
             </Pressable>
           </View>
         </View>
@@ -268,8 +274,8 @@ export function CreateOrderSuccessModal({
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <View className="flex-row items-center justify-between gap-4">
-      <Text className="text-[13px] text-[#877369]">{label}</Text>
-      <Text className="flex-1 text-right text-[13px] font-bold text-[#8B4513]">{value}</Text>
+      <Text style={{ color: colors.text.secondary }} className="text-[13px]">{label}</Text>
+      <Text style={{ color: colors.brand.primary }} className="flex-1 text-right text-[13px] font-bold">{value}</Text>
     </View>
   );
 }

@@ -1,20 +1,22 @@
+import { colors } from './colors';
+
 export const customerColors = {
-  background: '#F5F2F0',
-  surface: '#FFFFFF',
-  surfaceSoft: '#F8F3EF',
-  surfaceNeutral: '#F8F9FA',
-  primary: '#8B4513',
-  primaryPressed: '#6F360F',
-  primarySoft: '#F8F3EF',
-  textPrimary: '#3A1F04',
-  text: '#3A1F04',
-  textSecondary: '#877369',
-  border: 'rgba(218, 194, 182, 0.55)',
-  borderStrong: 'rgba(190, 157, 139, 0.72)',
-  borderSubtle: 'rgba(218, 194, 182, 0.35)',
-  progressTrack: '#F1E6DF',
-  error: '#DC2626',
-  success: '#15803D',
+  background: colors.surface.page,
+  surface: colors.surface.card,
+  surfaceSoft: colors.surface.cardSoft,
+  surfaceNeutral: colors.surface.muted,
+  primary: colors.brand.primary,
+  primaryPressed: colors.brand.primaryPressed,
+  primarySoft: colors.brand.primarySoft,
+  textPrimary: colors.text.primary,
+  text: colors.text.primary,
+  textSecondary: colors.text.secondary,
+  border: colors.border.default,
+  borderStrong: colors.border.strong,
+  borderSubtle: colors.border.default,
+  progressTrack: colors.brand.primarySoft,
+  error: colors.status.danger.main,
+  success: colors.status.success.main,
 } as const;
 
 export const customerSpacing = {

@@ -3,6 +3,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, AppState, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 
+import { colors } from '../../constants/colors';
 import { GoongRouteMap } from '../../components/customer/GoongRouteMap';
 import { TemperatureChart } from '../../components/customer/TemperatureChart';
 import { getCustomerOrderStatusPresentation } from '../../constants/customerOrderPresentation';
@@ -257,15 +258,15 @@ export default function TrackingScreen() {
   }, [loadAlerts, loadChart, loadOrders, loadRoute, loadTracking, tripId]);
 
   if (isLoading) return (
-    <View className="flex-1 items-center justify-center bg-[#F5F2F0]">
-      <ActivityIndicator size="large" color="#8B4513" />
-      <Text className="mt-4 font-medium text-[#8B4513]">Đang tải giám sát đơn...</Text>
+    <View style={{ backgroundColor: colors.surface.page }} className="flex-1 items-center justify-center">
+      <ActivityIndicator size="large" color={colors.brand.primary} />
+      <Text style={{ color: colors.brand.primary }} className="mt-4 font-medium">Đang tải giám sát đơn...</Text>
     </View>
   );
 
   return (
-    <ScrollView className="flex-1 bg-[#F5F2F0]" contentContainerStyle={{ padding: 20, paddingBottom: 100, gap: 16 }}
-      refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor="#8B4513" />}
+    <ScrollView style={{ backgroundColor: colors.surface.page }} className="flex-1" contentContainerStyle={{ padding: 20, paddingBottom: 100, gap: 16 }}
+      refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={colors.brand.primary} />}
       showsVerticalScrollIndicator={false}>
       {orderError ? <ErrorCard message={orderError} onRetry={loadOrders} /> : null}
       {!orderError && explicitOrderMissing ? (
@@ -291,10 +292,11 @@ export default function TrackingScreen() {
               pathname: '/(customer)/chat/[orderId]',
               params: { orderId: activeOrder.orderId, trackingCode: activeOrder.trackingCode },
             } as never)}
-            className="flex-row items-center justify-center gap-2 rounded-2xl border border-[#DAC2B6]/60 bg-white p-4"
+            style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }}
+            className="flex-row items-center justify-center gap-2 rounded-2xl border p-4"
           >
-            <Ionicons name="chatbubbles-outline" size={20} color="#8B4513" />
-            <Text className="font-bold text-[#8B4513]">Trao đổi về đơn hàng</Text>
+            <Ionicons name="chatbubbles-outline" size={20} color={colors.brand.primary} />
+            <Text style={{ color: colors.brand.primary }} className="font-bold">Trao đổi về đơn hàng</Text>
           </Pressable>
           {!tripId ? (
             <SectionCard title="Giám sát chuyến" icon="locate-outline">
@@ -308,7 +310,7 @@ export default function TrackingScreen() {
                     <RouteSummary route={route} />
                     <GoongRouteMap route={route} vehiclePosition={getVehiclePosition(tracking)} />
                     {!getVehiclePosition(tracking) ? (
-                      <Text className="text-center text-sm font-medium text-[#877369]">
+                      <Text style={{ color: colors.text.secondary }} className="text-center text-sm font-medium">
                         Chưa nhận được vị trí từ thiết bị.
                       </Text>
                     ) : null}
@@ -323,7 +325,7 @@ export default function TrackingScreen() {
               </SectionCard>
               <SectionCard title="Biểu đồ nhiệt độ" icon="pulse-outline">
                 {isChartLoading ? <SectionLoader /> : chartError ? <ErrorCard message={chartError} onRetry={() => loadChart(tripId)} /> : chart?.points.length ? (
-                  <><TemperatureChart points={chart.points} /><Text className="text-xs text-[#877369]">{chart.points.length} điểm dữ liệu (tối đa 200), timestamp UTC hiển thị theo giờ thiết bị.</Text></>
+                  <><TemperatureChart points={chart.points} /><Text style={{ color: colors.text.secondary }} className="text-xs">{chart.points.length} điểm dữ liệu (tối đa 200), timestamp UTC hiển thị theo giờ thiết bị.</Text></>
                 ) : <EmptyMessage message="Chưa có dữ liệu nhiệt độ." />}
               </SectionCard>
               <SectionCard title="Cảnh báo thông minh" icon="notifications-outline">
@@ -349,12 +351,12 @@ function TrackingOrderSelector({
   onSelect: (orderId: string) => void;
 }) {
   return (
-    <View className="gap-3 rounded-3xl bg-white p-5">
+    <View style={{ backgroundColor: colors.surface.card }} className="gap-3 rounded-3xl p-5">
       <View className="flex-row items-center gap-2">
-        <Ionicons name="list-outline" size={20} color="#8B4513" />
-        <Text className="text-base font-bold text-[#3A1F04]">Chọn đơn cần giám sát</Text>
+        <Ionicons name="list-outline" size={20} color={colors.brand.primary} />
+        <Text style={{ color: colors.text.primary }} className="text-base font-bold">Chọn đơn cần giám sát</Text>
       </View>
-      <Text className="text-sm leading-5 text-[#877369]">
+      <Text style={{ color: colors.text.secondary }} className="text-sm leading-5">
         Tài khoản có nhiều đơn đã được điều phối. Chọn một đơn để mở dữ liệu chuyến tương ứng.
       </Text>
       {orders.map((order) => {
@@ -365,17 +367,19 @@ function TrackingOrderSelector({
             accessibilityRole="button"
             accessibilityState={{ selected: isSelected }}
             onPress={() => onSelect(order.orderId)}
-            className={`rounded-2xl border p-4 ${
-              isSelected ? 'border-[#8B4513] bg-[#8B4513]/10' : 'border-[#DAC2B6]/60 bg-[#F8F9FA]'
-            }`}
+            style={{
+              backgroundColor: isSelected ? colors.surface.selected : colors.surface.page,
+              borderColor: isSelected ? colors.border.selected : colors.border.default,
+            }}
+            className="rounded-2xl border p-4"
           >
             <View className="flex-row items-start justify-between gap-3">
               <View className="flex-1">
-                <Text className="font-bold text-[#3A1F04]">{order.trackingCode}</Text>
-                <Text className="mt-1 text-sm text-[#877369]">{order.itemName}</Text>
-                <Text className="mt-2 text-xs font-bold text-[#8B4513]">{getCustomerOrderStatusPresentation(order.status).label}</Text>
+                <Text style={{ color: colors.text.primary }} className="font-bold">{order.trackingCode}</Text>
+                <Text style={{ color: colors.text.secondary }} className="mt-1 text-sm">{order.itemName}</Text>
+                <Text style={{ color: colors.brand.primary }} className="mt-2 text-xs font-bold">{getCustomerOrderStatusPresentation(order.status).label}</Text>
               </View>
-              {isSelected ? <Ionicons name="checkmark-circle" size={22} color="#8B4513" /> : null}
+              {isSelected ? <Ionicons name="checkmark-circle" size={22} color={colors.brand.primary} /> : null}
             </View>
           </Pressable>
         );
@@ -403,7 +407,7 @@ function TelemetrySummary({ tracking }: { tracking: TripTracking }) {
 }
 
 function RouteSummary({ route }: { route: TripRouteResponse }) {
-  return <View className="gap-2 rounded-2xl bg-[#F8F9FA] p-4">
+  return <View style={{ backgroundColor: colors.surface.page }} className="gap-2 rounded-2xl p-4">
     <InfoRow label="Điểm lấy hàng" value={route.origin?.address || '--'} />
     <InfoRow label="Điểm giao" value={route.destination?.address || '--'} />
     <InfoRow label="Điểm dừng" value={String(route.optimizedStops.length)} />
@@ -422,36 +426,36 @@ function AlertRow({ alert }: { alert: SmartAlert }) {
 
 function OrderHeader({ order }: { order: OrderResponse }) {
   const status = getCustomerOrderStatusPresentation(order.status);
-  return <View className="rounded-3xl bg-[#3A1F04] p-5">
-    <Text className="text-xs font-bold uppercase tracking-widest text-[#FFC29F]/70">Tracking code</Text>
-    <Text className="mt-2 text-2xl font-bold text-[#FFC29F]">{order.trackingCode}</Text>
+  return <View style={{ backgroundColor: colors.text.primary }} className="rounded-3xl p-5">
+    <Text style={{ color: colors.brand.primaryForeground }} className="text-xs font-bold uppercase tracking-widest">Tracking code</Text>
+    <Text style={{ color: colors.brand.primaryForeground }} className="mt-2 text-2xl font-bold">{order.trackingCode}</Text>
     <Text className="mt-2 text-sm text-white/70">{order.itemName}</Text>
     <View className="mt-4 rounded-2xl bg-white/10 p-4"><Text className="text-xs text-white/60">Trạng thái đơn</Text><Text className="mt-1 font-bold text-white">{status.label}</Text></View>
   </View>;
 }
 
 function EmptyOrder({ onCreateOrder }: { onCreateOrder: () => void }) {
-  return <View className="items-center rounded-3xl bg-white p-8"><Ionicons name="locate-outline" size={56} color="#877369" /><Text className="mt-4 text-center text-base font-bold text-[#3A1F04]">Chưa có đơn để giám sát</Text><Pressable onPress={onCreateOrder} className="mt-5 rounded-xl bg-[#8B4513] px-5 py-3"><Text className="font-bold text-white">Tạo đơn mới</Text></Pressable></View>;
+  return <View style={{ backgroundColor: colors.surface.card }} className="items-center rounded-3xl p-8"><Ionicons name="locate-outline" size={56} color={colors.text.secondary} /><Text style={{ color: colors.text.primary }} className="mt-4 text-center text-base font-bold">Chưa có đơn để giám sát</Text><Pressable onPress={onCreateOrder} style={{ backgroundColor: colors.brand.primary }} className="mt-5 rounded-xl px-5 py-3"><Text style={{ color: colors.text.onPrimary }} className="font-bold">Tạo đơn mới</Text></Pressable></View>;
 }
 
 function SectionCard({ title, icon, children }: { title: string; icon: React.ComponentProps<typeof Ionicons>['name']; children: React.ReactNode }) {
-  return <View className="gap-4 rounded-3xl bg-white p-5"><View className="flex-row items-center gap-2"><Ionicons name={icon} size={20} color="#8B4513" /><Text className="text-base font-bold text-[#3A1F04]">{title}</Text></View>{children}</View>;
+  return <View style={{ backgroundColor: colors.surface.card }} className="gap-4 rounded-3xl p-5"><View className="flex-row items-center gap-2"><Ionicons name={icon} size={20} color={colors.brand.primary} /><Text style={{ color: colors.text.primary }} className="text-base font-bold">{title}</Text></View>{children}</View>;
 }
 
 function MetricCard({ label, value }: { label: string; value: string }) {
-  return <View className="flex-1 rounded-2xl bg-[#F5F2F0] p-4"><Text className="text-xs text-[#877369]">{label}</Text><Text className="mt-2 text-lg font-bold text-[#8B4513]">{value}</Text></View>;
+  return <View style={{ backgroundColor: colors.surface.page }} className="flex-1 rounded-2xl p-4"><Text style={{ color: colors.text.secondary }} className="text-xs">{label}</Text><Text style={{ color: colors.brand.primary }} className="mt-2 text-lg font-bold">{value}</Text></View>;
 }
 
 function InfoRow({ label, value }: { label: string; value: string }) {
-  return <View className="flex-row items-start justify-between gap-4 border-b border-[#DAC2B6]/30 pb-2"><Text className="text-sm text-[#877369]">{label}</Text><Text className="flex-1 text-right text-sm font-semibold text-[#3A1F04]">{value}</Text></View>;
+  return <View style={{ borderBottomColor: colors.border.default }} className="flex-row items-start justify-between gap-4 border-b pb-2"><Text style={{ color: colors.text.secondary }} className="text-sm">{label}</Text><Text style={{ color: colors.text.primary }} className="flex-1 text-right text-sm font-semibold">{value}</Text></View>;
 }
 
 function ErrorCard({ message, onRetry }: { message: string; onRetry: () => void | Promise<unknown> }) {
-  return <View className="rounded-2xl border border-red-200 bg-red-50 p-4"><Text className="text-sm font-semibold leading-5 text-red-700">{message}</Text><Pressable onPress={() => void onRetry()} className="mt-3 self-start rounded-xl bg-[#8B4513] px-4 py-2"><Text className="font-bold text-white">Thử lại</Text></Pressable></View>;
+  return <View className="rounded-2xl border border-red-200 bg-red-50 p-4"><Text className="text-sm font-semibold leading-5 text-red-700">{message}</Text><Pressable onPress={() => void onRetry()} style={{ backgroundColor: colors.brand.primary }} className="mt-3 self-start rounded-xl px-4 py-2"><Text style={{ color: colors.text.onPrimary }} className="font-bold">Thử lại</Text></Pressable></View>;
 }
 
-function EmptyMessage({ message }: { message: string }) { return <Text className="py-3 text-center text-sm font-medium leading-6 text-[#877369]">{message}</Text>; }
-function SectionLoader() { return <ActivityIndicator size="small" color="#8B4513" className="py-4" />; }
+function EmptyMessage({ message }: { message: string }) { return <Text style={{ color: colors.text.secondary }} className="py-3 text-center text-sm font-medium leading-6">{message}</Text>; }
+function SectionLoader() { return <ActivityIndicator size="small" color={colors.brand.primary} className="py-4" />; }
 
 function getVehiclePosition(tracking: TripTracking | null) {
   const latitude = tracking?.telemetry?.latitude;

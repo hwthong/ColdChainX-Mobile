@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 
+import { colors } from '../../constants/colors';
 import { TripRoutePointDto, TripRouteResponse } from '../../services/trackingApi';
 
 type RouteMapPoint = {
@@ -96,15 +97,15 @@ export function GoongRouteMap({ route, height = 300, vehiclePosition = null }: G
         }}
         startInLoadingState
         renderLoading={() => (
-          <View className="absolute inset-0 items-center justify-center bg-[#EEF2F5]">
-            <ActivityIndicator size="small" color="#8B4513" />
-            <Text className="mt-2 text-xs font-medium text-[#877369]">Đang tải bản đồ...</Text>
+          <View style={{ backgroundColor: colors.surface.page }} className="absolute inset-0 items-center justify-center">
+            <ActivityIndicator size="small" color={colors.brand.primary} />
+            <Text style={{ color: colors.text.secondary }} className="mt-2 text-xs font-medium">Đang tải bản đồ...</Text>
           </View>
         )}
-        style={{ height, backgroundColor: '#EEF2F5' }}
+        style={{ height, backgroundColor: colors.surface.page }}
       />
       {routeCoordinates.length < 2 ? (
-        <View className="border-t border-[#DAC2B6]/50 bg-amber-50 px-4 py-3">
+        <View style={{ borderTopColor: colors.border.default }} className="border-t bg-amber-50 px-4 py-3">
           <Text className="text-xs font-medium leading-5 text-amber-800">
             API chưa trả polyline; bản đồ hiện chỉ hiển thị các điểm tuyến dự kiến.
           </Text>
@@ -138,18 +139,18 @@ export function buildRoutePoints(route?: TripRouteResponse | null): RouteMapPoin
 
 function RouteMapFallback({ message, points }: { message: string; points: RouteMapPoint[] }) {
   return (
-    <View className="gap-3 rounded-2xl border border-[#DAC2B6]/60 bg-[#F8F9FA] p-4">
-      <Text className="text-sm font-semibold text-[#8B4513]">{message}</Text>
+    <View style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default }} className="gap-3 rounded-2xl border p-4">
+      <Text style={{ color: colors.brand.primary }} className="text-sm font-semibold">{message}</Text>
       {points.length > 0 ? (
         <View className="gap-2">
           {points.map((point, index) => (
             <View key={point.id} className="flex-row items-start gap-3">
-              <View className="mt-0.5 h-6 w-6 items-center justify-center rounded-full bg-[#8B4513]">
-                <Text className="text-[10px] font-bold text-white">{index + 1}</Text>
+              <View style={{ backgroundColor: colors.brand.primary }} className="mt-0.5 h-6 w-6 items-center justify-center rounded-full">
+                <Text style={{ color: colors.text.onPrimary }} className="text-[10px] font-bold">{index + 1}</Text>
               </View>
               <View className="flex-1">
-                <Text className="text-xs font-bold text-[#3A1F04]">{point.label}</Text>
-                <Text className="mt-1 text-xs leading-5 text-[#877369]">{point.address || `${point.lat}, ${point.lon}`}</Text>
+                <Text style={{ color: colors.text.primary }} className="text-xs font-bold">{point.label}</Text>
+                <Text style={{ color: colors.text.secondary }} className="mt-1 text-xs leading-5">{point.address || `${point.lat}, ${point.lon}`}</Text>
               </View>
             </View>
           ))}
@@ -253,15 +254,15 @@ function buildMapHtml(
       justify-content: center;
       font: 700 12px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       border: 3px solid #fff;
-      box-shadow: 0 8px 18px rgba(58, 31, 4, 0.22);
+      box-shadow: 0 8px 18px rgba(23, 59, 89, 0.22);
     }
     .marker.origin { background: #0f766e; }
-    .marker.stop { background: #8b4513; }
+    .marker.stop { background: #367eb8; }
     .marker.destination { background: #b91c1c; }
     .marker.vehicle { width: 38px; height: 38px; background: #1d4ed8; font-size: 18px; }
     .popup { min-width: 150px; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    .popup-title { font-size: 13px; font-weight: 700; color: #3a1f04; margin-bottom: 4px; }
-    .popup-address { font-size: 12px; line-height: 1.35; color: #5f5149; }
+    .popup-title { font-size: 13px; font-weight: 700; color: #173b59; margin-bottom: 4px; }
+    .popup-address { font-size: 12px; line-height: 1.35; color: #607b90; }
     #map-error {
       display: none;
       position: absolute;

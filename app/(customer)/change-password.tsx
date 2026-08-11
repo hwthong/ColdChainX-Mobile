@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, Pressable, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { colors } from '../../constants/colors';
 import { useAuthStore } from '../../store/useAuthStore';
 import { changePassword } from '../../services/authApi';
 import { getApiErrorMessage } from '../../services/apiClient';
@@ -18,168 +19,139 @@ export default function ChangePasswordScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const accessToken = useAuthStore(state => state.token);
-  const logout = useAuthStore(state => state.logout);
+  const accessToken = useAuthStore((state) => state.token);
 
   const handleSubmit = async () => {
     setError(null);
 
-    // Validation
     if (!currentPassword) {
-      setError('Mật khẩu hiện tại không được để trống.');
+      setError('Vui lòng nhập mật khẩu hiện tại.');
       return;
     }
+
     if (!newPassword) {
-      setError('Mật khẩu mới không được để trống.');
+      setError('Vui lòng nhập mật khẩu mới.');
       return;
     }
+
     if (newPassword.length < 8) {
       setError('Mật khẩu mới phải có ít nhất 8 ký tự.');
       return;
     }
-    if (newPassword === currentPassword) {
-      setError('Mật khẩu mới phải khác mật khẩu hiện tại.');
-      return;
-    }
+
     if (newPassword !== confirmPassword) {
-      setError('Xác nhận mật khẩu không khớp.');
+      setError('Xác nhận mật khẩu mới không khớp.');
       return;
     }
 
     if (!accessToken) {
-      setError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+      setError('Phiên đăng nhập không hợp lệ. Vui lòng đăng nhập lại.');
       return;
     }
 
+    setIsLoading(true);
+
     try {
-      setIsLoading(true);
-      const response = await changePassword(accessToken, { currentPassword, newPassword });
+      const res = await changePassword(accessToken, {
+        currentPassword,
+        newPassword,
+      });
 
-      if (response.success) {
-        // Clear forms immediately for security
-        setCurrentPassword('');
-        setNewPassword('');
-        setConfirmPassword('');
-
+      if (res.success) {
         Alert.alert(
           'Thành công',
-          'Đổi mật khẩu thành công. Vui lòng đăng nhập lại.',
+          'Đổi mật khẩu thành công.',
           [
             {
               text: 'OK',
-              onPress: async () => {
-                await logout();
-                router.replace('/login');
-              }
-            }
+              onPress: () => router.back(),
+            },
           ]
         );
       } else {
-        handleApiError(response.message || 'Lỗi không xác định.');
+        setError(res.message || 'Không thể đổi mật khẩu lúc này. Vui lòng thử lại.');
       }
-    } catch (err: any) {
-      handleApiError(err);
+    } catch (err) {
+      const msg = getApiErrorMessage(err);
+      setError(msg || 'Không thể đổi mật khẩu lúc này. Vui lòng thử lại.');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleApiError = (err: any) => {
-    let msg = typeof err === 'string' ? err : getApiErrorMessage(err);
-    
-    // Map backend messages to specific requirements if needed
-    if (msg.includes('Current password is incorrect')) {
-      msg = 'Mật khẩu hiện tại không chính xác.';
-    } else if (msg.includes('New password must be different from current password')) {
-      msg = 'Mật khẩu mới phải khác mật khẩu hiện tại.';
-    }
-
-    if (err?.status === 401 || msg.toLowerCase().includes('unauthorized') || msg.includes('Invalid token')) {
-      Alert.alert('Hết hạn', 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.', [
-        {
-          text: 'OK',
-          onPress: async () => {
-            await logout();
-            router.replace('/login');
-          }
-        }
-      ]);
-    } else if (err?.status >= 500) {
-      setError('Không thể đổi mật khẩu lúc này. Vui lòng thử lại.');
-    } else {
-      setError(msg || 'Không thể đổi mật khẩu lúc này. Vui lòng thử lại.');
     }
   };
 
   return (
     <KeyboardAvoidingView 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      className="flex-1 bg-[#F5F2F0]"
+      className="flex-1"
+      style={{ backgroundColor: colors.surface.page }}
     >
       <ScrollView 
         contentContainerStyle={{ flexGrow: 1, padding: 20 }}
         keyboardShouldPersistTaps="handled"
       >
-        <View className="mb-6 rounded-2xl bg-white p-5 shadow-sm">
-          <Text className="mb-4 text-base font-bold text-[#3A1F04]">Nhập mật khẩu mới</Text>
+        <View style={{ backgroundColor: colors.surface.card }} className="mb-6 rounded-2xl p-5 shadow-sm">
+          <Text style={{ color: colors.text.primary }} className="mb-4 text-base font-bold">Nhập mật khẩu mới</Text>
 
           {/* Current Password */}
           <View className="mb-4">
-            <Text className="mb-1 text-sm font-medium text-[#877369]">Mật khẩu hiện tại <Text className="text-red-500">*</Text></Text>
-            <View className="flex-row items-center rounded-xl border border-gray-200 bg-gray-50 px-3 h-12">
+            <Text style={{ color: colors.text.secondary }} className="mb-1 text-sm font-medium">Mật khẩu hiện tại <Text className="text-red-500">*</Text></Text>
+            <View style={{ borderColor: colors.border.default, backgroundColor: colors.surface.card }} className="flex-row items-center rounded-xl border px-3 h-12">
               <TextInput
-                className="flex-1 text-[#3A1F04]"
+                className="flex-1"
+                style={{ color: colors.text.primary }}
                 secureTextEntry={!showCurrentPassword}
                 value={currentPassword}
                 onChangeText={setCurrentPassword}
                 placeholder="Nhập mật khẩu hiện tại"
-                placeholderTextColor="#A99B94"
+                placeholderTextColor={colors.text.muted}
                 editable={!isLoading}
                 autoCapitalize="none"
               />
               <Pressable onPress={() => setShowCurrentPassword(!showCurrentPassword)} className="p-2">
-                <Ionicons name={showCurrentPassword ? "eye-off-outline" : "eye-outline"} size={20} color="#877369" />
+                <Ionicons name={showCurrentPassword ? "eye-off-outline" : "eye-outline"} size={20} color={colors.text.secondary} />
               </Pressable>
             </View>
           </View>
 
           {/* New Password */}
           <View className="mb-4">
-            <Text className="mb-1 text-sm font-medium text-[#877369]">Mật khẩu mới <Text className="text-red-500">*</Text></Text>
-            <View className="flex-row items-center rounded-xl border border-gray-200 bg-gray-50 px-3 h-12">
+            <Text style={{ color: colors.text.secondary }} className="mb-1 text-sm font-medium">Mật khẩu mới <Text className="text-red-500">*</Text></Text>
+            <View style={{ borderColor: colors.border.default, backgroundColor: colors.surface.card }} className="flex-row items-center rounded-xl border px-3 h-12">
               <TextInput
-                className="flex-1 text-[#3A1F04]"
+                className="flex-1"
+                style={{ color: colors.text.primary }}
                 secureTextEntry={!showNewPassword}
                 value={newPassword}
                 onChangeText={setNewPassword}
                 placeholder="Nhập mật khẩu mới"
-                placeholderTextColor="#A99B94"
+                placeholderTextColor={colors.text.muted}
                 editable={!isLoading}
                 autoCapitalize="none"
               />
               <Pressable onPress={() => setShowNewPassword(!showNewPassword)} className="p-2">
-                <Ionicons name={showNewPassword ? "eye-off-outline" : "eye-outline"} size={20} color="#877369" />
+                <Ionicons name={showNewPassword ? "eye-off-outline" : "eye-outline"} size={20} color={colors.text.secondary} />
               </Pressable>
             </View>
-            <Text className="mt-1 text-xs text-gray-500">Tối thiểu 8 ký tự.</Text>
+            <Text style={{ color: colors.text.muted }} className="mt-1 text-xs">Tối thiểu 8 ký tự.</Text>
           </View>
 
           {/* Confirm Password */}
           <View className="mb-4">
-            <Text className="mb-1 text-sm font-medium text-[#877369]">Xác nhận mật khẩu mới <Text className="text-red-500">*</Text></Text>
-            <View className="flex-row items-center rounded-xl border border-gray-200 bg-gray-50 px-3 h-12">
+            <Text style={{ color: colors.text.secondary }} className="mb-1 text-sm font-medium">Xác nhận mật khẩu mới <Text className="text-red-500">*</Text></Text>
+            <View style={{ borderColor: colors.border.default, backgroundColor: colors.surface.card }} className="flex-row items-center rounded-xl border px-3 h-12">
               <TextInput
-                className="flex-1 text-[#3A1F04]"
+                className="flex-1"
+                style={{ color: colors.text.primary }}
                 secureTextEntry={!showConfirmPassword}
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
                 placeholder="Nhập lại mật khẩu mới"
-                placeholderTextColor="#A99B94"
+                placeholderTextColor={colors.text.muted}
                 editable={!isLoading}
                 autoCapitalize="none"
               />
               <Pressable onPress={() => setShowConfirmPassword(!showConfirmPassword)} className="p-2">
-                <Ionicons name={showConfirmPassword ? "eye-off-outline" : "eye-outline"} size={20} color="#877369" />
+                <Ionicons name={showConfirmPassword ? "eye-off-outline" : "eye-outline"} size={20} color={colors.text.secondary} />
               </Pressable>
             </View>
           </View>
@@ -195,16 +167,17 @@ export default function ChangePasswordScreen() {
           <Pressable
             onPress={handleSubmit}
             disabled={isLoading}
-            className={`mt-2 flex-row items-center justify-center rounded-xl py-4 ${
-              isLoading ? 'bg-gray-300' : 'bg-[#8B4513]'
-            }`}
-            style={({ pressed }) => ({ opacity: pressed && !isLoading ? 0.8 : 1 })}
+            style={({ pressed }) => ({
+              backgroundColor: isLoading ? '#cbd5e1' : pressed ? colors.brand.primaryPressed : colors.brand.primary,
+              opacity: pressed && !isLoading ? 0.8 : 1,
+            })}
+            className="mt-2 flex-row items-center justify-center rounded-xl py-4"
           >
             {isLoading ? (
-              <ActivityIndicator color="#FFFFFF" size="small" className="mr-2" />
+              <ActivityIndicator color={colors.text.onPrimary} size="small" className="mr-2" />
             ) : null}
-            <Text className="text-base font-bold text-white">
-              {isLoading ? 'Đang cập nhật...' : 'Cập nhật mật khẩu'}
+            <Text style={{ color: colors.text.onPrimary }} className="text-base font-bold">
+              {isLoading ? 'Đang cập nhật...' : 'Đổi mật khẩu'}
             </Text>
           </Pressable>
         </View>

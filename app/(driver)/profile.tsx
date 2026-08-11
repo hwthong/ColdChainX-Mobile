@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, Pressable, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
+import { colors } from '../../constants/colors';
 import { useAuthStore } from '../../store/useAuthStore';
 
 export default function DriverProfileScreen() {
@@ -9,40 +10,40 @@ export default function DriverProfileScreen() {
   const logout = useAuthStore((s) => s.logout);
 
   return (
-    <ScrollView className="flex-1 bg-[#F6F8F2]">
+    <ScrollView style={{ backgroundColor: colors.surface.page }} className="flex-1">
       <View className="px-6 py-8">
-        
+
         {/* Profile Card */}
-        <View className="mb-6 items-center rounded-3xl border border-amber-200 bg-white p-6 shadow-sm">
-          <View className="mb-4 h-24 w-24 items-center justify-center rounded-full bg-amber-100">
+        <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="mb-6 items-center rounded-3xl border p-6 shadow-sm">
+          <View style={{ backgroundColor: colors.brand.primarySoft }} className="mb-4 h-24 w-24 items-center justify-center rounded-full">
             {user?.fullName ? (
-              <Text className="text-3xl font-bold text-amber-900">{user.fullName.charAt(0).toUpperCase()}</Text>
+              <Text style={{ color: colors.brand.primary }} className="text-3xl font-bold">{user.fullName.charAt(0).toUpperCase()}</Text>
             ) : (
-              <Ionicons name="person" size={40} color="#8B4513" />
+              <Ionicons name="person" size={40} color={colors.brand.primary} />
             )}
           </View>
 
-          <Text className="text-2xl font-bold text-amber-900">
+          <Text style={{ color: colors.text.primary }} className="text-2xl font-bold">
             {user?.fullName || 'Tài xế'}
           </Text>
-          <Text className="mt-1 text-base text-amber-700">
+          <Text style={{ color: colors.text.secondary }} className="mt-1 text-base">
             {user?.email || 'Chưa cập nhật email'}
           </Text>
-          
-          <View className="mt-3 rounded-full bg-amber-100 px-4 py-1.5">
-            <Text className="text-sm font-bold text-amber-900">Vai trò: Tài xế</Text>
+
+          <View style={{ backgroundColor: colors.surface.selected }} className="mt-3 rounded-full px-4 py-1.5">
+            <Text style={{ color: colors.brand.primary }} className="text-sm font-bold">Vai trò: Tài xế</Text>
           </View>
         </View>
 
         {/* Info List */}
-        <View className="mb-8 rounded-2xl border border-amber-200 bg-white p-4 shadow-sm">
-          <View className="flex-row items-center border-b border-amber-100 pb-4">
-            <View className="h-10 w-10 items-center justify-center rounded-full bg-amber-50">
-              <Ionicons name="shield-checkmark-outline" size={20} color="#8B4513" />
+        <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="mb-8 rounded-2xl border p-4 shadow-sm">
+          <View style={{ borderBottomColor: colors.border.default }} className="flex-row items-center border-b pb-4">
+            <View style={{ backgroundColor: colors.brand.primarySoft }} className="h-10 w-10 items-center justify-center rounded-full">
+              <Ionicons name="shield-checkmark-outline" size={20} color={colors.brand.primary} />
             </View>
             <View className="ml-3 flex-1">
-              <Text className="text-xs text-amber-700">Trạng thái tài khoản</Text>
-              <Text className="mt-0.5 text-base font-semibold text-amber-900">Đang hoạt động</Text>
+              <Text style={{ color: colors.text.secondary }} className="text-xs">Trạng thái tài khoản</Text>
+              <Text style={{ color: colors.text.primary }} className="mt-0.5 text-base font-semibold">Đang hoạt động</Text>
             </View>
           </View>
         </View>
@@ -55,8 +56,8 @@ export default function DriverProfileScreen() {
             opacity: pressed ? 0.7 : 1,
           })}
         >
-          <Ionicons name="log-out-outline" size={20} color="#991B1B" />
-          <Text className="ml-2 text-base font-bold text-red-900">Đăng xuất</Text>
+          <Ionicons name="log-out-outline" size={20} color={colors.status.danger.main} />
+          <Text style={{ color: colors.status.danger.main }} className="ml-2 text-base font-bold">Đăng xuất</Text>
         </Pressable>
       </View>
     </ScrollView>

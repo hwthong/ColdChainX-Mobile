@@ -3,6 +3,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, Linking, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 
+import { colors } from '../../../../constants/colors';
 import { confirmTransload, continueTrip, getIncidentDetail, IncidentResponse } from '../../../../services/incidentApi';
 import { useAuthStore } from '../../../../store/useAuthStore';
 
@@ -13,12 +14,6 @@ const INCIDENT_STATUS: Record<string, string> = {
   TRANSLOAD_COMPLETED: 'Đã sang hàng',
   CONTINUED: 'Tiếp tục hành trình',
   RESOLVED: 'Đã xử lý',
-};
-const EXPENSE_STATUS: Record<string, string> = {
-  PENDING: 'Chờ duyệt',
-  APPROVED: 'Đã duyệt',
-  REJECTED: 'Từ chối',
-  REIMBURSED: 'Đã hoàn tiền',
 };
 const INCIDENT_TYPE: Record<string, string> = {
   VEHICLE_BREAKDOWN: 'Hỏng xe',
@@ -151,17 +146,22 @@ export default function DriverIncidentDetailScreen() {
   };
 
   if (loading) {
-    return <View className="flex-1 items-center justify-center bg-[#F6F8F2]"><ActivityIndicator size="large" color="#8B4513" /><Text className="mt-4 text-amber-800">Đang tải chi tiết sự cố...</Text></View>;
+    return (
+      <View style={{ backgroundColor: colors.surface.page }} className="flex-1 items-center justify-center">
+        <ActivityIndicator size="large" color={colors.brand.primary} />
+        <Text style={{ color: colors.brand.primary }} className="mt-4 font-medium">Đang tải chi tiết sự cố...</Text>
+      </View>
+    );
   }
 
   if (error) {
     return (
-      <View className="flex-1 items-center justify-center bg-[#F6F8F2] p-5">
+      <View style={{ backgroundColor: colors.surface.page }} className="flex-1 items-center justify-center p-5">
         <View className="items-center rounded-2xl bg-red-50 p-6">
-          <Ionicons name="alert-circle-outline" size={48} color="#991B1B" />
-          <Text className="mt-4 text-center text-red-900">{error}</Text>
-          <Pressable onPress={handleRefresh} className="mt-6 rounded-xl bg-red-800 px-6 py-3">
-            <Text className="font-bold text-white">Thử lại</Text>
+          <Ionicons name="alert-circle-outline" size={48} color={colors.status.danger.main} />
+          <Text style={{ color: colors.status.danger.main }} className="mt-4 text-center font-semibold">{error}</Text>
+          <Pressable onPress={handleRefresh} style={{ backgroundColor: colors.status.danger.main }} className="mt-6 rounded-xl px-6 py-3">
+            <Text style={{ color: colors.text.onPrimary }} className="font-bold">Thử lại</Text>
           </Pressable>
         </View>
       </View>
@@ -169,29 +169,33 @@ export default function DriverIncidentDetailScreen() {
   }
 
   if (!incident) {
-    return <View className="flex-1 items-center justify-center bg-[#F6F8F2]"><Text className="text-amber-800">Không tìm thấy dữ liệu.</Text></View>;
+    return (
+      <View style={{ backgroundColor: colors.surface.page }} className="flex-1 items-center justify-center">
+        <Text style={{ color: colors.text.secondary }} className="font-medium">Không tìm thấy dữ liệu.</Text>
+      </View>
+    );
   }
 
   return (
-    <ScrollView className="flex-1 bg-[#F6F8F2]" contentContainerStyle={{ padding: 20, paddingBottom: 100, gap: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#8B4513" />}>
-      <Pressable onPress={() => router.back()} className="mb-2 self-start rounded-full bg-amber-100 p-2">
-        <Ionicons name="arrow-back" size={24} color="#8B4513" />
+    <ScrollView style={{ backgroundColor: colors.surface.page }} className="flex-1" contentContainerStyle={{ padding: 20, paddingBottom: 100, gap: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.brand.primary} />}>
+      <Pressable onPress={() => router.back()} style={{ backgroundColor: colors.brand.primarySoft }} className="mb-2 self-start rounded-full p-2">
+        <Ionicons name="arrow-back" size={24} color={colors.brand.primary} />
       </Pressable>
       
       <View className="flex-row items-start justify-between gap-3">
         <View className="flex-1">
-          <Text className="text-xs font-bold uppercase tracking-widest text-amber-700">Mã Sự Cố</Text>
-          <Text className="mt-1 text-2xl font-bold text-amber-950">{incident.incidentCode}</Text>
+          <Text style={{ color: colors.text.secondary }} className="text-xs font-bold uppercase tracking-widest">Mã Sự Cố</Text>
+          <Text style={{ color: colors.text.primary }} className="mt-1 text-2xl font-bold">{incident.incidentCode}</Text>
         </View>
         <View className="rounded-xl bg-red-100 px-3 py-2">
           <Text className="text-xs font-bold text-red-900">{INCIDENT_STATUS[incident.status] || incident.status}</Text>
         </View>
       </View>
 
-      <View className="gap-4 rounded-3xl bg-white p-5">
+      <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-4 rounded-3xl border p-5 shadow-sm">
         <View className="flex-row items-center gap-2">
-          <Ionicons name="warning-outline" size={20} color="#8B4513" />
-          <Text className="text-base font-bold text-amber-950">Thông tin chung</Text>
+          <Ionicons name="warning-outline" size={20} color={colors.brand.primary} />
+          <Text style={{ color: colors.text.primary }} className="text-base font-bold">Thông tin chung</Text>
         </View>
         <InfoRow label="Loại sự cố" value={INCIDENT_TYPE[incident.incidentType] || incident.incidentType} />
         <InfoRow label="Mức độ" value={SEVERITY[incident.severity] || incident.severity} />
@@ -203,79 +207,75 @@ export default function DriverIncidentDetailScreen() {
       </View>
 
       {incident.requiresRescue && (
-        <View className="gap-4 rounded-3xl bg-white p-5">
+        <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-4 rounded-3xl border p-5 shadow-sm">
           <View className="flex-row items-center gap-2">
-            <Ionicons name="car-sport-outline" size={20} color="#8B4513" />
-            <Text className="text-base font-bold text-amber-950">Xe thay thế (Cứu hộ)</Text>
+            <Ionicons name="car-sport-outline" size={20} color={colors.brand.primary} />
+            <Text style={{ color: colors.text.primary }} className="text-base font-bold">Xe thay thế (Cứu hộ)</Text>
           </View>
           <InfoRow label="Trạng thái điều xe" value={incident.replacementVehicleId ? 'Đã điều xe' : 'Đang chờ điều phối'} />
           <InfoRow label="Biển số xe mới" value={incident.replacementVehicleId || '--'} />
           
           {incident.status === 'RESCUE_DISPATCHED' && (
-             <View className="mt-4 rounded-2xl bg-amber-50 p-4 border border-amber-200">
-               <Text className="text-sm font-bold text-amber-950 mb-2">Đang chờ sang hàng</Text>
-               <Text className="text-xs text-amber-800 mb-4">Xe cứu hộ đang trên đường tới hoặc đã tới hiện trường. Vui lòng xác nhận sau khi hoàn tất sang hàng hóa vào xe mới.</Text>
-               <Pressable onPress={handleConfirmTransload} disabled={actionLoading} className="rounded-xl bg-amber-800 p-3 items-center">
-                 {actionLoading ? <ActivityIndicator color="white" /> : <Text className="font-bold text-white">Xác nhận đã sang hàng</Text>}
+             <View style={{ backgroundColor: colors.surface.selected, borderColor: colors.border.selected }} className="mt-4 rounded-2xl border p-4">
+               <Text style={{ color: colors.text.primary }} className="mb-2 text-sm font-bold">Đang chờ sang hàng</Text>
+               <Text style={{ color: colors.text.secondary }} className="mb-4 text-xs leading-5">Xe cứu hộ đang trên đường tới hoặc đã tới hiện trường. Vui lòng xác nhận sau khi hoàn tất sang hàng hóa vào xe mới.</Text>
+               <Pressable onPress={handleConfirmTransload} disabled={actionLoading} style={{ backgroundColor: colors.brand.primary }} className="items-center rounded-xl p-3">
+                 {actionLoading ? <ActivityIndicator color={colors.text.onPrimary} /> : <Text style={{ color: colors.text.onPrimary }} className="font-bold">Xác nhận đã sang hàng</Text>}
+               </Pressable>
+             </View>
+          )}
+
+          {(incident.status === 'RESOLVED' || incident.status === 'TRANSLOAD_COMPLETED') && (
+             <View className="mt-4 rounded-2xl border border-green-200 bg-green-50 p-4">
+               <Text className="mb-2 text-sm font-bold text-green-900">Đã sang hàng thành công</Text>
+               <Text className="mb-4 text-xs text-green-800">Xe mới sẵn sàng. Hãy bấm nút dưới đây để tiếp tục hành trình.</Text>
+               <Pressable onPress={handleContinueTrip} disabled={actionLoading} className="items-center rounded-xl bg-green-800 p-3">
+                 {actionLoading ? <ActivityIndicator color="white" /> : <Text className="font-bold text-white">Tiếp tục chuyến xe</Text>}
                </Pressable>
              </View>
           )}
         </View>
       )}
 
-      {!incident.requiresRescue && incident.status === 'REPORTED' && (
-        <View className="gap-4 rounded-3xl bg-white p-5">
-          <View className="rounded-2xl bg-amber-50 p-4 border border-amber-200">
-             <Text className="text-sm font-bold text-amber-950 mb-2">Chuyến xe sẵn sàng</Text>
-             <Text className="text-xs text-amber-800 mb-4">Sự cố không yêu cầu xe cứu hộ. Hãy đánh dấu tiếp tục khi bạn có thể xuất phát trở lại.</Text>
-             <Pressable onPress={handleContinueTrip} disabled={actionLoading} className="rounded-xl bg-amber-800 p-3 items-center">
-               {actionLoading ? <ActivityIndicator color="white" /> : <Text className="font-bold text-white">Tiếp tục hành trình</Text>}
-             </Pressable>
-          </View>
-        </View>
-      )}
-
-      {(incident.driverPaidAmount ?? 0) > 0 && (
-        <View className="gap-4 rounded-3xl bg-white p-5">
+      {(incident.driverPaidAmount ?? 0) > 0 ? (
+        <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-4 rounded-3xl border p-5 shadow-sm">
           <View className="flex-row items-center gap-2">
-            <Ionicons name="cash-outline" size={20} color="#8B4513" />
-            <Text className="text-base font-bold text-amber-950">Chi phí & Hoàn tiền</Text>
+            <Ionicons name="cash-outline" size={20} color={colors.brand.primary} />
+            <Text style={{ color: colors.text.primary }} className="text-base font-bold">Chi phí phát sinh</Text>
           </View>
-          <InfoRow label="Tài xế đã ứng" value={`${incident.driverPaidAmount?.toLocaleString('vi-VN')} đ`} />
-          <InfoRow label="Đã duyệt" value={incident.approvedAmount ? `${incident.approvedAmount.toLocaleString('vi-VN')} đ` : '--'} />
-          <InfoRow label="Trạng thái chi phí" value={EXPENSE_STATUS[incident.expenseStatus] || incident.expenseStatus} />
+          <InfoRow label="Số tiền đã ứng" value={`${incident.driverPaidAmount?.toLocaleString('vi-VN')} VNĐ`} />
         </View>
-      )}
+      ) : null}
 
       {incident.evidences && incident.evidences.length > 0 && (
-        <View className="gap-4 rounded-3xl bg-white p-5">
+        <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-4 rounded-3xl border p-5 shadow-sm">
           <View className="flex-row items-center gap-2">
-            <Ionicons name="images-outline" size={20} color="#8B4513" />
-            <Text className="text-base font-bold text-amber-950">Hình ảnh đính kèm</Text>
+            <Ionicons name="images-outline" size={20} color={colors.brand.primary} />
+            <Text style={{ color: colors.text.primary }} className="text-base font-bold">Hình ảnh & Bằng chứng</Text>
           </View>
-          {incident.evidences.map((e, idx) => (
-             <Pressable key={e.evidenceId || idx} onPress={() => Linking.openURL(e.fileUrl)} className="flex-row items-center justify-between border-b border-gray-100 py-2">
-               <View className="flex-row items-center gap-3">
-                 <Ionicons name={e.evidenceType === 'RECEIPT' ? "receipt" : "image"} size={24} color="#D97706" />
-                 <View>
-                   <Text className="text-sm font-medium text-gray-800">{e.evidenceType === 'RECEIPT' ? 'Biên lai/Hoá đơn' : 'Ảnh hiện trường'}</Text>
-                   <Text className="text-xs text-gray-500">{new Date(e.uploadedAt).toLocaleString('vi-VN')}</Text>
-                 </View>
-               </View>
-               <Ionicons name="open-outline" size={20} color="#8B4513" />
-             </Pressable>
+          {incident.evidences.map((e) => (
+             <Pressable key={e.evidenceId} onPress={() => Linking.openURL(e.fileUrl)} style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="flex-row items-center justify-between rounded-xl border p-3">
+                <View className="flex-row items-center gap-3">
+                  <Ionicons name={e.evidenceType === 'RECEIPT' ? "receipt" : "image"} size={24} color={colors.brand.primary} />
+                  <View>
+                    <Text style={{ color: colors.text.primary }} className="text-sm font-medium">{e.evidenceType === 'RECEIPT' ? 'Biên lai/Hoá đơn' : 'Ảnh hiện trường'}</Text>
+                    <Text style={{ color: colors.text.secondary }} className="text-xs">{new Date(e.uploadedAt).toLocaleString('vi-VN')}</Text>
+                  </View>
+                </View>
+                <Ionicons name="open-outline" size={20} color={colors.brand.primary} />
+              </Pressable>
           ))}
         </View>
       )}
 
       {incident.resolutionPdfUrl && (
-        <View className="gap-4 rounded-3xl bg-white p-5">
-          <Pressable onPress={() => Linking.openURL(incident.resolutionPdfUrl!)} className="flex-row items-center justify-between rounded-xl bg-red-50 p-4 border border-red-200">
+        <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-4 rounded-3xl border p-5 shadow-sm">
+          <Pressable onPress={() => Linking.openURL(incident.resolutionPdfUrl!)} className="flex-row items-center justify-between rounded-xl border border-red-200 bg-red-50 p-4">
             <View className="flex-row items-center gap-3">
-              <Ionicons name="document-text" size={24} color="#991B1B" />
-              <Text className="font-bold text-red-900">Biên bản xử lý sự cố (PDF)</Text>
+              <Ionicons name="document-text" size={24} color={colors.status.danger.main} />
+              <Text style={{ color: colors.status.danger.main }} className="font-bold">Biên bản xử lý sự cố (PDF)</Text>
             </View>
-            <Ionicons name="download-outline" size={20} color="#991B1B" />
+            <Ionicons name="download-outline" size={20} color={colors.status.danger.main} />
           </Pressable>
         </View>
       )}

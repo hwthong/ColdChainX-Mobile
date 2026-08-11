@@ -2,6 +2,7 @@ import React from 'react';
 import { Image, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
+import { colors } from '../../../../constants/colors';
 import { customerColors } from '../../../../constants/customerTheme';
 import { CustomerCard, CustomerSectionHeader } from '../../../../components/customer/ui/CustomerUi';
 import type {
@@ -105,17 +106,17 @@ function ReviewSection({
   return (
     <CustomerCard>
       <CustomerSectionHeader title={title} icon={icon} actionLabel="Sửa" onAction={onEdit} />
-      <Text className="mt-4 text-base font-bold leading-6 text-[#3A1F04]">{summary}</Text>
+      <Text style={{ color: colors.text.primary }} className="mt-4 text-base font-bold leading-6">{summary}</Text>
 
       <View className="mt-3">
         {rows.map(([label, value]) => (
           <View
             key={label}
             className="flex-row items-start gap-4 py-2.5"
-            style={{ borderTopColor: customerColors.borderSubtle, borderTopWidth: 1 }}
+            style={{ borderTopColor: colors.border.default, borderTopWidth: 1 }}
           >
-            <Text className="w-[94px] text-xs font-medium leading-5 text-[#877369]">{label}</Text>
-            <Text className="flex-1 text-right text-sm font-semibold leading-5 text-[#3A1F04]">{value}</Text>
+            <Text style={{ color: colors.text.secondary }} className="w-[94px] text-xs font-medium leading-5">{label}</Text>
+            <Text style={{ color: colors.text.primary }} className="flex-1 text-right text-sm font-semibold leading-5">{value}</Text>
           </View>
         ))}
         {imageUri ? (

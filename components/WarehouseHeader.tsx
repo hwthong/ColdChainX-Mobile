@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
-import { WH_COLORS } from '../constants/warehouseTheme';
+import { colors } from '../constants/colors';
 
 interface WarehouseHeaderProps {
   title: string;
@@ -12,8 +12,7 @@ interface WarehouseHeaderProps {
 }
 
 /**
- * Warehouse header styled to match Customer app (dark brown bg, warm peach text).
- * Simpler than CustomerHeader — no notification bell.
+ * Warehouse header styled with Web blue palette dark navy theme.
  */
 export function WarehouseHeader({ title, showBackButton = false }: WarehouseHeaderProps) {
   const insets = useSafeAreaInsets();
@@ -23,9 +22,9 @@ export function WarehouseHeader({ title, showBackButton = false }: WarehouseHead
     <View
       style={{
         paddingTop: insets.top,
-        backgroundColor: WH_COLORS.headerBg,
+        backgroundColor: colors.text.primary,
         borderBottomWidth: 1,
-        borderBottomColor: 'rgba(218, 194, 182, 0.1)',
+        borderBottomColor: colors.border.strong,
       }}
     >
       <View
@@ -46,10 +45,10 @@ export function WarehouseHeader({ title, showBackButton = false }: WarehouseHead
               alignItems: 'center',
               justifyContent: 'center',
               borderRadius: 20,
-              backgroundColor: 'rgba(255,255,255,0.1)',
+              backgroundColor: 'rgba(248, 252, 255, 0.15)',
             }}
           >
-            <Ionicons name="chevron-back" size={24} color={WH_COLORS.headerText} />
+            <Ionicons name="chevron-back" size={24} color={colors.brand.primaryForeground} />
           </Pressable>
         ) : (
           <View style={{ width: 40, height: 40 }} />
@@ -59,7 +58,7 @@ export function WarehouseHeader({ title, showBackButton = false }: WarehouseHead
           style={{
             flex: 1,
             textAlign: 'center',
-            color: WH_COLORS.headerText,
+            color: colors.brand.primaryForeground,
             fontWeight: '700',
             fontSize: title === 'ColdChainX' ? 26 : 20,
             fontStyle: title === 'ColdChainX' ? 'italic' : 'normal',

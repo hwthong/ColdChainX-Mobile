@@ -13,6 +13,7 @@ import {
 import { TripRouteResponse } from '../../../services/trackingApi';
 import { getIncidents, IncidentResponse } from '../../../services/incidentApi';
 import { driverApi, DriverTripDetailResponseDto, DriverTripStopDto } from '../../../services/driverApi';
+import { colors } from '../../../constants/colors';
 import { useAuthStore } from '../../../store/useAuthStore';
 
 const POLL_MS = 15_000;
@@ -151,13 +152,28 @@ export default function DriverTripDetailScreen() {
     setRefreshing(true); await Promise.all([loadTrip(), loadTracking(), loadRoute(), loadChart(), loadAlerts(), loadIncident()]); setRefreshing(false);
   }, [loadTrip, loadAlerts, loadChart, loadRoute, loadTracking, loadIncident]);
 
-  if (loading) return <View className="flex-1 items-center justify-center bg-[#F6F8F2]"><ActivityIndicator size="large" color="#8B4513" /><Text className="mt-4 text-amber-800">Đang tải chi tiết chuyến...</Text></View>;
+  if (loading) {
+    return (
+      <View style={{ backgroundColor: colors.surface.page }} className="flex-1 items-center justify-center">
+        <ActivityIndicator size="large" color={colors.brand.primary} />
+        <Text style={{ color: colors.brand.primary }} className="mt-4 font-medium">Đang tải chi tiết chuyến...</Text>
+      </View>
+    );
+  }
   const vehiclePosition = getVehiclePosition(tracking);
   const status = trip?.status || tracking?.status || 'UNKNOWN';
 
   return (
-    <ScrollView className="flex-1 bg-[#F6F8F2]" contentContainerStyle={{ padding: 20, paddingBottom: 100, gap: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#8B4513" />}>
-      <View className="flex-row items-start justify-between gap-3"><View className="flex-1"><Text className="text-xs font-bold uppercase tracking-widest text-amber-700">Chuyến vận chuyển</Text><Text className="mt-1 text-2xl font-bold text-amber-950">{tripId?.slice(0, 8).toUpperCase() || '--'}</Text></View><View className="rounded-xl bg-amber-100 px-3 py-2"><Text className="text-xs font-bold text-amber-900">{STATUS[status.toUpperCase()] || status}</Text></View></View>
+    <ScrollView style={{ backgroundColor: colors.surface.page }} className="flex-1" contentContainerStyle={{ padding: 20, paddingBottom: 100, gap: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.brand.primary} />}>
+      <View className="flex-row items-start justify-between gap-3">
+        <View className="flex-1">
+          <Text style={{ color: colors.text.secondary }} className="text-xs font-bold uppercase tracking-widest">Chuyến vận chuyển</Text>
+          <Text style={{ color: colors.text.primary }} className="mt-1 text-2xl font-bold">{tripId?.slice(0, 8).toUpperCase() || '--'}</Text>
+        </View>
+        <View style={{ backgroundColor: colors.surface.selected }} className="rounded-xl px-3 py-2">
+          <Text style={{ color: colors.brand.primary }} className="text-xs font-bold">{STATUS[status.toUpperCase()] || status}</Text>
+        </View>
+      </View>
       <View className="flex-row gap-3">
         <Action icon="document-text-outline" label="Chứng từ" onPress={() => router.push(`/(driver)/trips/${tripId}/documents` as never)} />
         <Action 
@@ -199,10 +215,52 @@ export default function DriverTripDetailScreen() {
   );
 }
 
-function Section({ title, icon, children }: { title: string; icon: React.ComponentProps<typeof Ionicons>['name']; children: React.ReactNode }) { return <View className="gap-4 rounded-3xl bg-white p-5"><View className="flex-row items-center gap-2"><Ionicons name={icon} size={20} color="#8B4513" /><Text className="text-base font-bold text-amber-950">{title}</Text></View>{children}</View>; }
-function Action({ icon, label, danger = false, onPress }: { icon: React.ComponentProps<typeof Ionicons>['name']; label: string; danger?: boolean; onPress: () => void }) { return <Pressable onPress={onPress} className={`flex-1 flex-row items-center justify-center rounded-xl border p-3 ${danger ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-white'}`}><Ionicons name={icon} size={20} color={danger ? '#991B1B' : '#8B4513'} /><Text className={`ml-2 text-sm font-bold ${danger ? 'text-red-900' : 'text-amber-900'}`}>{label}</Text></Pressable>; }
-function Metric({ label, value }: { label: string; value: string }) { return <View className="flex-1 rounded-2xl bg-amber-50 p-4"><Text className="text-xs text-amber-700">{label}</Text><Text className="mt-2 text-lg font-bold text-amber-950">{value}</Text></View>; }
-function InfoRow({ label, value }: { label: string; value: string }) { return <View className="flex-row items-start justify-between gap-4 border-b border-amber-100 pb-2"><Text className="text-sm text-amber-700">{label}</Text><Text className="flex-1 text-right text-sm font-semibold text-amber-950">{value}</Text></View>; }
+function Section({ title, icon, children }: { title: string; icon: React.ComponentProps<typeof Ionicons>['name']; children: React.ReactNode }) {
+  return (
+    <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-4 rounded-3xl border p-5 shadow-sm">
+      <View className="flex-row items-center gap-2">
+        <Ionicons name={icon} size={20} color={colors.brand.primary} />
+        <Text style={{ color: colors.text.primary }} className="text-base font-bold">{title}</Text>
+      </View>
+      {children}
+    </View>
+  );
+}
+
+function Action({ icon, label, danger = false, onPress }: { icon: React.ComponentProps<typeof Ionicons>['name']; label: string; danger?: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={{
+        backgroundColor: danger ? colors.status.danger.bg : colors.surface.card,
+        borderColor: danger ? colors.status.danger.border : colors.border.default,
+      }}
+      className="flex-1 flex-row items-center justify-center rounded-xl border p-3.5"
+    >
+      <Ionicons name={icon} size={20} color={danger ? colors.status.danger.main : colors.brand.primary} />
+      <Text style={{ color: danger ? colors.status.danger.main : colors.brand.primary }} className="ml-2 text-sm font-bold">{label}</Text>
+    </Pressable>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={{ backgroundColor: colors.surface.muted }} className="flex-1 rounded-2xl p-4">
+      <Text style={{ color: colors.text.secondary }} className="text-xs">{label}</Text>
+      <Text style={{ color: colors.text.primary }} className="mt-2 text-lg font-bold">{value}</Text>
+    </View>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={{ borderBottomColor: colors.border.default }} className="flex-row items-start justify-between gap-4 border-b pb-2">
+      <Text style={{ color: colors.text.secondary }} className="text-sm">{label}</Text>
+      <Text style={{ color: colors.text.primary }} className="flex-1 text-right text-sm font-semibold">{value}</Text>
+    </View>
+  );
+}
+
 function StopRow({ stop, index, onPress }: { stop: DriverTripStopDto; index: number; onPress: () => void }) {
   const status = stop.status?.toUpperCase() || 'UNKNOWN';
   const disabled = !stop.stopId || status === 'DEPARTED';
@@ -210,22 +268,23 @@ function StopRow({ stop, index, onPress }: { stop: DriverTripStopDto; index: num
     <Pressable
       disabled={disabled}
       onPress={onPress}
-      className="flex-row gap-3 items-center"
+      className="flex-row items-center gap-3"
       style={({ pressed }) => ({ opacity: disabled ? 0.5 : pressed ? 0.7 : 1 })}
     >
-      <View className="h-7 w-7 items-center justify-center rounded-full bg-amber-800">
-        <Text className="text-xs font-bold text-white">{stop.stopSequence ?? index + 1}</Text>
+      <View style={{ backgroundColor: colors.brand.primary }} className="h-7 w-7 items-center justify-center rounded-full">
+        <Text style={{ color: colors.text.onPrimary }} className="text-xs font-bold">{stop.stopSequence ?? index + 1}</Text>
       </View>
       <View className="flex-1">
-        <Text className="font-semibold text-amber-950">{stop.address || 'Chưa có địa chỉ'}</Text>
-        <Text className="mt-1 text-xs font-semibold text-amber-700">{STOP_STATUS[status] || 'Chưa xác định'}</Text>
+        <Text style={{ color: colors.text.primary }} className="font-semibold">{stop.address || 'Chưa có địa chỉ'}</Text>
+        <Text style={{ color: colors.brand.primary }} className="mt-1 text-xs font-semibold">{STOP_STATUS[status] || 'Chưa xác định'}</Text>
       </View>
-      {!disabled ? <Ionicons name="chevron-forward" size={20} color="#8B4513" /> : null}
+      {!disabled ? <Ionicons name="chevron-forward" size={20} color={colors.brand.primary} /> : null}
     </Pressable>
-  ); 
+  );
 }
+
 function ErrorMessage({ message, onRetry }: { message: string; onRetry: () => void | Promise<unknown> }) { return <View className="rounded-2xl border border-red-200 bg-red-50 p-4"><Text className="text-sm leading-5 text-red-800">{message}</Text><Pressable onPress={() => void onRetry()} className="mt-3 self-start rounded-lg bg-red-800 px-4 py-2"><Text className="font-bold text-white">Thử lại</Text></Pressable></View>; }
-function Empty({ message }: { message: string }) { return <Text className="py-3 text-center text-sm font-medium text-amber-700">{message}</Text>; }
+function Empty({ message }: { message: string }) { return <Text style={{ color: colors.text.secondary }} className="py-3 text-center text-sm font-medium">{message}</Text>; }
 
 function getVehiclePosition(tracking: TripTracking | null) { const latitude = tracking?.telemetry?.latitude; const longitude = tracking?.telemetry?.longitude; if (typeof latitude !== 'number' || !Number.isFinite(latitude) || latitude < -90 || latitude > 90) return null; if (typeof longitude !== 'number' || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) return null; return { latitude, longitude }; }
 function formatOnlineState(tracking: TripTracking) { if (tracking.device?.isOnline === true) return 'Trực tuyến'; if (tracking.device?.isOnline === false) return 'Ngoại tuyến'; return tracking.device?.status || 'Không xác định'; }
