@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, Pressable, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { colors } from '../../../../constants/colors';
@@ -30,6 +30,15 @@ export function getPackagingTypeLabel(type: string): string {
   const option = PACKAGING_OPTIONS.find((opt) => opt.value === type);
   return option?.label || type;
 }
+
+const PACKAGING_ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
+  'Carton Box': 'cube-outline',
+  'Foam Box': 'snow-outline',
+  'Plastic Box': 'file-tray-full-outline',
+  Pallet: 'grid-outline',
+  Thùng: 'archive-outline',
+  Bao: 'bag-handle-outline',
+};
 
 type PackagingImageStepProps = {
   packagingTypes: string[];
@@ -72,53 +81,76 @@ export function PackagingImageStep({
   onBlurField,
   onSubmitField,
 }: PackagingImageStepProps) {
+  const [touchedFields, setTouchedFields] = React.useState<Record<string, boolean>>({});
   const cbmPreview = calculateCbmPreview(lengthCm, widthCm, heightCm, quantity);
 
+  const touchField = (field: string) => {
+    setTouchedFields((prev) => ({ ...prev, [field]: true }));
+  };
+
   const selectPackagingType = (value: string) => {
+    touchField('packagingType');
     if (packagingTypes[0] === value && packagingTypes.length === 1) return;
     onChangePackagingTypes([value]);
+  };
+
+  const handleFieldBlur = (field: CreateOrderFieldKey) => {
+    touchField(field);
+    onBlurField(field);
   };
 
   return (
     <View className="gap-4">
       <CreateOrderFormSection
-        title="Hình thức đóng gói"
+        title="Đóng gói *"
         icon="archive-outline"
-        description="Chọn loại bao bì phù hợp với lô hàng."
+        description="Chọn cách đóng gói phù hợp với lô hàng."
       >
-        <View ref={(node) => registerField('packagingType', node)} className="gap-2">
-          <Text style={{ color: colors.text.primary }} className="text-[13px] font-bold">
-            Loại bao bì <Text className="text-red-600">*</Text>
-          </Text>
-          <View className="flex-row flex-wrap gap-2">
+        <View ref={(node) => registerField('packagingType', node)}>
+          <View style={styles.packagingGrid}>
             {PACKAGING_OPTIONS.map((option) => {
               const selected = packagingTypes.includes(option.value);
+              const iconName = PACKAGING_ICON_MAP[option.value] || 'cube-outline';
               return (
-                <Pressable
+                <View
                   key={option.value}
-                  onPress={() => selectPackagingType(option.value)}
-                  accessibilityRole="radio"
-                  accessibilityLabel={option.label}
-                  accessibilityState={{ selected }}
-                  className="max-w-full flex-row items-center justify-center gap-1.5 px-4"
-                  style={({ pressed }) => ({
-                    backgroundColor: selected ? colors.surface.selected : colors.surface.card,
-                    borderColor: selected ? colors.border.selected : colors.border.default,
-                    borderRadius: customerRadius.pill,
-                    borderWidth: 1,
-                    minHeight: 44,
-                    opacity: pressed ? 0.76 : 1,
-                  })}
+                  style={[
+                    styles.packagingTile,
+                    selected && styles.packagingTileSelected,
+                  ]}
                 >
-                  {selected ? <Ionicons name="checkmark" size={15} color={colors.brand.primary} /> : null}
-                  <Text style={{ color: selected ? colors.brand.primary : colors.text.primary }} className="flex-shrink text-[13px] font-bold">
+                  <Ionicons
+                    name={iconName}
+                    size={18}
+                    color={selected ? colors.brand.primary : colors.text.secondary}
+                  />
+                  <Text
+                    numberOfLines={2}
+                    style={[
+                      styles.packagingTileText,
+                      selected && styles.packagingTileTextSelected,
+                    ]}
+                  >
                     {option.label}
                   </Text>
-                </Pressable>
+                  {selected ? (
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={18}
+                      color={colors.brand.primary}
+                    />
+                  ) : null}
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={option.label}
+                    onPress={() => selectPackagingType(option.value)}
+                    style={StyleSheet.absoluteFillObject}
+                  />
+                </View>
               );
             })}
           </View>
-          {errors.packagingType ? <FieldError message={errors.packagingType} /> : null}
+          {touchedFields.packagingType && errors.packagingType ? <FieldError message={errors.packagingType} /> : null}
         </View>
       </CreateOrderFormSection>
 
@@ -128,18 +160,21 @@ export function PackagingImageStep({
         description="Nhập kích thước của một kiện. Hệ thống sẽ tính tổng theo số kiện."
       >
         <View className="gap-3">
-          <View className="flex-row gap-2">
+          <View className="flex-row gap-2.5">
             <View className="flex-1">
               <CreateOrderTextField
                 field="lengthCm"
                 label="Dài (cm)"
-                placeholder="Dài"
+                placeholder="0"
                 value={lengthCm}
-                error={errors.lengthCm}
+                error={touchedFields.lengthCm ? errors.lengthCm : undefined}
                 keyboardType="decimal-pad"
                 returnKeyType="next"
-                onChangeText={onChangeLength}
-                onBlur={() => onBlurField('lengthCm')}
+                onChangeText={(val) => {
+                  touchField('lengthCm');
+                  onChangeLength(val);
+                }}
+                onBlur={() => handleFieldBlur('lengthCm')}
                 onSubmitEditing={() => onSubmitField('lengthCm')}
                 registerField={registerField}
                 registerInput={registerInput}
@@ -149,13 +184,16 @@ export function PackagingImageStep({
               <CreateOrderTextField
                 field="widthCm"
                 label="Rộng (cm)"
-                placeholder="Rộng"
+                placeholder="0"
                 value={widthCm}
-                error={errors.widthCm}
+                error={touchedFields.widthCm ? errors.widthCm : undefined}
                 keyboardType="decimal-pad"
                 returnKeyType="next"
-                onChangeText={onChangeWidth}
-                onBlur={() => onBlurField('widthCm')}
+                onChangeText={(val) => {
+                  touchField('widthCm');
+                  onChangeWidth(val);
+                }}
+                onBlur={() => handleFieldBlur('widthCm')}
                 onSubmitEditing={() => onSubmitField('widthCm')}
                 registerField={registerField}
                 registerInput={registerInput}
@@ -165,12 +203,15 @@ export function PackagingImageStep({
               <CreateOrderTextField
                 field="heightCm"
                 label="Cao (cm)"
-                placeholder="Cao"
+                placeholder="0"
                 value={heightCm}
-                error={errors.heightCm}
+                error={touchedFields.heightCm ? errors.heightCm : undefined}
                 keyboardType="decimal-pad"
-                onChangeText={onChangeHeight}
-                onBlur={() => onBlurField('heightCm')}
+                onChangeText={(val) => {
+                  touchField('heightCm');
+                  onChangeHeight(val);
+                }}
+                onBlur={() => handleFieldBlur('heightCm')}
                 onSubmitEditing={() => onSubmitField('heightCm')}
                 registerField={registerField}
                 registerInput={registerInput}
@@ -181,9 +222,17 @@ export function PackagingImageStep({
         </View>
 
         {capacityWarning ? (
-          <View className="flex-row items-start gap-2 rounded-2xl bg-[#FFF7ED] p-4">
+          <View
+            style={{
+              backgroundColor: 'rgba(255, 247, 237, 0.9)',
+              borderColor: 'rgba(251, 191, 36, 0.4)',
+              borderWidth: 1,
+              borderRadius: 16,
+            }}
+            className="flex-row items-start gap-2.5 p-4"
+          >
             <Ionicons name="warning-outline" size={18} color="#B45309" />
-            <Text className="flex-1 text-sm font-semibold leading-5 text-amber-800">{capacityWarning}</Text>
+            <Text className="flex-1 text-xs font-semibold leading-5 text-amber-900">{capacityWarning}</Text>
           </View>
         ) : null}
       </CreateOrderFormSection>
@@ -191,7 +240,7 @@ export function PackagingImageStep({
       <CreateOrderFormSection
         title="Ảnh lô hàng *"
         icon="camera-outline"
-        description="Thêm ảnh để hỗ trợ kiểm tra tình trạng và đóng gói."
+        description="Thêm ảnh để kiểm tra tình trạng và cách đóng gói."
       >
         <View ref={(node) => registerField('documentImage', node)} className="gap-3">
           {image ? (
@@ -199,7 +248,7 @@ export function PackagingImageStep({
               <Image
                 source={{ uri: image.uri }}
                 accessibilityLabel="Ảnh lô hàng đã chọn"
-                className="h-40 w-full rounded-2xl"
+                className="h-44 w-full rounded-2xl"
                 resizeMode="cover"
               />
               <View className="flex-row gap-3">
@@ -207,8 +256,12 @@ export function PackagingImageStep({
                   onPress={onPickImage}
                   accessibilityRole="button"
                   accessibilityLabel="Thay ảnh lô hàng"
-                  style={{ backgroundColor: colors.surface.muted }}
-                  className="min-h-11 flex-1 items-center justify-center rounded-2xl"
+                  style={{
+                    backgroundColor: colors.brand.primarySoft,
+                    borderRadius: 14,
+                    minHeight: 46,
+                  }}
+                  className="flex-1 items-center justify-center"
                 >
                   <Text style={{ color: colors.brand.primary }} className="text-sm font-bold">Thay ảnh</Text>
                 </Pressable>
@@ -217,11 +270,11 @@ export function PackagingImageStep({
                   accessibilityRole="button"
                   accessibilityLabel="Xóa ảnh lô hàng"
                   style={{
-                    backgroundColor: colors.surface.card,
-                    borderColor: colors.border.default,
-                    borderRadius: customerRadius.control,
+                    backgroundColor: '#FFFFFF',
+                    borderColor: 'rgba(189, 214, 231, 0.5)',
+                    borderRadius: 14,
                     borderWidth: 1,
-                    minHeight: 44,
+                    minHeight: 46,
                   }}
                   className="flex-1 items-center justify-center"
                 >
@@ -234,23 +287,33 @@ export function PackagingImageStep({
               onPress={onPickImage}
               accessibilityRole="button"
               accessibilityLabel="Thêm ảnh lô hàng"
-              accessibilityHint="Chụp ảnh hoặc chọn ảnh rõ kiện hàng"
+              accessibilityHint="Chụp ảnh hoặc chọn ảnh từ thư viện"
               style={{
-                backgroundColor: errors.documentImage ? '#FEF2F2' : colors.surface.page,
-                borderColor: errors.documentImage ? '#FCA5A5' : colors.border.default,
-                borderRadius: customerRadius.control,
+                backgroundColor: errors.documentImage ? '#FEF2F2' : 'rgba(238, 246, 252, 0.5)',
+                borderColor: errors.documentImage ? '#FCA5A5' : 'rgba(114, 169, 210, 0.45)',
+                borderRadius: 18,
                 borderStyle: 'dashed',
-                borderWidth: 2,
-                minHeight: 132,
+                borderWidth: 1.5,
+                minHeight: 136,
               }}
-              className="items-center justify-center px-5"
+              className="items-center justify-center px-5 py-6"
             >
-              <View style={{ backgroundColor: colors.surface.muted }} className="h-12 w-12 items-center justify-center rounded-full">
-                <Ionicons name="camera-outline" size={25} color={colors.brand.primary} />
+              <View
+                style={{
+                  backgroundColor: '#FFFFFF',
+                  shadowColor: '#173b59',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.05,
+                  shadowRadius: 4,
+                  elevation: 2,
+                }}
+                className="h-12 w-12 items-center justify-center rounded-full"
+              >
+                <Ionicons name="camera-outline" size={24} color={colors.brand.primary} />
               </View>
               <Text style={{ color: colors.text.primary }} className="mt-3 text-center text-sm font-bold">Thêm ảnh lô hàng</Text>
               <Text style={{ color: colors.text.secondary }} className="mt-1 text-center text-xs leading-5">
-                Chỉ chọn ảnh rõ kiện hàng, không chọn video.
+                Chụp ảnh hoặc chọn từ thư viện.
               </Text>
             </Pressable>
           )}
@@ -322,3 +385,42 @@ function formatCbm(value: number, decimalDigits: number) {
     minimumFractionDigits: 0,
   });
 }
+
+const styles = StyleSheet.create({
+  packagingGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: 10,
+  },
+  packagingTile: {
+    width: '48.5%',
+    minHeight: 58,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 15,
+    backgroundColor: 'rgba(255, 255, 255, 0.96)',
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    overflow: 'hidden',
+  },
+  packagingTileSelected: {
+    backgroundColor: colors.brand.primarySoft,
+    borderColor: colors.brand.primary,
+  },
+  packagingTileText: {
+    flexShrink: 1,
+    flexGrow: 1,
+    marginLeft: 8,
+    marginRight: 6,
+    color: colors.text.primary,
+    fontSize: 13,
+    fontWeight: '600',
+    includeFontPadding: false,
+  },
+  packagingTileTextSelected: {
+    color: colors.brand.primary,
+  },
+});

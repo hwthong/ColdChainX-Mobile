@@ -11,7 +11,7 @@ export default function CustomerLayout() {
         header: ({ route }) => {
           const titleMap: Record<string, string> = {
             home: 'ColdChainX',
-            'create-order': 'Tạo yêu cầu',
+            'create-order': 'Tạo đơn hàng',
             status: 'Đơn hàng',
             tracking: 'Giám sát',
             'chat/index': 'Hỗ trợ',

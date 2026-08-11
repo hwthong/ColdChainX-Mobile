@@ -15,11 +15,16 @@ type CustomerCardProps = {
 
 export function CustomerCard({ children, variant = 'default', padding = customerSpacing.lg, onPress, accessibilityLabel }: CustomerCardProps) {
   const style = {
-    backgroundColor: variant === 'soft' ? colors.surface.cardSoft : colors.surface.card,
-    borderColor: variant === 'outlined' ? colors.border.strong : colors.border.default,
-    borderRadius: customerRadius.card,
+    backgroundColor: variant === 'soft' ? colors.surface.cardSoft : 'rgba(255, 255, 255, 0.96)',
+    borderColor: variant === 'outlined' ? colors.border.strong : 'rgba(189, 214, 231, 0.45)',
+    borderRadius: 18,
     borderWidth: 1,
     padding,
+    shadowColor: '#173b59',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 2,
   } as const;
 
   if (!onPress) return <View style={style}>{children}</View>;
@@ -75,18 +80,65 @@ export function CustomerButton({ label, variant = 'primary', loading = false, di
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel || label}
       accessibilityState={{ busy: loading, disabled: isDisabled }}
-      style={({ pressed }) => [
-        styles.buttonBase,
-        fullWidth && styles.buttonFullWidth,
-        variant === 'primary' && (pressed ? styles.buttonPrimaryPressed : styles.buttonPrimary),
-        variant === 'secondary' && (pressed ? styles.buttonSecondaryPressed : styles.buttonSecondary),
-        variant === 'ghost' && styles.buttonGhost,
-        isDisabled && styles.buttonDisabled,
-      ]}
+      style={({ pressed }) => {
+        const bg = isDisabled
+          ? (isPrimary ? colors.brand.primarySoft : colors.surface.card)
+          : isPrimary
+          ? (pressed ? colors.brand.primaryPressed : colors.brand.primary)
+          : (pressed ? colors.brand.primarySoft : colors.surface.card);
+
+        const border = isDisabled
+          ? (isPrimary ? colors.border.default : colors.border.default)
+          : isPrimary
+          ? (pressed ? colors.brand.primaryPressed : colors.brand.primary)
+          : colors.brand.primary;
+
+        return {
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexDirection: 'row',
+          height: 54,
+          minHeight: 54,
+          borderRadius: 14,
+          paddingHorizontal: customerSpacing.lg,
+          width: fullWidth ? '100%' : 'auto',
+          alignSelf: fullWidth ? 'stretch' : 'flex-start',
+          backgroundColor: bg,
+          borderColor: border,
+          borderWidth: 1,
+        };
+      }}
     >
       <View style={styles.buttonContent}>
-        {loading ? <ActivityIndicator color={isPrimary ? colors.text.onPrimary : colors.brand.primary} /> : icon}
-        <Text style={[styles.buttonText, isPrimary ? styles.buttonTextPrimary : styles.buttonTextSecondary]} numberOfLines={1}>{label}</Text>
+        {loading ? (
+          <ActivityIndicator
+            color={
+              isDisabled
+                ? colors.text.secondary
+                : isPrimary
+                ? '#FFFFFF'
+                : colors.brand.primary
+            }
+          />
+        ) : (
+          icon
+        )}
+        <Text
+          style={[
+            styles.buttonText,
+            {
+              color: isDisabled
+                ? (isPrimary ? colors.text.secondary : colors.text.muted)
+                : isPrimary
+                ? '#FFFFFF'
+                : colors.brand.primary,
+              opacity: 1,
+            },
+          ]}
+          numberOfLines={1}
+        >
+          {label}
+        </Text>
       </View>
     </Pressable>
   );
@@ -205,11 +257,11 @@ const styles = StyleSheet.create({
   buttonBase: {
     alignItems: 'center',
     alignSelf: 'flex-start',
-    borderRadius: 15,
+    borderRadius: 14,
     flexDirection: 'row',
-    height: customerControl.buttonHeight,
+    height: 54,
     justifyContent: 'center',
-    minHeight: customerControl.buttonHeight,
+    minHeight: 54,
     paddingHorizontal: customerSpacing.lg,
   },
   buttonContent: {
@@ -220,7 +272,10 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   buttonDisabled: {
-    opacity: 0.5,
+    backgroundColor: colors.surface.card,
+    borderColor: colors.border.default,
+    borderWidth: 1,
+    opacity: 0.6,
   },
   buttonFullWidth: {
     alignSelf: 'stretch',
@@ -231,30 +286,52 @@ const styles = StyleSheet.create({
   },
   buttonPrimary: {
     backgroundColor: colors.brand.primary,
+    borderColor: colors.brand.primary,
+    borderWidth: 1,
+  },
+  buttonPrimaryDisabled: {
+    backgroundColor: colors.brand.primarySoft,
+    borderColor: colors.border.default,
+    borderWidth: 1,
   },
   buttonPrimaryPressed: {
     backgroundColor: colors.brand.primaryPressed,
+    borderColor: colors.brand.primaryPressed,
+    borderWidth: 1,
   },
   buttonSecondary: {
     backgroundColor: colors.surface.card,
-    borderColor: colors.border.strong,
+    borderColor: colors.brand.primary,
+    borderWidth: 1,
+  },
+  buttonSecondaryDisabled: {
+    backgroundColor: colors.surface.card,
+    borderColor: colors.border.default,
     borderWidth: 1,
   },
   buttonSecondaryPressed: {
     backgroundColor: colors.brand.primarySoft,
-    borderColor: colors.border.selected,
+    borderColor: colors.brand.primary,
     borderWidth: 1,
   },
   buttonText: {
     flexShrink: 1,
     fontSize: 16,
     fontWeight: '700',
+    includeFontPadding: false,
   },
   buttonTextPrimary: {
-    color: colors.text.onPrimary,
+    color: '#FFFFFF',
+    opacity: 1,
+  },
+  buttonTextPrimaryDisabled: {
+    color: colors.text.secondary,
   },
   buttonTextSecondary: {
     color: colors.brand.primary,
+  },
+  buttonTextSecondaryDisabled: {
+    color: colors.text.muted,
   },
   primaryAction: {
     flex: 1,

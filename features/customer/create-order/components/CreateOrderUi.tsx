@@ -13,7 +13,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../../../../constants/colors';
 import { customerRadius } from '../../../../constants/customerTheme';
 import {
-  CustomerBottomActionBar,
   CustomerCard,
   CustomerChoiceCard,
   CustomerSectionHeader,
@@ -178,6 +177,7 @@ type CreateOrderBottomActionBarProps = {
   bottomInset: number;
   onBack: () => void;
   onContinue: () => void;
+  isStepValid?: boolean;
 };
 
 export function CreateOrderBottomActionBar({
@@ -186,16 +186,100 @@ export function CreateOrderBottomActionBar({
   bottomInset,
   onBack,
   onContinue,
+  isStepValid = true,
 }: CreateOrderBottomActionBarProps) {
+  const isNextDisabled = !isStepValid || isLoading;
+  const primaryLabel = currentStep === 4 ? 'Gửi đơn hàng' : 'Tiếp tục';
+  const secondaryLabel = currentStep > 1 ? 'Quay lại' : undefined;
+
   return (
-    <CustomerBottomActionBar
-      primaryLabel={currentStep === 4 ? 'Gửi yêu cầu vận chuyển' : 'Tiếp tục'}
-      primaryLoading={isLoading}
-      onPrimaryPress={onContinue}
-      secondaryLabel={currentStep > 1 ? 'Quay lại' : undefined}
-      onSecondaryPress={currentStep > 1 ? onBack : undefined}
-      bottomInset={bottomInset}
-    />
+    <View
+      style={{
+        width: '100%',
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: colors.surface.card,
+        borderTopWidth: 1,
+        borderTopColor: colors.border.default,
+        paddingHorizontal: 20,
+        paddingTop: 12,
+        paddingBottom: Math.max(bottomInset, 12),
+      }}
+    >
+      {secondaryLabel && onBack ? (
+        <View style={{ flexBasis: '36%', flexGrow: 0, flexShrink: 0, marginRight: 12 }}>
+          <Pressable
+            disabled={isLoading}
+            onPress={onBack}
+            accessibilityRole="button"
+            accessibilityLabel={secondaryLabel}
+            style={({ pressed }) => ({
+              width: '100%',
+              height: 54,
+              borderRadius: 14,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: pressed ? colors.brand.primarySoft : colors.surface.card,
+              borderWidth: 1,
+              borderColor: colors.brand.primary,
+              opacity: isLoading ? 0.6 : 1,
+            })}
+          >
+            <Text
+              style={{
+                color: colors.brand.primary,
+                fontSize: 16,
+                fontWeight: '700',
+                includeFontPadding: false,
+              }}
+            >
+              {secondaryLabel}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Pressable
+          disabled={isNextDisabled}
+          onPress={onContinue}
+          accessibilityRole="button"
+          accessibilityLabel={primaryLabel}
+          accessibilityState={{ disabled: isNextDisabled }}
+          style={({ pressed }) => ({
+            width: '100%',
+            height: 54,
+            borderRadius: 14,
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexDirection: 'row',
+            gap: 8,
+            backgroundColor: isNextDisabled
+              ? colors.brand.primarySoft
+              : pressed
+              ? colors.brand.primaryPressed
+              : colors.brand.primary,
+            borderWidth: 1,
+            borderColor: isNextDisabled
+              ? colors.border.default
+              : colors.brand.primary,
+            opacity: 1,
+          })}
+        >
+          <Text
+            style={{
+              color: isNextDisabled ? colors.text.secondary : '#FFFFFF',
+              fontSize: 16,
+              fontWeight: '700',
+              opacity: 1,
+              includeFontPadding: false,
+            }}
+          >
+            {primaryLabel}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
@@ -218,9 +302,9 @@ export function CreateOrderSuccessModal({
             <View className="mb-4 h-16 w-16 items-center justify-center rounded-full bg-emerald-50">
               <Ionicons name="checkmark-circle" size={42} color={colors.status.success.main} />
             </View>
-            <Text style={{ color: colors.text.primary }} className="text-center text-xl font-bold">Gửi yêu cầu thành công</Text>
+            <Text style={{ color: colors.text.primary }} className="text-center text-xl font-bold">Gửi đơn hàng thành công</Text>
             <Text style={{ color: colors.text.secondary }} className="mt-2 text-center text-sm leading-6">
-              Bộ phận Sales sẽ kiểm duyệt yêu cầu và gửi báo giá cho bạn.
+              Bộ phận Sales sẽ kiểm duyệt đơn hàng và gửi báo giá cho bạn.
             </Text>
           </View>
 
@@ -233,7 +317,7 @@ export function CreateOrderSuccessModal({
             }}
             className="my-6 gap-3 p-4"
           >
-            <InfoRow label="Mã yêu cầu" value={data?.trackingCode || 'Đang cập nhật'} />
+            <InfoRow label="Mã đơn hàng" value={data?.trackingCode || 'Đang cập nhật'} />
             <InfoRow label="Trạng thái" value={translateStatus(data?.status || 'PENDING_REVIEW')} />
           </View>
 

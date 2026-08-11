@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { colors } from '../../../constants/colors';
 
 type CreateOrderStepProgressProps = {
@@ -16,19 +16,75 @@ export function CreateOrderStepProgress({
   const percentage = Math.round((currentStep / totalSteps) * 100);
 
   return (
-    <View style={{ backgroundColor: colors.surface.card, borderBottomColor: colors.border.default }} className="border-b px-5 py-4">
-      <View className="flex-row items-center justify-between">
-        <View>
-          <Text style={{ color: colors.brand.primary }} className="text-[11px] font-bold uppercase tracking-[1.4px]">
+    <View style={styles.container}>
+      <View style={styles.headerRow}>
+        <View style={styles.titleWrapper}>
+          <Text style={styles.stepLabel}>
             Bước {currentStep} trên {totalSteps}
           </Text>
-          <Text style={{ color: colors.text.primary }} className="mt-1 text-[17px] font-bold">{title}</Text>
+          <Text style={styles.titleText}>{title}</Text>
         </View>
-        <Text style={{ color: colors.brand.primary }} className="text-sm font-bold">{percentage}%</Text>
+        <Text style={styles.percentageText}>{percentage}%</Text>
       </View>
-      <View style={{ backgroundColor: colors.brand.primarySoft }} className="mt-3 h-1.5 w-full overflow-hidden rounded-full">
-        <View style={{ width: `${percentage}%`, backgroundColor: colors.brand.primary }} className="h-full rounded-full" />
+      <View style={styles.progressTrack}>
+        <View style={[styles.progressFill, { width: `${percentage}%` }]} />
       </View>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    backgroundColor: 'rgba(255, 255, 255, 0.96)',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(189, 214, 231, 0.45)',
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    shadowColor: '#173b59',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  titleWrapper: {
+    flex: 1,
+  },
+  stepLabel: {
+    color: colors.brand.primary,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+  },
+  titleText: {
+    color: colors.text.primary,
+    fontSize: 16,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  percentageText: {
+    color: colors.brand.primary,
+    fontSize: 14,
+    fontWeight: '700',
+    marginLeft: 12,
+  },
+  progressTrack: {
+    width: '100%',
+    height: 6,
+    backgroundColor: colors.brand.primarySoft,
+    borderRadius: 3,
+    marginTop: 12,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: colors.brand.primary,
+    borderRadius: 3,
+  },
+});

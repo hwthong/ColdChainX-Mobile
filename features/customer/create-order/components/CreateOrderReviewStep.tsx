@@ -106,27 +106,62 @@ function ReviewSection({
   return (
     <CustomerCard>
       <CustomerSectionHeader title={title} icon={icon} actionLabel="Sửa" onAction={onEdit} />
-      <Text style={{ color: colors.text.primary }} className="mt-4 text-base font-bold leading-6">{summary}</Text>
+      <Text style={{ color: colors.text.primary }} className="mt-4 text-base font-bold leading-6">
+        {summary}
+      </Text>
 
       <View className="mt-3">
-        {rows.map(([label, value]) => (
-          <View
-            key={label}
-            className="flex-row items-start gap-4 py-2.5"
-            style={{ borderTopColor: colors.border.default, borderTopWidth: 1 }}
-          >
-            <Text style={{ color: colors.text.secondary }} className="w-[94px] text-xs font-medium leading-5">{label}</Text>
-            <Text style={{ color: colors.text.primary }} className="flex-1 text-right text-sm font-semibold leading-5">{value}</Text>
-          </View>
-        ))}
-        {imageUri ? (
-          <Image
-            source={{ uri: imageUri }}
-            accessibilityLabel="Ảnh lô hàng đã chọn"
-            className="mt-1 h-28 w-28 self-end rounded-xl"
-            resizeMode="cover"
-          />
-        ) : null}
+        {rows.map(([label, value]) => {
+          const isImageRow = label === 'Ảnh lô hàng';
+          const hasImage = isImageRow && Boolean(imageUri);
+
+          return (
+            <View
+              key={label}
+              className="flex-row items-center justify-between gap-4 py-2.5"
+              style={{ borderTopColor: colors.border.default, borderTopWidth: 1 }}
+            >
+              <Text style={{ color: colors.text.secondary }} className="w-[94px] text-xs font-medium leading-5">
+                {label}
+              </Text>
+
+              {hasImage && imageUri ? (
+                <View className="flex-row items-center gap-3">
+                  <Text style={{ color: colors.text.primary }} className="text-sm font-semibold leading-5">
+                    1 ảnh đã chọn
+                  </Text>
+                  <View
+                    style={{
+                      width: 56,
+                      height: 56,
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor: 'rgba(189, 214, 231, 0.6)',
+                      overflow: 'hidden',
+                      backgroundColor: colors.surface.page,
+                      shadowColor: '#173b59',
+                      shadowOffset: { width: 0, height: 1 },
+                      shadowOpacity: 0.05,
+                      shadowRadius: 2,
+                      elevation: 1,
+                    }}
+                  >
+                    <Image
+                      source={{ uri: imageUri }}
+                      accessibilityLabel="Ảnh lô hàng đã chọn"
+                      style={{ width: '100%', height: '100%' }}
+                      resizeMode="cover"
+                    />
+                  </View>
+                </View>
+              ) : (
+                <Text style={{ color: colors.text.primary }} className="flex-1 text-right text-sm font-semibold leading-5">
+                  {value}
+                </Text>
+              )}
+            </View>
+          );
+        })}
       </View>
     </CustomerCard>
   );

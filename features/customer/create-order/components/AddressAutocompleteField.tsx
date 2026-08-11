@@ -1,5 +1,5 @@
 import React, { forwardRef, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Keyboard, Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { colors } from '../../../../constants/colors';
@@ -10,6 +10,7 @@ type AddressAutocompleteFieldProps = {
   value: string;
   onChangeText: (value: string) => void;
   onSelectAddress: (address: string) => void;
+  destinationCity?: string;
   error?: string;
   label?: string;
   required?: boolean;
@@ -23,6 +24,7 @@ export const AddressAutocompleteField = forwardRef<TextInput, AddressAutocomplet
     value,
     onChangeText,
     onSelectAddress,
+    destinationCity,
     error,
     label = 'Địa chỉ giao hàng',
     required = true,
@@ -40,12 +42,16 @@ export const AddressAutocompleteField = forwardRef<TextInput, AddressAutocomplet
     if (selectedAddressRef.current && value === selectedAddressRef.current) return;
     selectedAddressRef.current = null;
 
-    const query = value.trim();
-    if (query.length < 3) {
+    const rawQuery = value.trim();
+    if (rawQuery.length < 3) {
       setSuggestions([]);
       setSearchState('idle');
       return;
     }
+
+    const searchQuery = destinationCity && !rawQuery.toLowerCase().includes(destinationCity.toLowerCase())
+      ? `${rawQuery}, ${destinationCity}`
+      : rawQuery;
 
     const currentRequestId = requestIdRef.current + 1;
     requestIdRef.current = currentRequestId;
@@ -54,7 +60,7 @@ export const AddressAutocompleteField = forwardRef<TextInput, AddressAutocomplet
     const timer = setTimeout(() => {
       void (async () => {
         try {
-          const results = await searchGoongAddressSuggestions(query);
+          const results = await searchGoongAddressSuggestions(searchQuery);
           if (requestIdRef.current !== currentRequestId) return;
           setSuggestions(results);
           setSearchState(results.length > 0 ? 'idle' : 'empty');
@@ -67,7 +73,7 @@ export const AddressAutocompleteField = forwardRef<TextInput, AddressAutocomplet
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [value]);
+  }, [value, destinationCity]);
 
   const clearValue = () => {
     requestIdRef.current += 1;
@@ -82,6 +88,7 @@ export const AddressAutocompleteField = forwardRef<TextInput, AddressAutocomplet
     selectedAddressRef.current = suggestion.address.trim();
     setSuggestions([]);
     setSearchState('idle');
+    Keyboard.dismiss();
     onSelectAddress(suggestion.address);
   };
 
@@ -95,19 +102,24 @@ export const AddressAutocompleteField = forwardRef<TextInput, AddressAutocomplet
       <View
         className="flex-row items-center px-4"
         style={{
-          backgroundColor: colors.surface.card,
-          borderColor: error ? '#FCA5A5' : isFocused ? colors.border.focus : colors.border.default,
-          borderRadius: customerRadius.control,
+          backgroundColor: '#FFFFFF',
+          borderColor: error ? '#FCA5A5' : isFocused ? colors.border.focus : 'rgba(189, 214, 231, 0.5)',
+          borderRadius: 16,
           borderWidth: 1,
-          minHeight: customerControl.height,
+          minHeight: 54,
           opacity: disabled ? 0.6 : 1,
+          shadowColor: isFocused ? colors.brand.primary : '#173b59',
+          shadowOffset: { width: 0, height: isFocused ? 2 : 1 },
+          shadowOpacity: isFocused ? 0.08 : 0.03,
+          shadowRadius: isFocused ? 4 : 2,
+          elevation: isFocused ? 2 : 1,
         }}
       >
-        <Ionicons name="location-outline" size={18} color={colors.brand.primary} />
+        <Ionicons name="location-outline" size={19} color={colors.brand.primary} />
         <TextInput
           ref={ref}
           className="flex-1 px-3 text-[14px] font-medium"
-          style={{ minHeight: customerControl.height, color: colors.text.primary }}
+          style={{ minHeight: 54, color: colors.text.primary }}
           value={value}
           onChangeText={onChangeText}
           onFocus={() => setIsFocused(true)}
@@ -124,19 +136,24 @@ export const AddressAutocompleteField = forwardRef<TextInput, AddressAutocomplet
         {searchState === 'loading' ? <ActivityIndicator size="small" color={colors.brand.primary} accessibilityLabel="Đang tải gợi ý địa chỉ" /> : null}
         {value.length > 0 && !disabled ? (
           <Pressable onPress={clearValue} accessibilityRole="button" accessibilityLabel="Xóa địa chỉ giao hàng" className="h-10 w-10 items-center justify-center">
-            <Ionicons name="close-circle" size={19} color={colors.text.secondary} />
+            <Ionicons name="close-circle" size={19} color={colors.text.muted} />
           </Pressable>
         ) : null}
       </View>
       {error ? <Text accessibilityLiveRegion="polite" className="text-xs font-medium text-red-600">{error}</Text> : null}
       {showSuggestions && suggestions.length > 0 ? (
         <View
-          className="overflow-hidden shadow-sm"
+          className="overflow-hidden"
           style={{
-            backgroundColor: colors.surface.card,
-            borderColor: colors.border.default,
-            borderRadius: customerRadius.control,
+            backgroundColor: 'rgba(255, 255, 255, 0.98)',
+            borderColor: 'rgba(189, 214, 231, 0.45)',
+            borderRadius: 18,
             borderWidth: 1,
+            shadowColor: '#173b59',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.08,
+            shadowRadius: 12,
+            elevation: 5,
           }}
         >
           {suggestions.map((suggestion, index) => (
@@ -145,8 +162,12 @@ export const AddressAutocompleteField = forwardRef<TextInput, AddressAutocomplet
               onPress={() => selectSuggestion(suggestion)}
               accessibilityRole="button"
               accessibilityLabel={`Chọn địa chỉ ${suggestion.address}`}
-              style={({ pressed }) => ({ backgroundColor: pressed ? colors.surface.selected : colors.surface.card })}
-              className="flex-row gap-3 px-4 py-3"
+              style={({ pressed }) => ({
+                backgroundColor: pressed ? colors.brand.primarySoft : '#FFFFFF',
+                borderTopWidth: index > 0 ? 1 : 0,
+                borderTopColor: 'rgba(238, 246, 252, 0.8)',
+              })}
+              className="flex-row gap-3 px-4 py-3.5"
             >
               <Ionicons name="location-outline" size={18} color={colors.brand.primary} />
               <View className="flex-1">

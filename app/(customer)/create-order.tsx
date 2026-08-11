@@ -1,12 +1,16 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   BackHandler,
   Keyboard,
   KeyboardAvoidingView,
   Linking,
   Platform,
+  Pressable,
   ScrollView,
+  StyleSheet,
+  Text,
   TextInput,
   View,
 } from 'react-native';
@@ -15,11 +19,11 @@ import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppToast, ToastType } from '../../components/AppToast';
+import { colors } from '../../constants/colors';
 import { customerColors } from '../../constants/customerTheme';
 import { CargoInformationStep } from '../../features/customer/create-order/components/CargoInformationStep';
 import { CreateOrderReviewStep } from '../../features/customer/create-order/components/CreateOrderReviewStep';
 import {
-  CreateOrderBottomActionBar,
   CreateOrderSuccessModal,
   type CreateOrderSuccessData,
 } from '../../features/customer/create-order/components/CreateOrderUi';
@@ -54,7 +58,7 @@ const STEP_DETAILS: Record<CreateOrderStep, { title: string }> = {
   1: { title: 'Tuyến và lịch vận chuyển' },
   2: { title: 'Thông tin hàng hóa' },
   3: { title: 'Đóng gói và hình ảnh' },
-  4: { title: 'Kiểm tra và gửi yêu cầu' },
+  4: { title: 'Kiểm tra và gửi đơn hàng' },
 };
 
 export default function CreateOrderScreen() {
@@ -257,6 +261,7 @@ export default function CreateOrderScreen() {
       setSelectedRouteId(routeId);
       setSelectedScheduleId('');
       setSelectedStopId('');
+      setDestAddressText('');
       setBookingOptions(null);
       setBookingError(null);
       setIsLoadingBooking(false);
@@ -266,6 +271,7 @@ export default function CreateOrderScreen() {
       routeId: undefined,
       scheduleId: undefined,
       dropoffStopId: undefined,
+      destAddressText: undefined,
     }));
   };
 
@@ -424,7 +430,7 @@ export default function CreateOrderScreen() {
     } catch (error) {
       if (__DEV__) console.error('[CreateOrder] create order failed', error);
 
-      let errorMessage = 'Không thể tạo yêu cầu vận chuyển. Vui lòng kiểm tra lại thông tin.';
+      let errorMessage = 'Không thể tạo đơn hàng. Vui lòng kiểm tra lại thông tin.';
       if (error instanceof ApiClientError) {
         if (error.status === 401) {
           errorMessage = 'Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.';
@@ -578,7 +584,7 @@ export default function CreateOrderScreen() {
 
   // ─── Render ──────────────────────────────────────────────────────────────────
   return (
-    <View className="flex-1" style={{ backgroundColor: customerColors.background }}>
+    <View className="flex-1" style={{ backgroundColor: colors.surface.page }}>
       <View className="px-5 pb-2 pt-4">
         <CreateOrderStepProgress currentStep={currentStep} totalSteps={4} {...STEP_DETAILS[currentStep]} />
       </View>
@@ -632,8 +638,11 @@ export default function CreateOrderScreen() {
             }}
             onSelectStop={(stopId) => {
               setHasUserEditedForm(true);
-              setSelectedStopId(stopId);
-              setErrors((current) => ({ ...current, dropoffStopId: undefined }));
+              if (stopId !== selectedStopId) {
+                setSelectedStopId(stopId);
+                setDestAddressText('');
+              }
+              setErrors((current) => ({ ...current, dropoffStopId: undefined, destAddressText: undefined }));
             }}
             onChangeAddress={(value) => updateTextField('destAddressText', value, setDestAddressText)}
             onSelectAddress={(address) => {
@@ -712,13 +721,56 @@ export default function CreateOrderScreen() {
 
       </KeyboardAvoidingView>
 
-      <CreateOrderBottomActionBar
-        currentStep={currentStep}
-        isLoading={isLoading}
-        bottomInset={insets.bottom}
-        onBack={handleBack}
-        onContinue={handleContinue}
-      />
+      {(() => {
+        const isStepValid = currentStep === 4 || Object.keys(validateCreateOrderStep(currentStep as 1 | 2 | 3, formValues, routeOptions, bookingOptions)).length === 0;
+        const primaryLabel = currentStep === 4 ? 'Gửi đơn hàng' : 'Tiếp tục';
+
+        return (
+          <View style={[styles.localFooter, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+            {currentStep > 1 ? (
+              <View style={styles.localBackButtonVisual}>
+                <Text style={styles.localBackButtonText}>
+                  Quay lại
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Quay lại"
+                  onPress={handleBack}
+                  style={StyleSheet.absoluteFillObject}
+                />
+              </View>
+            ) : null}
+
+            <View
+              style={[
+                styles.localNextButtonVisual,
+                !isStepValid && styles.localNextButtonVisualDisabled,
+              ]}
+            >
+              {isLoading ? (
+                <ActivityIndicator color={!isStepValid ? colors.text.secondary : '#FFFFFF'} />
+              ) : null}
+              <Text
+                style={[
+                  styles.localNextButtonText,
+                  !isStepValid && styles.localNextButtonTextDisabled,
+                ]}
+              >
+                {primaryLabel}
+              </Text>
+
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={primaryLabel}
+                accessibilityState={{ disabled: !isStepValid }}
+                disabled={!isStepValid}
+                onPress={handleContinue}
+                style={StyleSheet.absoluteFillObject}
+              />
+            </View>
+          </View>
+        );
+      })()}
 
       <CreateOrderSuccessModal
         data={successData}
@@ -749,7 +801,7 @@ function getCapacityWarning(weightValue: string, lengthValue: string, widthValue
     return 'Khối lượng dự kiến đã vượt khoảng 1.5 tấn. Backend sẽ kiểm tra năng lực tuyến và có thể yêu cầu điều chỉnh đơn.';
   }
   if (Number.isFinite(weightKg) && weightKg >= 1000) {
-    return 'Khối lượng dự kiến đang gần ngưỡng 1-1.5 tấn. Vui lòng kiểm tra lại trước khi gửi yêu cầu.';
+    return 'Khối lượng dự kiến đang gần ngưỡng 1-1.5 tấn. Vui lòng kiểm tra lại trước khi gửi đơn hàng.';
   }
   if (Number.isFinite(lengthCm) && Number.isFinite(widthCm) && Number.isFinite(heightCm) && Number.isFinite(qty)) {
     const estimatedCbm = (lengthCm * widthCm * heightCm * qty) / 1_000_000;
@@ -807,7 +859,7 @@ function getCreateOrderErrorMessage(error: unknown) {
     return 'Ảnh lô hàng không hợp lệ.';
   }
 
-  return 'Không thể tạo yêu cầu vận chuyển. Vui lòng kiểm tra lại thông tin.';
+  return 'Không thể tạo đơn hàng. Vui lòng kiểm tra lại thông tin.';
 }
 
 function getCreateOrderServerErrorField(error: unknown): CreateOrderFieldKey | null {
@@ -861,3 +913,71 @@ function getNextInputField(field: CreateOrderFieldKey): CreateOrderFieldKey | nu
   };
   return nextFields[field] ?? null;
 }
+
+const styles = StyleSheet.create({
+  localFooter: {
+    flexDirection: 'row',
+    gap: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(189, 214, 231, 0.4)',
+    shadowColor: '#173b59',
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  localBackButtonVisual: {
+    flex: 0.9,
+    height: 54,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.96)',
+    borderWidth: 1,
+    borderColor: colors.brand.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  localBackButtonText: {
+    color: colors.brand.primary,
+    fontSize: 16,
+    fontWeight: '700',
+    includeFontPadding: false,
+  },
+  localNextButtonVisual: {
+    flex: 1.6,
+    height: 54,
+    borderRadius: 16,
+    backgroundColor: colors.brand.primary,
+    borderWidth: 1,
+    borderColor: colors.brand.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    overflow: 'hidden',
+    shadowColor: colors.brand.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  localNextButtonVisualDisabled: {
+    backgroundColor: colors.brand.primarySoft,
+    borderColor: colors.border.default,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  localNextButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+    includeFontPadding: false,
+    textAlign: 'center',
+  },
+  localNextButtonTextDisabled: {
+    color: colors.text.secondary,
+  },
+});

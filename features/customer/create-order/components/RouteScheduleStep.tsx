@@ -140,6 +140,7 @@ export function RouteScheduleStep({
             <AddressAutocompleteField
               ref={(node) => registerInput('destAddressText', node)}
               value={address}
+              destinationCity={selectedRoute ? formatCityName(selectedRoute.destCity) : undefined}
               error={errors.destAddressText}
               label="Địa chỉ giao hàng"
               onChangeText={onChangeAddress}
@@ -329,20 +330,25 @@ function ScheduleOptions({
                 accessibilityRole="button"
                 accessibilityLabel={`Ngày ${group.dayOfWeekLabel} ${group.dateLabel}`}
                 style={{
-                  backgroundColor: isSelected ? colors.surface.selected : colors.surface.card,
-                  borderColor: isSelected ? colors.border.selected : colors.border.default,
+                  backgroundColor: isSelected ? colors.brand.primarySoft : '#FFFFFF',
+                  borderColor: isSelected ? colors.brand.primary : 'rgba(189, 214, 231, 0.5)',
                   borderWidth: 1,
-                  borderRadius: customerRadius.control,
-                  paddingVertical: 8,
+                  borderRadius: 14,
+                  paddingVertical: 9,
                   paddingHorizontal: 16,
                   alignItems: 'center',
                   minWidth: 64,
+                  shadowColor: isSelected ? colors.brand.primary : '#173b59',
+                  shadowOffset: { width: 0, height: isSelected ? 2 : 1 },
+                  shadowOpacity: isSelected ? 0.1 : 0.03,
+                  shadowRadius: isSelected ? 4 : 2,
+                  elevation: isSelected ? 2 : 1,
                 }}
               >
-                <Text style={{ color: isSelected ? colors.text.brand : colors.text.primary }} className="text-xs font-bold">
+                <Text style={{ color: isSelected ? colors.brand.primary : colors.text.primary }} className="text-xs font-bold">
                   {group.dayOfWeekLabel}
                 </Text>
-                <Text style={{ color: isSelected ? colors.brand.primary : colors.text.secondary }} className="text-xs">
+                <Text style={{ color: isSelected ? colors.brand.primary : colors.text.secondary }} className="mt-0.5 text-xs font-medium">
                   {group.dateLabel}
                 </Text>
               </Pressable>
@@ -366,16 +372,21 @@ function ScheduleOptions({
                   accessibilityRole="button"
                   accessibilityLabel={`Khởi hành lúc ${timeDisplay}`}
                   style={{
-                    backgroundColor: isSelected ? colors.surface.selected : colors.surface.card,
-                    borderColor: isSelected ? colors.border.selected : colors.border.default,
+                    backgroundColor: isSelected ? colors.brand.primarySoft : '#FFFFFF',
+                    borderColor: isSelected ? colors.brand.primary : 'rgba(189, 214, 231, 0.5)',
                     borderWidth: 1,
-                    borderRadius: customerRadius.control,
+                    borderRadius: 14,
                     paddingVertical: 10,
                     paddingHorizontal: 20,
                     alignItems: 'center',
+                    shadowColor: isSelected ? colors.brand.primary : '#173b59',
+                    shadowOffset: { width: 0, height: isSelected ? 2 : 1 },
+                    shadowOpacity: isSelected ? 0.1 : 0.03,
+                    shadowRadius: isSelected ? 4 : 2,
+                    elevation: isSelected ? 2 : 1,
                   }}
                 >
-                  <Text style={{ color: isSelected ? colors.text.brand : colors.text.primary }} className="text-sm font-bold">
+                  <Text style={{ color: isSelected ? colors.brand.primary : colors.text.primary }} className="text-sm font-bold">
                     {timeDisplay}
                   </Text>
                 </Pressable>
@@ -389,16 +400,16 @@ function ScheduleOptions({
       {currentSchedule ? (
         <View
           style={{
-            backgroundColor: colors.surface.selected,
-            borderColor: colors.border.focus,
+            backgroundColor: 'rgba(226, 239, 248, 0.65)',
+            borderColor: 'rgba(114, 169, 210, 0.4)',
             borderWidth: 1,
-            borderRadius: customerRadius.control,
-            padding: 12,
+            borderRadius: 16,
+            padding: 14,
             gap: 6,
           }}
         >
           <View className="flex-row items-center justify-between">
-            <Text style={{ color: colors.brand.primary }} className="text-xs font-semibold">
+            <Text style={{ color: colors.brand.primary }} className="text-xs font-bold">
               Nhận hàng trước {currentSchedule.cutOffTime.slice(0, 5)}
             </Text>
             <Text style={{ color: colors.text.primary }} className="text-xs font-bold">
@@ -406,7 +417,7 @@ function ScheduleOptions({
             </Text>
           </View>
           <Text style={{ color: colors.text.secondary }} className="text-[11px] leading-4">
-            * Lịch dự kiến, sẽ được xác nhận khi yêu cầu vận chuyển được xử lý.
+            * Lịch dự kiến, sẽ được xác nhận khi đơn hàng được xử lý.
           </Text>
         </View>
       ) : null}
