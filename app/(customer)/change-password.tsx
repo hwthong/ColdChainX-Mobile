@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Pressable, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { AppPressable as Pressable } from '../../components/AppPressable';
 import { colors } from '../../constants/colors';
 import { useAuthStore } from '../../store/useAuthStore';
 import { changePassword } from '../../services/authApi';

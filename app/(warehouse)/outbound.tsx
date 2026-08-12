@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import { useFocusEffect } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
@@ -6,20 +7,22 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   ScrollView,
   Text,
   View,
 } from 'react-native';
 
+import { AppPressable as Pressable } from '../../components/AppPressable';
 import { AppButton } from '../../components/AppButton';
 import { AppInfoRow } from '../../components/AppInfoRow';
 import { AppInput } from '../../components/AppInput';
 import { AppMessage } from '../../components/AppMessage';
 import { EmptyState } from '../../components/EmptyState';
 import { StatusBadge } from '../../components/StatusBadge';
+import { colors } from '../../constants/colors';
 import {
   WH_COLORS,
+  STATUS_STYLES,
   formatDateTimeVi,
   type MessageTone,
 } from '../../constants/warehouseTheme';
@@ -538,7 +541,7 @@ export default function WarehouseOutboundScreen() {
           {notice ? <View style={{ marginBottom: 12 }}><AppMessage text={notice.text} tone={notice.tone} /></View> : null}
 
           {activeSection === 'planned' ? (
-            <Section title="Chuyến chờ bốc hàng" subtitle="Trip PLANNED, LPN ALLOCATED">
+            <Section title="Chuyến chờ bốc hàng" subtitle="Các chuyến cần bắt đầu bốc hàng lên xe">
               {loadingBySection.planned ? (
                 <OutboundLoadingState />
               ) : errorBySection.planned ? (
@@ -566,7 +569,7 @@ export default function WarehouseOutboundScreen() {
           ) : null}
 
           {activeSection === 'picking' ? (
-            <Section title="Đang bốc hàng" subtitle="Trip PICKING, scan từng LPN LOADING">
+            <Section title="Đang bốc hàng" subtitle="Quét từng mã LPN tại kệ lấy hàng">
               {loadingBySection.picking ? (
                 <OutboundLoadingState />
               ) : errorBySection.picking ? (
@@ -653,7 +656,7 @@ export default function WarehouseOutboundScreen() {
           ) : null}
 
           {activeSection === 'seal' ? (
-            <Section title="Chờ kẹp chì" subtitle="Trip LOADING_COMPLETED, LPN RELEASED">
+            <Section title="Chờ kẹp chì" subtitle="Kẹp chì bảo mật và hoàn tất xuất kho">
               {loadingBySection.seal ? (
                 <OutboundLoadingState />
               ) : errorBySection.seal ? (
@@ -756,6 +759,38 @@ function OutboundErrorState({
   );
 }
 
+function formatTripTimeRange(startTime?: string | null, endTime?: string | null, fallback = 'N/A'): string {
+  if (!startTime) return fallback;
+  const startDate = new Date(startTime);
+  if (Number.isNaN(startDate.getTime())) return startTime;
+
+  const startDayStr = `${String(startDate.getDate()).padStart(2, '0')}/${String(startDate.getMonth() + 1).padStart(2, '0')}`;
+  const startTimeStr = `${String(startDate.getHours()).padStart(2, '0')}:${String(startDate.getMinutes()).padStart(2, '0')}`;
+
+  if (!endTime) return `${startDayStr} · ${startTimeStr}`;
+
+  const endDate = new Date(endTime);
+  if (Number.isNaN(endDate.getTime())) return `${startDayStr} · ${startTimeStr}`;
+
+  const endDayStr = `${String(endDate.getDate()).padStart(2, '0')}/${String(endDate.getMonth() + 1).padStart(2, '0')}`;
+  const endTimeStr = `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`;
+
+  if (startDayStr === endDayStr) {
+    return `${startDayStr} · ${startTimeStr} – ${endTimeStr}`;
+  }
+
+  return `${startDayStr} ${startTimeStr} – ${endDayStr} ${endTimeStr}`;
+}
+
+function formatDurationVi(hours?: number | null): string | null {
+  if (typeof hours !== 'number' || !Number.isFinite(hours) || hours <= 0) return null;
+  const h = Math.floor(hours);
+  const m = Math.round((hours - h) * 60);
+  if (h > 0 && m > 0) return `${h} giờ ${m} phút`;
+  if (h > 0) return `${h} giờ`;
+  return `${m} phút`;
+}
+
 function PlannedTripCard({
   trip,
   openingDocument,
@@ -773,39 +808,101 @@ function PlannedTripCard({
   const allocatedLpns = toNumber(trip.allocatedLpns);
   const canStart = normalizeStatus(trip.status) === 'PLANNED' && totalLpns > 0 && allocatedLpns === totalLpns;
 
+  const timeDisplay = formatTripTimeRange(trip.plannedStartTime, trip.plannedEndTime);
+  const durationDisplay = formatDurationVi(trip.estimatedDurationHours);
+
   return (
     <TripCard title={`Chuyến ${formatShortId(trip.tripId)}`} status={trip.status}>
       <AppInfoRow label="Xe" value={trip.vehicle || 'N/A'} />
       <AppInfoRow label="Tài xế" value={trip.driver || 'N/A'} />
-      <AppInfoRow label="Bắt đầu" value={formatDateTimeVi(trip.plannedStartTime)} />
-      <AppInfoRow label="Kết thúc" value={formatDateTimeVi(trip.plannedEndTime)} />
-      <AppInfoRow label="LPN" value={`${allocatedLpns}/${totalLpns} ALLOCATED`} />
-      {trip.estimatedDurationHours !== undefined && trip.estimatedDurationHours !== null ? (
-        <AppInfoRow label="Thời lượng" value={`${trip.estimatedDurationHours} giờ`} />
-      ) : null}
+      <AppInfoRow label="Thời gian" value={timeDisplay} />
+      <AppInfoRow label="Tiến độ LPN" value={`${allocatedLpns}/${totalLpns} LPN sẵn sàng`} />
+      {durationDisplay ? <AppInfoRow label="Thời lượng" value={durationDisplay} /> : null}
+
       {!canStart ? (
-        <View style={{ marginTop: 12 }}>
-          <AppMessage tone="warning" text="Chuyến chưa đủ điều kiện bắt đầu bốc hàng." />
+        <View style={{ marginTop: 10 }}>
+          <AppMessage
+            tone="warning"
+            text={
+              normalizeStatus(trip.status) !== 'PLANNED'
+                ? `Chuyến đang ở trạng thái ${STATUS_STYLES[normalizeStatus(trip.status)]?.label || trip.status}.`
+                : totalLpns === 0
+                ? 'Chuyến chưa có LPN nào.'
+                : 'Chưa đủ LPN sẵn sàng để bắt đầu bốc hàng.'
+            }
+          />
         </View>
       ) : null}
-      <View style={{ marginTop: 14, flexDirection: 'row', gap: 8 }}>
-        <AppButton
-          icon="document-text-outline"
-          label="LIFO"
-          onPress={onOpenLifo}
-          loading={openingDocument}
-          compact
-          variant="secondary"
-        />
-        <AppButton
-          icon="play-outline"
-          label="Bắt đầu bốc"
-          onPress={onStart}
-          loading={starting}
-          disabled={!canStart}
-          compact
-        />
-      </View>
+
+      <Pressable
+        onPress={onOpenLifo}
+        disabled={openingDocument}
+        style={({ pressed }) => ({
+          alignSelf: 'flex-start',
+          height: 42,
+          marginTop: 12,
+          paddingHorizontal: 12,
+          borderRadius: 12,
+          borderWidth: 1,
+          borderColor: colors.border.default,
+          backgroundColor: pressed ? colors.brand.primarySoft : '#FFFFFF',
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 6,
+        })}
+      >
+        {openingDocument ? (
+          <ActivityIndicator size="small" color={colors.brand.primary} />
+        ) : (
+          <Ionicons name="document-text-outline" size={18} color={colors.brand.primary} />
+        )}
+        <Text style={{ color: colors.brand.primary, fontSize: 14, fontWeight: '600' }}>
+          Sơ đồ LIFO
+        </Text>
+      </Pressable>
+
+      <Pressable
+        onPress={onStart}
+        disabled={!canStart || starting}
+        style={({ pressed }) => ({
+          width: '100%',
+          height: 52,
+          marginTop: 12,
+          borderRadius: 16,
+          borderWidth: 1,
+          borderColor: canStart ? colors.brand.primary : colors.border.default,
+          backgroundColor: !canStart
+            ? colors.brand.primarySoft
+            : pressed
+            ? colors.brand.primaryPressed
+            : colors.brand.primary,
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexDirection: 'row',
+          gap: 8,
+          overflow: 'hidden',
+        })}
+      >
+        {starting ? (
+          <ActivityIndicator size="small" color={canStart ? '#FFFFFF' : colors.text.secondary} />
+        ) : (
+          <Ionicons
+            name="play-outline"
+            size={20}
+            color={canStart ? '#FFFFFF' : colors.text.secondary}
+          />
+        )}
+        <Text
+          style={{
+            color: canStart ? '#FFFFFF' : colors.text.secondary,
+            fontSize: 15,
+            fontWeight: '700',
+          }}
+        >
+          {starting ? 'Đang xử lý...' : 'Bắt đầu bốc hàng'}
+        </Text>
+      </Pressable>
     </TripCard>
   );
 }
@@ -844,14 +941,15 @@ function ReadyToSealTripCard({
   selected: boolean;
   onPress: () => void;
 }) {
+  const timeDisplay = formatTripTimeRange(trip.plannedStartTime, trip.plannedEndTime);
+
   return (
     <Pressable onPress={onPress}>
       <TripCard title={`Chuyến ${formatShortId(trip.tripId)}`} status={trip.status} selected={selected}>
         <AppInfoRow label="Xe" value={trip.vehicle || 'N/A'} />
         <AppInfoRow label="Tài xế" value={trip.driver || 'N/A'} />
-        <AppInfoRow label="Bắt đầu" value={formatDateTimeVi(trip.plannedStartTime)} />
-        <AppInfoRow label="Kết thúc" value={formatDateTimeVi(trip.plannedEndTime)} />
-        <AppInfoRow label="LPN" value={`${toNumber(trip.releasedLpns)}/${toNumber(trip.totalLpns)} RELEASED`} />
+        <AppInfoRow label="Thời gian" value={timeDisplay} />
+        <AppInfoRow label="Tiến độ LPN" value={`${toNumber(trip.releasedLpns)}/${toNumber(trip.totalLpns)} LPN sẵn sàng xuất kho`} />
       </TripCard>
     </Pressable>
   );

@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
+import { AppPressable as Pressable } from '../AppPressable';
 import { colors } from '../../constants/colors';
 import { StatusBadge } from '../StatusBadge';
 import type { InboundScheduleResponse } from '../../services/asnApi';

@@ -1,7 +1,8 @@
 import React, { type ReactNode } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View, type AccessibilityRole } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View, type AccessibilityRole } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
+import { AppPressable as Pressable } from '../../AppPressable';
 import { colors } from '../../../constants/colors';
 import { customerControl, customerRadius, customerSpacing } from '../../../constants/customerTheme';
 

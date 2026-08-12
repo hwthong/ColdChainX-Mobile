@@ -3,7 +3,6 @@ import { useRouter } from 'expo-router';
 import {
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   ScrollView,
   Text,
   TextInput,
@@ -12,6 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
+import { AppPressable as Pressable } from '../../components/AppPressable';
 import { AuthBackground } from '../../components/AuthBackground';
 import { colors } from '../../constants/colors';
 import { getApiErrorMessage } from '../../services/apiClient';

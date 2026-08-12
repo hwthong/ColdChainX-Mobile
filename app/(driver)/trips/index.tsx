@@ -1,8 +1,9 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, FlatList, ActivityIndicator, Pressable, RefreshControl } from 'react-native';
+import { View, Text, FlatList, ActivityIndicator, RefreshControl } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
+import { AppPressable as Pressable } from '../../../components/AppPressable';
 import { colors } from '../../../constants/colors';
 import { driverApi, TripListDto } from '../../../services/driverApi';
 import { formatDateTimeVi } from '../../../constants/warehouseTheme';

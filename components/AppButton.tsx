@@ -1,7 +1,8 @@
 import React from 'react';
-import { Pressable, Text, ActivityIndicator } from 'react-native';
+import { Text, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
+import { AppPressable as Pressable } from './AppPressable';
 import { colors } from '../constants/colors';
 
 interface AppButtonProps {

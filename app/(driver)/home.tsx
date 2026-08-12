@@ -1,9 +1,10 @@
 import React, { useState, useCallback } from 'react';
-import { Text, View, ActivityIndicator, Pressable } from 'react-native';
+import { Text, View, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
+import { AppPressable as Pressable } from '../../components/AppPressable';
 import { colors } from '../../constants/colors';
 import { GlassWidget } from '../../components/GlassWidget';
 import { useAuthStore } from '../../store/useAuthStore';

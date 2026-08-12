@@ -8,7 +8,6 @@ import {
   Alert,
   Image,
   Linking,
-  Pressable,
   ScrollView,
   Switch,
   Text,
@@ -16,6 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AppPressable as Pressable } from '../../../../components/AppPressable';
 import { colors } from '../../../../constants/colors';
 import { AppButton } from '../../../../components/AppButton';
 import { AppInput } from '../../../../components/AppInput';

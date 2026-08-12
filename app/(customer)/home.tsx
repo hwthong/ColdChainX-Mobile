@@ -1,7 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -11,6 +10,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 
+import { AppPressable as Pressable } from '../../components/AppPressable';
 import { colors } from '../../constants/colors';
 import { getCustomerAsns } from '../../services/asnApi';
 import { customerApi, CustomerOrderSummaryResponse } from '../../services/customerApi';

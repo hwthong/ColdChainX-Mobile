@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, AppState, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, AppState, RefreshControl, ScrollView, Text, View } from 'react-native';
 
+import { AppPressable as Pressable } from '../../../components/AppPressable';
 import { GoongRouteMap } from '../../../components/customer/GoongRouteMap';
 import { TemperatureChart } from '../../../components/customer/TemperatureChart';
 import { getApiErrorMessage } from '../../../services/apiClient';
