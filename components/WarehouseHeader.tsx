@@ -12,7 +12,7 @@ interface WarehouseHeaderProps {
 }
 
 /**
- * Warehouse header styled with Web blue palette dark navy theme.
+ * Unified Light Warehouse Header styled with clean light theme baseline.
  */
 export function WarehouseHeader({ title, showBackButton = false }: WarehouseHeaderProps) {
   const insets = useSafeAreaInsets();
@@ -22,9 +22,9 @@ export function WarehouseHeader({ title, showBackButton = false }: WarehouseHead
     <View
       style={{
         paddingTop: insets.top,
-        backgroundColor: colors.text.primary,
+        backgroundColor: colors.surface.card,
         borderBottomWidth: 1,
-        borderBottomColor: colors.border.strong,
+        borderBottomColor: colors.border.default,
       }}
     >
       <View
@@ -32,35 +32,35 @@ export function WarehouseHeader({ title, showBackButton = false }: WarehouseHead
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
-          height: 60,
-          paddingHorizontal: 20,
+          height: 56,
+          paddingHorizontal: 16,
         }}
       >
         {showBackButton ? (
           <Pressable
             onPress={() => router.back()}
             style={{
-              width: 40,
-              height: 40,
+              width: 38,
+              height: 38,
               alignItems: 'center',
               justifyContent: 'center',
-              borderRadius: 20,
-              backgroundColor: 'rgba(248, 252, 255, 0.15)',
+              borderRadius: 19,
+              backgroundColor: colors.surface.muted,
             }}
           >
-            <Ionicons name="chevron-back" size={24} color={colors.brand.primaryForeground} />
+            <Ionicons name="chevron-back" size={22} color={colors.text.primary} />
           </Pressable>
         ) : (
-          <View style={{ width: 40, height: 40 }} />
+          <View style={{ width: 38, height: 38 }} />
         )}
 
         <Text
           style={{
             flex: 1,
             textAlign: 'center',
-            color: colors.brand.primaryForeground,
+            color: colors.text.primary,
             fontWeight: '700',
-            fontSize: title === 'ColdChainX' ? 26 : 20,
+            fontSize: title === 'ColdChainX' ? 24 : 18,
             fontStyle: title === 'ColdChainX' ? 'italic' : 'normal',
             letterSpacing: -0.3,
           }}
@@ -68,8 +68,7 @@ export function WarehouseHeader({ title, showBackButton = false }: WarehouseHead
           {title}
         </Text>
 
-        {/* Spacer to balance layout */}
-        <View style={{ width: 40, height: 40 }} />
+        <View style={{ width: 38, height: 38 }} />
       </View>
     </View>
   );

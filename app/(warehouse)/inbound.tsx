@@ -1,25 +1,44 @@
+import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import * as WebBrowser from 'expo-web-browser';
 import { useFocusEffect } from 'expo-router';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
+  StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 
+import { Ionicons } from '@expo/vector-icons';
+
+import { colors } from '../../constants/colors';
 import { AppButton } from '../../components/AppButton';
 import { AppInfoRow } from '../../components/AppInfoRow';
 import { AppInput } from '../../components/AppInput';
 import { AppMessage } from '../../components/AppMessage';
 import { StatusBadge } from '../../components/StatusBadge';
+import { InboundAsnCard } from '../../components/warehouse/InboundAsnCard';
+import {
+  InboundWorkflowStepper,
+  type StepKey,
+  type WorkflowStepConfig,
+} from '../../components/warehouse/InboundWorkflowStepper';
 import { WH_COLORS, getStatusStyle, formatDateTimeVi, type MessageTone } from '../../constants/warehouseTheme';
-import { getAsnSchedule, type AsnScheduleResponse } from '../../services/asnApi';
+import {
+  getAsnSchedule,
+  getInboundAsns,
+  type AsnScheduleResponse,
+  type InboundScheduleResponse,
+} from '../../services/asnApi';
 import { getApiErrorMessage } from '../../services/apiClient';
 import { getDiscrepancyPdf } from '../../services/discrepancyApi';
 import {
@@ -37,28 +56,34 @@ import { getInventoryLpnById, hasGeneratedWarehouseReceipt, type LpnDto } from '
 import { getWarehouseIdFromToken } from '../../services/jwt';
 import { useAuthStore } from '../../store/useAuthStore';
 
-type StepKey = 'qc' | 'measurements' | 'discrepancy' | 'receipt' | 'putaway';
-
-const STEPS: { key: StepKey; label: string }[] = [
-  { key: 'qc', label: 'QC' },
-  { key: 'measurements', label: 'Kiểm tra lại' },
-  { key: 'discrepancy', label: 'Sai lệch' },
-  { key: 'receipt', label: 'Phiếu nhập' },
-  { key: 'putaway', label: 'Nhập kho' },
+const STATUS_CHIPS = [
+  { key: '', label: 'Tất cả' },
+  { key: 'SCHEDULED', label: 'Đã đặt lịch' },
+  { key: 'ARRIVED', label: 'Hàng đã đến' },
+  { key: 'QC_PASSED', label: 'QC đạt' },
+  { key: 'RECEIVING', label: 'Đang nhận' },
+  { key: 'DISCREPANCY_HOLD', label: 'Sai lệch' },
+  { key: 'IN_STOCK', label: 'Đã nhập kho' },
 ];
+
+type ScheduleSource = 'LOADING' | 'PRIMARY' | 'FALLBACK' | 'ERROR';
 
 const todayInput = formatDateInput(new Date());
 
 export default function WarehouseInboundScreen() {
   const token = useAuthStore((state) => state.token);
   const storedWarehouseId = useAuthStore((state) => state.warehouseId ?? state.user?.warehouseId ?? null);
+  const [searchQuery, setSearchQuery] = useState('');
   const [scheduleDate, setScheduleDate] = useState(todayInput);
   const [statusFilter, setStatusFilter] = useState('');
-  const [schedule, setSchedule] = useState<AsnScheduleResponse[]>([]);
-  const [selectedAsn, setSelectedAsn] = useState<AsnScheduleResponse | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [schedule, setSchedule] = useState<InboundScheduleResponse[]>([]);
+  const [selectedAsn, setSelectedAsn] = useState<InboundScheduleResponse | null>(null);
   const [manualAsnId, setManualAsnId] = useState('');
   const [isLoadingSchedule, setIsLoadingSchedule] = useState(false);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const [scheduleSource, setScheduleSource] = useState<ScheduleSource>('LOADING');
+  const scheduleRequestId = useRef(0);
 
   const [activeStep, setActiveStep] = useState<StepKey>('qc');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -104,35 +129,184 @@ export default function WarehouseInboundScreen() {
   const canPutaway = currentLpnState === 'RECEIVING' && hasReceiptForCurrentLpn;
   const canGenerateReceipt = (!currentLpnState || currentLpnState === 'RECEIVING') && !hasReceiptForCurrentLpn;
   const warehouseIdFromToken = useMemo(() => (token ? getWarehouseIdFromToken(token) : null), [token]);
+  const warehouseIdForInbound = storedWarehouseId ?? warehouseIdFromToken;
   const warehouseIdForPutaway = storedWarehouseId ?? warehouseIdFromToken ?? lpnWarehouseId;
 
+  const workflowStepsConfig: WorkflowStepConfig[] = useMemo(() => {
+    const isQcCompleted = Boolean(qcResult?.success || recheckResult?.success || currentLpnState === 'RECEIVING' || currentLpnState === 'IN_STOCK');
+    const isRetestAvailable = Boolean(qcResult || lpnId.trim());
+    const isDiscrepancyAvailable = Boolean(currentLpnState === 'DISCREPANCY_HOLD' || latestInboundResult?.state === 'DISCREPANCY_HOLD');
+    const isReceiptCompleted = Boolean(hasReceiptForCurrentLpn);
+    const isReceiptAvailable = Boolean(canGenerateReceipt || currentLpnState === 'RECEIVING');
+    const isPutawayCompleted = Boolean(currentLpnState === 'IN_STOCK');
+    const isPutawayAvailable = Boolean(canPutaway || currentLpnState === 'RECEIVING');
+
+    return [
+      {
+        key: 'qc',
+        label: 'QC',
+        stepNumber: 1,
+        state: activeStep === 'qc' ? 'ACTIVE' : isQcCompleted ? 'COMPLETED' : 'AVAILABLE',
+      },
+      {
+        key: 'measurements',
+        label: 'Kiểm tra',
+        stepNumber: 2,
+        state: activeStep === 'measurements' ? 'ACTIVE' : recheckResult?.success ? 'COMPLETED' : isRetestAvailable ? 'AVAILABLE' : 'LOCKED',
+      },
+      {
+        key: 'discrepancy',
+        label: 'Sai lệch',
+        stepNumber: 3,
+        state: activeStep === 'discrepancy' ? 'ACTIVE' : isDiscrepancyAvailable ? 'AVAILABLE' : 'LOCKED',
+      },
+      {
+        key: 'receipt',
+        label: 'Phiếu nhập',
+        stepNumber: 4,
+        state: activeStep === 'receipt' ? 'ACTIVE' : isReceiptCompleted ? 'COMPLETED' : isReceiptAvailable ? 'AVAILABLE' : 'LOCKED',
+      },
+      {
+        key: 'putaway',
+        label: 'Nhập kho',
+        stepNumber: 5,
+        state: activeStep === 'putaway' ? 'ACTIVE' : isPutawayCompleted ? 'COMPLETED' : isPutawayAvailable ? 'AVAILABLE' : 'LOCKED',
+      },
+    ];
+  }, [activeStep, canGenerateReceipt, canPutaway, currentLpnState, hasReceiptForCurrentLpn, latestInboundResult?.state, lpnId, qcResult, recheckResult]);
+
   const loadSchedule = useCallback(async () => {
+    const requestId = ++scheduleRequestId.current;
+    const isLatestRequest = () => requestId === scheduleRequestId.current;
+
     setIsLoadingSchedule(true);
     setScheduleError(null);
+    setScheduleSource('LOADING');
+
+    if (!token) {
+      setSchedule([]);
+      setScheduleSource('ERROR');
+      setScheduleError('Phiên đăng nhập không hợp lệ. Vui lòng đăng nhập lại.');
+      setIsLoadingSchedule(false);
+      return;
+    }
+
+    const warehouseId = warehouseIdForInbound?.trim();
+    if (!warehouseId) {
+      setSchedule([]);
+      setScheduleSource('ERROR');
+      setScheduleError('Tài khoản chưa được gán kho. Vui lòng liên hệ quản trị viên.');
+      setIsLoadingSchedule(false);
+      return;
+    }
+
+    const selectedDate = scheduleDate.trim();
+    let primaryError: unknown = null;
+    let fallbackError: unknown = null;
 
     try {
-      const response = await getAsnSchedule(token, {
-        date: scheduleDate.trim() || undefined,
-        status: statusFilter.trim() || undefined,
-      });
+      try {
+        const response = await getInboundAsns(token, {
+          dateFrom: selectedDate || undefined,
+          dateTo: selectedDate || undefined,
+          status: statusFilter.trim() || undefined,
+          searchQuery: searchQuery.trim() || undefined,
+          warehouseId,
+          pageNumber: 1,
+          pageSize: 50,
+        });
 
-      if (!response.success) {
-        throw new Error(response.message || 'Không thể tải lịch ASN.');
+        if (response.success && Array.isArray(response.data?.data)) {
+          if (isLatestRequest()) {
+            setSchedule(response.data.data);
+            setScheduleSource('PRIMARY');
+          }
+          return;
+        }
+
+        primaryError = new Error(response.message || 'Nguồn ASN chính trả về dữ liệu không hợp lệ.');
+      } catch (error) {
+        primaryError = error;
       }
 
-      setSchedule(response.data ?? []);
-    } catch (error) {
-      setScheduleError(getApiErrorMessage(error));
+      try {
+        const fallbackResponse = await getAsnSchedule(token, {
+          date: selectedDate || undefined,
+          status: statusFilter.trim() || undefined,
+          warehouseId,
+        });
+
+        if (fallbackResponse.success && Array.isArray(fallbackResponse.data)) {
+          const mapped: InboundScheduleResponse[] = fallbackResponse.data.map((item) => ({
+            asnId: item.asnId,
+            asnCode: item.asnCode,
+            orderId: item.orderId,
+            trackingCode: item.trackingCode,
+            itemName: item.itemName,
+            customerName: item.customerName || item.customerEmail,
+            requestedDropoffTime: item.requestedDropoffTime,
+            status: item.status,
+            qrCodeValue: item.qrCodeValue,
+            warehouseId: item.warehouseId,
+          }));
+
+          if (isLatestRequest()) {
+            setSchedule(mapped);
+            setScheduleSource('FALLBACK');
+          }
+          return;
+        }
+
+        fallbackError = new Error(fallbackResponse.message || 'Nguồn ASN dự phòng trả về dữ liệu không hợp lệ.');
+      } catch (error) {
+        fallbackError = error;
+      }
+
+      if (isLatestRequest()) {
+        setSchedule([]);
+        setScheduleSource('ERROR');
+        setScheduleError(buildScheduleLoadError(primaryError, fallbackError));
+      }
     } finally {
-      setIsLoadingSchedule(false);
+      if (isLatestRequest()) {
+        setIsLoadingSchedule(false);
+      }
     }
-  }, [scheduleDate, statusFilter, token]);
+  }, [scheduleDate, searchQuery, statusFilter, token, warehouseIdForInbound]);
 
   useFocusEffect(
     useCallback(() => {
       loadSchedule();
+
+      return () => {
+        scheduleRequestId.current += 1;
+      };
     }, [loadSchedule])
   );
+
+  const filteredSchedule = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return schedule;
+    return schedule.filter((asn) => {
+      const codeMatch = asn.asnCode?.toLowerCase().includes(query);
+      const trackingMatch = asn.trackingCode?.toLowerCase().includes(query);
+      const itemMatch = asn.itemName?.toLowerCase().includes(query);
+      return codeMatch || trackingMatch || itemMatch;
+    });
+  }, [schedule, searchQuery]);
+
+  const handleDateChange = (event: DateTimePickerEvent, date?: Date) => {
+    setShowDatePicker(Platform.OS === 'ios');
+    if (date) {
+      setScheduleDate(formatDateInput(date));
+    }
+  };
+
+  const handleResetFilters = () => {
+    setSearchQuery('');
+    setStatusFilter('');
+    setScheduleDate(todayInput);
+  };
 
   const applyLpnSnapshot = (lpn: LpnDto) => {
     setLpnStatus(lpn.state || null);
@@ -163,7 +337,7 @@ export default function WarehouseInboundScreen() {
     setReceiptId('');
   };
 
-  const selectAsn = (asn: AsnScheduleResponse) => {
+  const selectAsn = (asn: InboundScheduleResponse) => {
     setSelectedAsn(asn);
     setManualAsnId(asn.asnId);
     resetQcWorkflow();
@@ -480,63 +654,175 @@ export default function WarehouseInboundScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: WH_COLORS.background }}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 36 }}>
-          {/* ── Section: Lịch hàng đến ── */}
-          <Section title="Lịch hàng đến">
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ padding: 16, paddingBottom: 36 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={isLoadingSchedule}
+              onRefresh={loadSchedule}
+              colors={[colors.brand.primary]}
+              tintColor={colors.brand.primary}
+            />
+          }
+        >
+          {/* ── Section: Lịch hàng đến (Phase 3 Visual Polish) ── */}
+          <Section
+            title="Lịch hàng đến"
+            subtitle={isLoadingSchedule ? 'Đang tải...' : `${filteredSchedule.length} lô hàng đăng ký tiếp nhận`}
+          >
             <View style={{ gap: 12 }}>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                <AppInput label="Ngày" value={scheduleDate} onChangeText={setScheduleDate} placeholder="YYYY-MM-DD" />
-                <AppInput label="Trạng thái" value={statusFilter} onChangeText={setStatusFilter} placeholder="SCHEDULED" />
+              {/* ── Search Bar ── */}
+              <View style={styles.searchBarContainer}>
+                <Ionicons name="search-outline" size={20} color={colors.text.muted} />
+                <TextInput
+                  style={styles.searchInput}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  placeholder="Tìm ASN, tracking hoặc tên hàng"
+                  placeholderTextColor={colors.text.muted}
+                  returnKeyType="search"
+                />
+                {searchQuery ? (
+                  <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
+                    <Ionicons name="close-circle" size={18} color={colors.text.muted} />
+                  </Pressable>
+                ) : null}
               </View>
-              <AppButton icon="refresh-outline" label="Làm mới lịch" onPress={loadSchedule} loading={isLoadingSchedule} />
-              {scheduleError ? <AppMessage tone="error" text={scheduleError} /> : null}
-              {!isLoadingSchedule && schedule.length === 0 ? (
-                <AppMessage
-                  tone="neutral"
-                  text="Chưa có ASN nào cho ngày/trạng thái này. Bạn có thể nhập mã ASN thủ công bên dưới."
+
+              {/* ── Date Filter & Reset Row ── */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <Pressable
+                  onPress={() => setShowDatePicker(true)}
+                  style={styles.dateSelectorPill}
+                >
+                  <Ionicons name="calendar-outline" size={16} color={colors.brand.primary} />
+                  <Text style={styles.dateSelectorText}>
+                    {scheduleDate === todayInput ? `Hôm nay · ${formatDisplayDate(scheduleDate)}` : formatDisplayDate(scheduleDate)}
+                  </Text>
+                  <Ionicons name="chevron-down" size={14} color={colors.text.secondary} />
+                </Pressable>
+
+                <Pressable onPress={handleResetFilters} style={styles.resetButton}>
+                  <Ionicons name="refresh-outline" size={14} color={colors.brand.primary} />
+                  <Text style={styles.resetButtonText}>Đặt lại</Text>
+                </Pressable>
+              </View>
+
+              {showDatePicker ? (
+                <DateTimePicker
+                  value={parseDateInput(scheduleDate)}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                  onChange={handleDateChange}
                 />
               ) : null}
-              {schedule.map((asn) => (
-                <Pressable
-                  key={asn.asnId}
-                  onPress={() => selectAsn(asn)}
-                  style={{
-                    borderRadius: 14,
-                    borderWidth: 1,
-                    borderColor: WH_COLORS.cardBorder,
-                    backgroundColor: WH_COLORS.cardBg,
-                    padding: 16,
-                  }}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+
+              {/* ── Status Filter Chips (Horizontal Scroll) ── */}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 8, paddingVertical: 2 }}
+              >
+                {STATUS_CHIPS.map((chip) => {
+                  const isActive = statusFilter === chip.key;
+                  return (
+                    <Pressable
+                      key={chip.key || 'ALL'}
+                      onPress={() => setStatusFilter(chip.key)}
+                      style={[
+                        styles.statusChip,
+                        isActive ? styles.statusChipActive : styles.statusChipInactive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.statusChipText,
+                          isActive ? styles.statusChipTextActive : styles.statusChipTextInactive,
+                        ]}
+                      >
+                        {chip.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+
+              {/* ── Loading State (Rule 8) ── */}
+              {isLoadingSchedule ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 24 }}>
+                  <ActivityIndicator size="small" color={colors.brand.primary} />
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text.secondary }}>
+                    Đang tải lịch hàng đến...
+                  </Text>
+                </View>
+              ) : null}
+
+              {/* ── Error State (Rule 9) ── */}
+              {scheduleSource === 'ERROR' && scheduleError ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 14, backgroundColor: colors.status.danger.bg, borderRadius: 14, borderWidth: 1, borderColor: colors.status.danger.border, gap: 12 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, flex: 1 }}>
+                    <Ionicons name="alert-circle-outline" size={20} color={colors.status.danger.main} />
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 16, fontWeight: '700', color: WH_COLORS.textPrimary }}>{asn.asnCode}</Text>
-                      <Text style={{ marginTop: 4, fontSize: 12, color: WH_COLORS.textSecondary }}>
-                        {asn.customerName || asn.customerEmail || 'Khách hàng chưa rõ'}
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.status.danger.main }}>
+                        Không thể tải lịch hàng đến
+                      </Text>
+                      <Text style={{ marginTop: 2, fontSize: 12, color: colors.status.danger.main }}>
+                        {scheduleError}
                       </Text>
                     </View>
-                    <StatusBadge status={asn.status} showVietnameseLabel />
                   </View>
-                  <AppInfoRow label="Tracking" value={asn.trackingCode || 'N/A'} />
-                  <AppInfoRow label="Đơn hàng" value={asn.orderId} />
-                  <AppInfoRow label="Tuyến" value={asn.routeCode || asn.routeId || 'N/A'} />
-                  <AppInfoRow label="Giờ giao kho" value={formatDateTimeVi(asn.requestedDropoffTime)} />
-                  <AppInfoRow label="Cut-off" value={asn.cutOffTime || 'N/A'} />
-                  <AppInfoRow label="QR" value={asn.qrCodeValue || 'N/A'} />
-                </Pressable>
-              ))}
+                  <Pressable onPress={loadSchedule} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: colors.status.danger.border }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: colors.status.danger.main }}>Thử lại</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+
+              {/* ── Empty States (Rule 7) ── */}
+              {!isLoadingSchedule && scheduleSource !== 'ERROR' && !scheduleError && filteredSchedule.length === 0 ? (
+                searchQuery || statusFilter ? (
+                  <View style={{ alignItems: 'center', justifyContent: 'center', padding: 24, gap: 10, backgroundColor: colors.surface.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border.default }}>
+                    <Ionicons name="search-outline" size={36} color={colors.text.muted} />
+                    <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text.primary, textAlign: 'center' }}>Không tìm thấy lô hàng</Text>
+                    <Text style={{ fontSize: 13, color: colors.text.secondary, textAlign: 'center', lineHeight: 18 }}>Thử thay đổi ngày, trạng thái hoặc từ khóa tìm kiếm.</Text>
+                    <Pressable onPress={handleResetFilters} style={{ marginTop: 4, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: colors.brand.primarySoft }}>
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: colors.brand.primary }}>Đặt lại bộ lọc</Text>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <View style={{ alignItems: 'center', justifyContent: 'center', padding: 24, gap: 10, backgroundColor: colors.surface.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border.default }}>
+                    <Ionicons name="calendar-outline" size={36} color={colors.text.muted} />
+                    <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text.primary, textAlign: 'center' }}>Chưa có lịch hàng đến</Text>
+                    <Text style={{ fontSize: 13, color: colors.text.secondary, textAlign: 'center', lineHeight: 18 }}>Các lô hàng được lên lịch tiếp nhận sẽ xuất hiện tại đây.</Text>
+                  </View>
+                )
+              ) : null}
+
+              {/* ── ASN Cards List ── */}
+              {!isLoadingSchedule && scheduleSource !== 'ERROR' &&
+                filteredSchedule.map((asn) => (
+                  <InboundAsnCard
+                    key={asn.asnId}
+                    asn={asn}
+                    isSelected={selectedAsn?.asnId === asn.asnId}
+                    onSelect={selectAsn}
+                  />
+                ))}
+
+              {/* ── Manual ASN Input Box (De-emphasized Fallback) ── */}
               <View
                 style={{
                   borderRadius: 14,
                   borderWidth: 1,
                   borderStyle: 'dashed',
-                  borderColor: WH_COLORS.inputBorder,
-                  backgroundColor: WH_COLORS.cardBg,
-                  padding: 16,
+                  borderColor: colors.border.default,
+                  backgroundColor: colors.surface.card,
+                  padding: 14,
+                  marginTop: 4,
                 }}
               >
                 <AppInput label="Mã ASN thủ công" value={manualAsnId} onChangeText={setManualAsnId} placeholder="Nhập mã ASN (GUID)" />
-                <View style={{ marginTop: 12 }}>
+                <View style={{ marginTop: 10 }}>
                   <AppButton
                     icon="keypad-outline"
                     label="Sử dụng ASN thủ công"
@@ -559,44 +845,82 @@ export default function WarehouseInboundScreen() {
             </View>
           </Section>
 
-          {/* ── Section: Xử lý nhập kho ── */}
-          <Section title="Xử lý nhập kho" subtitle={activeAsnId ? `ASN: ${activeAsnId}` : 'Chọn ASN hoặc nhập mã ASN thủ công'}>
-            {/* Step tabs */}
-            <View style={{ marginBottom: 16, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-              {STEPS.map((step) => {
-                const isActive = activeStep === step.key;
-                return (
-                  <Pressable
-                    key={step.key}
-                    onPress={() => setActiveStep(step.key)}
-                    style={{
-                      borderRadius: 10,
-                      paddingHorizontal: 14,
-                      paddingVertical: 8,
-                      backgroundColor: isActive ? WH_COLORS.primary : WH_COLORS.primaryLight,
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        fontWeight: '700',
-                        color: isActive ? '#FFFFFF' : WH_COLORS.primary,
-                      }}
-                    >
-                      {step.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+          {/* ── Section: Xử lý nhập kho (Phase 2 Polished Workflow) ── */}
+          <Section
+            title="Xử lý nhập kho"
+            subtitle={selectedAsn ? `Đang xử lý ${selectedAsn.asnCode}` : 'Chọn một lô hàng phía trên để bắt đầu tiếp nhận'}
+          >
+            {/* Selected ASN Context Summary Card (Rule 8) */}
+            {selectedAsn ? (
+              <View
+                style={{
+                  borderRadius: 14,
+                  backgroundColor: colors.surface.card,
+                  borderWidth: 1,
+                  borderColor: colors.brand.primary,
+                  padding: 14,
+                  marginBottom: 14,
+                  gap: 6,
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: colors.text.primary, flex: 1 }} numberOfLines={1}>
+                    {selectedAsn.itemName?.trim() || selectedAsn.asnCode}
+                  </Text>
+                  <StatusBadge status={selectedAsn.status} showVietnameseLabel />
+                </View>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: colors.brand.primary }}>
+                  Mã ASN: {selectedAsn.asnCode}
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 2 }}>
+                  {selectedAsn.quantity ? (
+                    <Text style={{ fontSize: 12, color: colors.text.secondary }}>{selectedAsn.quantity} kiện</Text>
+                  ) : null}
+                  {selectedAsn.expectedWeightKg ? (
+                    <Text style={{ fontSize: 12, color: colors.text.secondary }}>{selectedAsn.expectedWeightKg} kg</Text>
+                  ) : null}
+                  {selectedAsn.tempCondition ? (
+                    <Text style={{ fontSize: 12, color: colors.text.secondary }}>{selectedAsn.tempCondition}</Text>
+                  ) : null}
+                </View>
+              </View>
+            ) : (
+              <View
+                style={{
+                  borderRadius: 12,
+                  backgroundColor: colors.surface.muted,
+                  padding: 12,
+                  marginBottom: 14,
+                }}
+              >
+                <Text style={{ fontSize: 12, color: colors.text.secondary, textAlign: 'center' }}>
+                  Vui lòng chọn một lô hàng từ danh sách phía trên hoặc nhập mã ASN thủ công để bắt đầu tiếp nhận.
+                </Text>
+              </View>
+            )}
+
+            {/* Stepper Navigation */}
+            <InboundWorkflowStepper
+              steps={workflowStepsConfig}
+              activeStep={activeStep}
+              onStepPress={setActiveStep}
+            />
 
             {actionMessage ? <AppMessage tone={messageTone} text={actionMessage} /> : null}
-            {isSubmitting ? <ActivityIndicator style={{ marginVertical: 12 }} color={WH_COLORS.primary} /> : null}
+            {isSubmitting ? <ActivityIndicator style={{ marginVertical: 12 }} color={colors.brand.primary} /> : null}
 
-            {/* ── QC tab ── */}
+            {/* ── 1. QC Tab ── */}
             {activeStep === 'qc' ? (
               <View style={{ gap: 12 }}>
-                <AppInput label="Mã ASN" value={manualAsnId} onChangeText={setManualAsnId} placeholder="Mã ASN" />
+                {selectedAsn ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.brand.primarySoft, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: colors.border.default }}>
+                    <Text style={{ fontSize: 12, color: colors.text.secondary, fontWeight: '600' }}>Mã ASN tiếp nhận</Text>
+                    <Text style={{ fontSize: 14, color: colors.text.primary, fontWeight: '700' }}>{selectedAsn.asnCode}</Text>
+                  </View>
+                ) : (
+                  <AppInput label="Mã ASN (GUID)" value={manualAsnId} onChangeText={setManualAsnId} placeholder="Mã ASN" />
+                )}
+
                 <MeasurementFields
                   weight={qcWeight} setWeight={setQcWeight}
                   length={qcLength} setLength={setQcLength}
@@ -604,13 +928,39 @@ export default function WarehouseInboundScreen() {
                   height={qcHeight} setHeight={setQcHeight}
                   temperature={qcTemperature} setTemperature={setQcTemperature}
                 />
+
                 <EvidencePicker images={qcEvidence} onPick={() => pickEvidenceImages('qc')} onClear={() => setQcEvidence([])} />
-                <AppButton icon="checkmark-circle-outline" label="Gửi kết quả QC" onPress={handleSubmitQc} loading={isSubmitting} />
+
+                {/* Polished Primary QC CTA (Rule 14 & 15 - Diagnostic removed) */}
+                <View
+                  style={[
+                    styles.qcSubmitVisual,
+                    isSubmitting && styles.qcSubmitVisualDisabled,
+                  ]}
+                >
+                  {isSubmitting ? (
+                    <View style={styles.qcSubmitContent}>
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                      <Text style={styles.qcSubmitText}>Đang gửi kết quả...</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.qcSubmitText}>Gửi kết quả QC</Text>
+                  )}
+
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Gửi kết quả QC"
+                    disabled={isSubmitting}
+                    onPress={handleSubmitQc}
+                    style={StyleSheet.absoluteFillObject}
+                  />
+                </View>
+
                 {qcResult ? <ResultBox title="Kết quả QC" result={qcResult} /> : null}
               </View>
             ) : null}
 
-            {/* ── Re-check tab ── */}
+            {/* ── 2. Re-check / Measurements Tab ── */}
             {activeStep === 'measurements' ? (
               <View style={{ gap: 12 }}>
                 <AppInput label="Mã LPN" value={lpnId} onChangeText={updateLpnId} placeholder="Mã LPN" />
@@ -627,7 +977,7 @@ export default function WarehouseInboundScreen() {
               </View>
             ) : null}
 
-            {/* ── Discrepancy tab ── */}
+            {/* ── 3. Discrepancy Tab ── */}
             {activeStep === 'discrepancy' ? (
               <View style={{ gap: 12 }}>
                 <AppMessage
@@ -645,7 +995,7 @@ export default function WarehouseInboundScreen() {
               </View>
             ) : null}
 
-            {/* ── Receipt tab ── */}
+            {/* ── 4. Receipt Tab ── */}
             {activeStep === 'receipt' ? (
               <View style={{ gap: 12 }}>
                 {latestResultForCurrentLpn?.state === 'RECEIVING' ? (
@@ -657,29 +1007,95 @@ export default function WarehouseInboundScreen() {
                 {currentLpnState !== 'IN_STOCK' && hasReceiptForCurrentLpn ? (
                   <AppMessage tone="success" text="LPN đã có phiếu nhập kho. Có thể chuyển sang bước nhập vị trí kho." />
                 ) : null}
-                <AppInput label="Mã ASN" value={manualAsnId} onChangeText={setManualAsnId} placeholder="Mã ASN" />
+                {selectedAsn ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.brand.primarySoft, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: colors.border.default }}>
+                    <Text style={{ fontSize: 12, color: colors.text.secondary, fontWeight: '600' }}>Mã ASN</Text>
+                    <Text style={{ fontSize: 14, color: colors.text.primary, fontWeight: '700' }}>{selectedAsn.asnCode}</Text>
+                  </View>
+                ) : (
+                  <AppInput label="Mã ASN" value={manualAsnId} onChangeText={setManualAsnId} placeholder="Mã ASN" />
+                )}
                 <AppInput label="Người giao hàng" value={delivererName} onChangeText={setDelivererName} placeholder="Tên tài xế hoặc khách hàng" />
                 <AppInput label="Biển số xe" value={vehiclePlate} onChangeText={setVehiclePlate} placeholder="Không bắt buộc" />
                 <AppInput label="Ghi chú" value={receiptNote} onChangeText={setReceiptNote} placeholder="Không bắt buộc" multiline />
-                <AppButton
-                  icon="document-text-outline"
-                  label="Tạo phiếu nhập kho"
-                  onPress={handleGenerateReceipt}
-                  loading={isSubmitting}
-                  disabled={!canGenerateReceipt}
-                />
-                <AppButton
-                  icon="open-outline"
-                  label="Mở phiếu nhập PDF"
-                  onPress={openReceiptPdf}
-                  variant="secondary"
+                <View
+                  style={{
+                    height: 52,
+                    borderRadius: 14,
+                    borderWidth: 1,
+                    backgroundColor: isSubmitting || canGenerateReceipt ? colors.brand.primary : colors.brand.primarySoft,
+                    borderColor: isSubmitting || canGenerateReceipt ? colors.brand.primary : colors.border.default,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexDirection: 'row',
+                    gap: 8,
+                    overflow: 'hidden',
+                  }}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                      <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '700', includeFontPadding: false }}>
+                        Đang tạo phiếu nhập...
+                      </Text>
+                    </>
+                  ) : (
+                    <>
+                      <Ionicons
+                        name="document-text-outline"
+                        size={20}
+                        color={canGenerateReceipt ? '#FFFFFF' : colors.text.secondary}
+                      />
+                      <Text
+                        style={{
+                          color: canGenerateReceipt ? '#FFFFFF' : colors.text.secondary,
+                          fontSize: 15,
+                          fontWeight: '700',
+                          includeFontPadding: false,
+                        }}
+                      >
+                        Tạo phiếu nhập kho
+                      </Text>
+                    </>
+                  )}
+
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Tạo phiếu nhập kho"
+                    disabled={!canGenerateReceipt || isSubmitting}
+                    onPress={handleGenerateReceipt}
+                    style={StyleSheet.absoluteFillObject}
+                  />
+                </View>
+                <Pressable
                   disabled={!hasReceiptForCurrentLpn && !receiptResult?.pdfUrl}
-                />
+                  onPress={openReceiptPdf}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    paddingHorizontal: 14,
+                    paddingVertical: 12,
+                    borderRadius: 14,
+                    backgroundColor: colors.surface.card,
+                    borderWidth: 1,
+                    borderColor: colors.border.default,
+                    opacity: (!hasReceiptForCurrentLpn && !receiptResult?.pdfUrl) ? 0.5 : 1,
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <Ionicons name="document-text-outline" size={20} color={colors.brand.primary} />
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text.primary }}>
+                      Mở phiếu nhập PDF
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={colors.text.muted} />
+                </Pressable>
                 {receiptResult ? <AppMessage tone={receiptResult.success ? 'success' : 'error'} text={receiptResult.message} /> : null}
               </View>
             ) : null}
 
-            {/* ── Putaway tab ── */}
+            {/* ── 5. Putaway Tab ── */}
             {activeStep === 'putaway' ? (
               <View style={{ gap: 12 }}>
                 <AppInput label="Mã LPN" value={lpnId} onChangeText={updateLpnId} placeholder="Mã LPN" />
@@ -722,7 +1138,7 @@ export default function WarehouseInboundScreen() {
                 ) : null}
                 {canPutaway ? (
                   <View style={{ gap: 12 }}>
-                    <Text style={{ fontSize: 16, fontWeight: '700', color: WH_COLORS.textPrimary }}>Nhập vị trí kho</Text>
+                    <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text.primary }}>Nhập vị trí kho</Text>
                     <AppInput label="Vị trí lưu kho" value={storageLocation} onChangeText={setStorageLocation} placeholder="A-01-01" />
                     <AppButton icon="archive-outline" label="Xác nhận nhập kho" onPress={handlePutaway} loading={isSubmitting} />
                   </View>
@@ -743,7 +1159,7 @@ export default function WarehouseInboundScreen() {
   );
 }
 
-/* ── Inline sub-components (only used in this screen) ── */
+/* ── Inline sub-components (Polished for Phase 2) ── */
 
 function MeasurementFields({
   weight, setWeight,
@@ -758,18 +1174,26 @@ function MeasurementFields({
   height: string; setHeight: (v: string) => void;
   temperature: string; setTemperature: (v: string) => void;
 }) {
-  const temperatureKeyboardType = Platform.OS === 'ios' ? 'numbers-and-punctuation' as const : 'numeric' as const;
+  const temperatureKeyboardType = Platform.OS === 'ios' ? ('numbers-and-punctuation' as const) : ('numeric' as const);
 
   return (
     <View style={{ gap: 12 }}>
-      <AppInput label="Cân nặng thực tế (kg)" value={weight} onChangeText={setWeight} placeholder="120" keyboardType="numeric" />
-      <View style={{ flexDirection: 'row', gap: 8 }}>
-        <AppInput label="Dài (cm)" value={length} onChangeText={setLength} placeholder="80" keyboardType="numeric" />
-        <AppInput label="Rộng (cm)" value={width} onChangeText={setWidth} placeholder="60" keyboardType="numeric" />
+      <AppInput label="Cân nặng thực tế (kg)" value={weight} onChangeText={setWeight} placeholder="Ví dụ: 64" keyboardType="numeric" />
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <View style={{ flex: 1 }}>
+          <AppInput label="Dài (cm)" value={length} onChangeText={setLength} placeholder="Ví dụ: 80" keyboardType="numeric" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <AppInput label="Rộng (cm)" value={width} onChangeText={setWidth} placeholder="Ví dụ: 60" keyboardType="numeric" />
+        </View>
       </View>
-      <View style={{ flexDirection: 'row', gap: 8 }}>
-        <AppInput label="Cao (cm)" value={height} onChangeText={setHeight} placeholder="50" keyboardType="numeric" />
-        <AppInput label="Nhiệt độ (°C)" value={temperature} onChangeText={setTemperature} placeholder="-6" keyboardType={temperatureKeyboardType} />
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <View style={{ flex: 1 }}>
+          <AppInput label="Cao (cm)" value={height} onChangeText={setHeight} placeholder="Ví dụ: 50" keyboardType="numeric" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <AppInput label="Nhiệt độ (°C)" value={temperature} onChangeText={setTemperature} placeholder="Ví dụ: 4" keyboardType={temperatureKeyboardType} />
+        </View>
       </View>
     </View>
   );
@@ -779,22 +1203,72 @@ function EvidencePicker({ images, onPick, onClear }: { images: EvidenceImage[]; 
   return (
     <View
       style={{
-        borderRadius: 14,
+        borderRadius: 16,
         borderWidth: 1,
-        borderColor: WH_COLORS.cardBorder,
-        backgroundColor: WH_COLORS.cardBg,
-        padding: 14,
+        borderColor: colors.border.default,
+        backgroundColor: colors.surface.card,
+        padding: 16,
+        gap: 12,
       }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Text style={{ fontSize: 14, fontWeight: '700', color: WH_COLORS.textPrimary }}>Ảnh bằng chứng</Text>
-        <Text style={{ fontSize: 12, fontWeight: '600', color: WH_COLORS.textSecondary }}>
-          {images.length} đã chọn
+        <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text.primary }}>Ảnh bằng chứng</Text>
+        <Text style={{ fontSize: 12, fontWeight: '600', color: colors.text.secondary }}>
+          {images.length} ảnh đã chọn
         </Text>
       </View>
-      <View style={{ marginTop: 12, flexDirection: 'row', gap: 8 }}>
-        <AppButton icon="image-outline" label="Thêm ảnh" onPress={onPick} compact variant="secondary" />
-        <AppButton icon="trash-outline" label="Xoá" onPress={onClear} compact variant="secondary" />
+
+      {images.length > 0 ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+          {images.map((img, idx) => (
+            <Image
+              key={img.uri || idx}
+              source={{ uri: img.uri }}
+              style={{ width: 64, height: 64, borderRadius: 10, backgroundColor: colors.surface.muted }}
+            />
+          ))}
+        </ScrollView>
+      ) : null}
+
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <Pressable
+          onPress={onPick}
+          style={{
+            flex: 1,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            height: 44,
+            borderRadius: 12,
+            backgroundColor: colors.brand.primarySoft,
+            borderWidth: 1,
+            borderColor: colors.border.default,
+          }}
+        >
+          <Ionicons name="camera-outline" size={18} color={colors.brand.primary} />
+          <Text style={{ fontSize: 13, fontWeight: '600', color: colors.brand.primary }}>
+            {images.length > 0 ? 'Thêm ảnh khác' : 'Chụp / Chọn ảnh bằng chứng'}
+          </Text>
+        </Pressable>
+
+        {images.length > 0 ? (
+          <Pressable
+            onPress={onClear}
+            style={{
+              paddingHorizontal: 16,
+              height: 44,
+              borderRadius: 12,
+              backgroundColor: colors.status.danger.bg,
+              borderWidth: 1,
+              borderColor: colors.status.danger.border,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Ionicons name="trash-outline" size={18} color={colors.status.danger.main} />
+          </Pressable>
+        ) : null}
       </View>
     </View>
   );
@@ -806,18 +1280,20 @@ function Section({ title, subtitle, children }: { title: string; subtitle?: stri
       style={{
         marginBottom: 16,
         borderRadius: 16,
-        backgroundColor: WH_COLORS.cardBg,
+        backgroundColor: colors.surface.card,
         padding: 16,
+        borderWidth: 1,
+        borderColor: colors.border.default,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.04,
-        shadowRadius: 8,
-        elevation: 2,
+        shadowOpacity: 0.03,
+        shadowRadius: 6,
+        elevation: 1,
       }}
     >
-      <Text style={{ fontSize: 18, fontWeight: '700', color: WH_COLORS.textPrimary }}>{title}</Text>
+      <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text.primary }}>{title}</Text>
       {subtitle ? (
-        <Text style={{ marginTop: 4, fontSize: 12, fontWeight: '500', color: WH_COLORS.textSecondary }}>{subtitle}</Text>
+        <Text style={{ marginTop: 4, fontSize: 12, fontWeight: '500', color: colors.text.secondary }}>{subtitle}</Text>
       ) : null}
       <View style={{ marginTop: 16 }}>{children}</View>
     </View>
@@ -830,18 +1306,18 @@ function ResultBox({ title, result }: { title: string; result: InboundQcResponse
       style={{
         borderRadius: 14,
         borderWidth: 1,
-        borderColor: WH_COLORS.cardBorder,
-        backgroundColor: WH_COLORS.primaryLight,
+        borderColor: colors.border.default,
+        backgroundColor: colors.surface.muted,
         padding: 14,
       }}
     >
-      <Text style={{ fontSize: 14, fontWeight: '700', color: WH_COLORS.textPrimary }}>{title}</Text>
+      <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text.primary }}>{title}</Text>
       <AppInfoRow label="Thông báo" value={result.message} />
       <AppInfoRow label="Mã LPN" value={result.lpnCode || result.lpnId || 'N/A'} />
       <AppInfoRow label="Phiếu nhập" value={result.receiptId || 'N/A'} />
       <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 8 }}>
-        <Text style={{ width: 90, fontSize: 12, fontWeight: '700', color: WH_COLORS.textSecondary }}>Trạng thái</Text>
-        {result.state ? <StatusBadge status={result.state} showVietnameseLabel /> : <Text style={{ fontSize: 12, color: WH_COLORS.textPrimary }}>N/A</Text>}
+        <Text style={{ width: 90, fontSize: 12, fontWeight: '700', color: colors.text.secondary }}>Trạng thái</Text>
+        {result.state ? <StatusBadge status={result.state} showVietnameseLabel /> : <Text style={{ fontSize: 12, color: colors.text.primary }}>N/A</Text>}
       </View>
       <AppInfoRow label="Chênh lệch" value={`${result.diffPercent}%`} />
       <AppInfoRow
@@ -895,3 +1371,132 @@ function formatDateInput(date: Date) {
   const offset = date.getTimezoneOffset() * 60_000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 10);
 }
+
+function formatDisplayDate(dateStr: string): string {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  if (parts.length === 3) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+  return dateStr;
+}
+
+function parseDateInput(dateStr: string): Date {
+  if (!dateStr) return new Date();
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+}
+
+function buildScheduleLoadError(primaryError: unknown, fallbackError: unknown): string {
+  const primaryMessage = getApiErrorMessage(primaryError);
+  const fallbackMessage = getApiErrorMessage(fallbackError);
+
+  if (primaryMessage === fallbackMessage) {
+    return primaryMessage;
+  }
+
+  return `Nguồn chính: ${primaryMessage}\nNguồn dự phòng: ${fallbackMessage}`;
+}
+
+const styles = StyleSheet.create({
+  searchBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface.card,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    paddingHorizontal: 14,
+    height: 48,
+    gap: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.text.primary,
+    paddingVertical: 0,
+  },
+  dateSelectorPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.brand.primarySoft,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+  },
+  dateSelectorText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.text.primary,
+  },
+  resetButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  resetButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.brand.primary,
+  },
+  statusChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  statusChipActive: {
+    backgroundColor: colors.brand.primary,
+    borderColor: colors.brand.primary,
+  },
+  statusChipInactive: {
+    backgroundColor: colors.surface.card,
+    borderColor: colors.border.default,
+  },
+  statusChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  statusChipTextActive: {
+    color: '#FFFFFF',
+  },
+  statusChipTextInactive: {
+    color: colors.text.secondary,
+  },
+  qcSubmitVisual: {
+    width: '100%',
+    height: 54,
+    borderRadius: 15,
+    backgroundColor: colors.brand.primary,
+    borderWidth: 1,
+    borderColor: colors.brand.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  qcSubmitVisualDisabled: {
+    backgroundColor: colors.brand.primarySoft,
+    borderColor: colors.border.default,
+  },
+  qcSubmitContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  qcSubmitText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+    includeFontPadding: false,
+  },
+  qcSubmitTextDisabled: {
+    color: colors.text.secondary,
+  },
+});

@@ -1,11 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   View,
@@ -14,7 +15,7 @@ import {
 import { colors } from '../../constants/colors';
 import { AsnResultCard } from '../../components/asn-result-card';
 import { createAsn, getCustomerAsns, type AsnResponse } from '../../services/asnApi';
-import { getApiErrorMessage } from '../../services/apiClient';
+import { ApiClientError, getApiErrorMessage } from '../../services/apiClient';
 import { getCustomerIdFromToken } from '../../services/jwt';
 import { getOrderById, type OrderResponse } from '../../services/orderApi';
 import { searchWarehousesByOrigin, type WarehouseResponse } from '../../services/warehouseApi';
@@ -46,8 +47,10 @@ export default function ScheduleDeliveryScreen() {
   const [visiblePicker, setVisiblePicker] = useState<PickerMode | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [hasVerifiedAsnState, setHasVerifiedAsnState] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warehouseMessage, setWarehouseMessage] = useState<string | null>(null);
+  const submitLockRef = useRef(false);
 
   const displayedAsn = createdAsn ?? existingAsn;
   const routeCutOffTime = order?.route?.cutOffTime ?? null;
@@ -62,20 +65,23 @@ export default function ScheduleDeliveryScreen() {
   );
   const canSubmit =
     !isSubmitting &&
+    hasVerifiedAsnState &&
     !existingAsn &&
     Boolean(selectedWarehouseId) &&
     Boolean(order && isContractSigned(order.status)) &&
     isDropoffDateTimeValid;
 
   const loadScheduleContext = useCallback(async () => {
-    if (!accessToken || !orderId) {
-      setError('Không tìm thấy phiên đăng nhập hoặc mã đơn hàng.');
+    if (!accessToken || !orderId || !customerId) {
+      setHasVerifiedAsnState(false);
+      setError('Không tìm thấy phiên đăng nhập, mã khách hàng hoặc mã đơn hàng.');
       setIsLoading(false);
       return;
     }
 
     try {
       setIsLoading(true);
+      setHasVerifiedAsnState(false);
       setError(null);
       setWarehouseMessage(null);
 
@@ -92,21 +98,19 @@ export default function ScheduleDeliveryScreen() {
         setError('Đơn hàng này chưa ở trạng thái CONTRACT_SIGNED nên chưa thể đặt lịch giao.');
       }
 
-      if (customerId) {
-        try {
-          const asnResponse = await getCustomerAsns(accessToken, customerId);
-          const matchedAsn =
-            asnResponse.data?.find((asn) => asn.asnId === asnId) ??
-            asnResponse.data?.find((asn) => asn.orderId === orderId) ??
-            null;
-
-          setExistingAsn(matchedAsn);
-          if (matchedAsn?.phone) setPhone(matchedAsn.phone);
-          if (matchedAsn?.warehouseId) setSelectedWarehouseId(matchedAsn.warehouseId);
-        } catch (asnError) {
-          console.warn('[ScheduleDelivery] Could not load existing ASNs', asnError);
-        }
+      const asnResponse = await getCustomerAsns(accessToken, customerId);
+      if (!asnResponse.success) {
+        throw new Error(asnResponse.message || 'Không thể kiểm tra lịch giao kho hiện có.');
       }
+
+      const orderAsns = (asnResponse.data ?? []).filter((asn) => asn.orderId === orderId);
+      const matchedAsn =
+        (asnId ? orderAsns.find((asn) => asn.asnId === asnId) : null) ?? orderAsns[0] ?? null;
+
+      setExistingAsn(matchedAsn);
+      setHasVerifiedAsnState(true);
+      if (matchedAsn?.phone) setPhone(matchedAsn.phone);
+      if (matchedAsn?.warehouseId) setSelectedWarehouseId(matchedAsn.warehouseId);
 
       const originCity = nextOrder.route?.originCity;
       if (!originCity) {
@@ -165,8 +169,22 @@ export default function ScheduleDeliveryScreen() {
   );
 
   const handleCreateAsn = async () => {
+    if (submitLockRef.current || isSubmitting) {
+      return;
+    }
+
     if (!accessToken || !orderId) {
       setError('Không tìm thấy phiên đăng nhập hoặc mã đơn hàng.');
+      return;
+    }
+
+    if (!customerId || !hasVerifiedAsnState) {
+      setError('Chưa thể xác nhận đơn hàng chưa có lịch giao kho. Vui lòng tải lại màn hình.');
+      return;
+    }
+
+    if (existingAsn) {
+      setError('Đơn hàng này đã có lịch giao kho.');
       return;
     }
 
@@ -187,6 +205,8 @@ export default function ScheduleDeliveryScreen() {
       return;
     }
 
+    submitLockRef.current = true;
+
     try {
       setIsSubmitting(true);
       setError(null);
@@ -205,9 +225,43 @@ export default function ScheduleDeliveryScreen() {
 
       setCreatedAsn(response.data);
       setExistingAsn(response.data);
+
+      const refreshedAsnResponse = await getCustomerAsns(accessToken, customerId);
+      if (!refreshedAsnResponse.success) {
+        throw new Error(refreshedAsnResponse.message || 'ASN đã được tạo nhưng không thể tải lại dữ liệu từ máy chủ.');
+      }
+
+      const serverAsn = (refreshedAsnResponse.data ?? []).find((asn) => asn.orderId === orderId);
+      if (!serverAsn) {
+        throw new Error('ASN đã được tạo nhưng máy chủ chưa trả về lịch giao kho của đơn hàng.');
+      }
+
+      setCreatedAsn(serverAsn);
+      setExistingAsn(serverAsn);
     } catch (submitError) {
+      if (submitError instanceof ApiClientError && submitError.status === 409) {
+        setHasVerifiedAsnState(false);
+
+        try {
+          const refreshedAsnResponse = await getCustomerAsns(accessToken, customerId);
+          if (!refreshedAsnResponse.success) {
+            throw new Error(refreshedAsnResponse.message || 'Không thể tải lại lịch giao kho hiện có.');
+          }
+
+          const serverAsn = (refreshedAsnResponse.data ?? []).find((asn) => asn.orderId === orderId);
+          if (serverAsn) {
+            setCreatedAsn(null);
+            setExistingAsn(serverAsn);
+            setHasVerifiedAsnState(true);
+          }
+        } catch {
+          // Keep submission disabled until the screen can verify ASN state again.
+        }
+      }
+
       setError(getApiErrorMessage(submitError));
     } finally {
+      submitLockRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -259,7 +313,14 @@ export default function ScheduleDeliveryScreen() {
         ) : null}
 
         {displayedAsn ? (
-          <AsnResultCard asn={displayedAsn} warehouseName={selectedWarehouse?.warehouseName} />
+          <View className="gap-4">
+            <View style={{ backgroundColor: colors.surface.muted }} className="rounded-2xl p-4">
+              <Text style={{ color: colors.brand.primary }} className="text-sm font-semibold leading-5">
+                Đơn hàng này đã có lịch giao kho.
+              </Text>
+            </View>
+            <AsnResultCard asn={displayedAsn} warehouseName={selectedWarehouse?.warehouseName} />
+          </View>
         ) : (
           <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-4 rounded-3xl border p-5">
             <Text style={{ color: colors.text.primary }} className="text-lg font-extrabold">Thông tin đặt lịch</Text>
@@ -371,24 +432,60 @@ export default function ScheduleDeliveryScreen() {
               keyboardType="phone-pad"
             />
 
-            <Pressable
-              onPress={handleCreateAsn}
-              disabled={!canSubmit}
-              style={({ pressed }) => ({
-                backgroundColor: canSubmit
-                  ? pressed
-                    ? colors.brand.primaryPressed
-                    : colors.brand.primary
-                  : colors.surface.muted,
-                opacity: pressed && canSubmit ? 0.8 : 1,
-              })}
-              className="flex-row items-center justify-center gap-2 rounded-2xl px-4 py-4"
+            <View
+              style={{
+                height: 54,
+                borderRadius: 16,
+                borderWidth: 1,
+                backgroundColor: isSubmitting || canSubmit ? colors.brand.primary : colors.brand.primarySoft,
+                borderColor: isSubmitting || canSubmit ? colors.brand.primary : colors.border.default,
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexDirection: 'row',
+                gap: 8,
+                overflow: 'hidden',
+                shadowColor: isSubmitting || canSubmit ? colors.brand.primary : 'transparent',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: isSubmitting || canSubmit ? 0.15 : 0,
+                shadowRadius: 4,
+                elevation: isSubmitting || canSubmit ? 2 : 0,
+              }}
             >
-              {isSubmitting ? <ActivityIndicator color={colors.text.onPrimary} /> : <Ionicons name="calendar-outline" size={20} color={canSubmit ? colors.text.onPrimary : colors.text.muted} />}
-              <Text style={{ color: canSubmit ? colors.text.onPrimary : colors.text.muted }} className="text-base font-extrabold">
-                {isSubmitting ? 'Đang tạo ASN...' : 'Xác nhận đặt lịch giao'}
-              </Text>
-            </Pressable>
+              {isSubmitting ? (
+                <>
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700', includeFontPadding: false }}>
+                    Đang tạo ASN...
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Ionicons
+                    name="calendar-outline"
+                    size={20}
+                    color={canSubmit ? '#FFFFFF' : colors.text.secondary}
+                  />
+                  <Text
+                    style={{
+                      color: canSubmit ? '#FFFFFF' : colors.text.secondary,
+                      fontSize: 16,
+                      fontWeight: '700',
+                      includeFontPadding: false,
+                    }}
+                  >
+                    Xác nhận đặt lịch giao
+                  </Text>
+                </>
+              )}
+
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={isSubmitting ? 'Đang tạo ASN...' : 'Xác nhận đặt lịch giao'}
+                disabled={!canSubmit || isSubmitting}
+                onPress={handleCreateAsn}
+                style={StyleSheet.absoluteFillObject}
+              />
+            </View>
           </View>
         )}
       </View>

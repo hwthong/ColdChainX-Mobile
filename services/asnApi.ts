@@ -1,9 +1,13 @@
 import { apiRequest } from './apiClient';
+import type { PagedResult } from './pagination';
 
 export interface ApiResponse<T> {
   success: boolean;
+  statusCode?: number;
   message?: string | null;
   data?: T | null;
+  errors?: unknown;
+  meta?: unknown;
 }
 
 export interface AsnScheduleResponse {
@@ -11,6 +15,7 @@ export interface AsnScheduleResponse {
   asnCode: string;
   orderId: string;
   trackingCode?: string | null;
+  itemName?: string | null;
   customerId?: string | null;
   customerName?: string | null;
   customerEmail?: string | null;
@@ -21,6 +26,29 @@ export interface AsnScheduleResponse {
   cutOffTime?: string | null;
   status: string;
   qrCodeValue: string;
+  warehouseId?: string | null;
+}
+
+export interface InboundScheduleResponse {
+  asnId: string;
+  asnCode: string;
+  orderId: string;
+  trackingCode?: string | null;
+  customerId?: string | null;
+  customerName?: string | null;
+  itemName?: string | null;
+  category?: string | null;
+  quantity?: number;
+  tempCondition?: string | null;
+  expectedWeightKg?: number;
+  expectedCbm?: number;
+  destAddress?: string | null;
+  requestedDropoffTime: string;
+  status: string;
+  qrCodeValue?: string | null;
+  createdAt?: string | null;
+  warehouseId?: string | null;
+  warehouseName?: string | null;
 }
 
 export interface AsnResponse {
@@ -52,16 +80,49 @@ export interface CreateAsnRequest {
 type ScheduleParams = {
   date?: string;
   status?: string;
+  warehouseId?: string;
 };
+
+export interface InboundAsnParams {
+  status?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  searchQuery?: string;
+  warehouseId?: string;
+  orderId?: string;
+  customerId?: string;
+  pageNumber?: number;
+  pageSize?: number;
+}
 
 export function getAsnSchedule(accessToken?: string | null, params: ScheduleParams = {}) {
   const query = new URLSearchParams();
   if (params.date) query.set('date', params.date);
   if (params.status) query.set('status', params.status);
+  if (params.warehouseId) query.set('warehouseId', params.warehouseId);
 
   const suffix = query.toString() ? `?${query.toString()}` : '';
 
   return apiRequest<ApiResponse<AsnScheduleResponse[]>>(`/api/v1/asns/schedule${suffix}`, {
+    headers: accessToken ? getAuthHeaders(accessToken) : undefined,
+  });
+}
+
+export function getInboundAsns(accessToken?: string | null, params: InboundAsnParams = {}) {
+  const query = new URLSearchParams();
+  if (params.status) query.set('status', params.status);
+  if (params.dateFrom) query.set('dateFrom', params.dateFrom);
+  if (params.dateTo) query.set('dateTo', params.dateTo);
+  if (params.searchQuery) query.set('searchQuery', params.searchQuery);
+  if (params.warehouseId) query.set('warehouseId', params.warehouseId);
+  if (params.orderId) query.set('orderId', params.orderId);
+  if (params.customerId) query.set('customerId', params.customerId);
+  if (params.pageNumber) query.set('pageNumber', String(params.pageNumber));
+  if (params.pageSize) query.set('pageSize', String(params.pageSize));
+
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+
+  return apiRequest<ApiResponse<PagedResult<InboundScheduleResponse>>>(`/api/v1/asns${suffix}`, {
     headers: accessToken ? getAuthHeaders(accessToken) : undefined,
   });
 }
