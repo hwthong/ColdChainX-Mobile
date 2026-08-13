@@ -9,6 +9,7 @@ type ApiRequestOptions = {
   headers?: Record<string, string>;
   signal?: AbortSignal;
   logResponseBody?: boolean;
+  onResponse?: (response: Response) => void;
 };
 
 export class ApiClientError extends Error {
@@ -77,6 +78,8 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
         : 'Cannot reach backend. Check EXPO_PUBLIC_API_BASE_URL or wait for the Render server to wake up.'
     );
   });
+
+  options.onResponse?.(response);
 
   const data = await parseResponseBody(response);
 

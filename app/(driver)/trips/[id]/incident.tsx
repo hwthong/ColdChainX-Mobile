@@ -6,15 +6,26 @@ import React, { useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 
 import { colors } from '../../../../constants/colors';
-import { createIncident, createIncidentWithEvidence, IncidentSeverity, IncidentType } from '../../../../services/incidentApi';
+import { createIncident, getIncidentSubmitErrorMessage, IncidentSeverity, IncidentType } from '../../../../services/incidentApi';
+import { getTrackingByTripId, TrackingDataResponse } from '../../../../services/trackingApi';
 import { useAuthStore } from '../../../../store/useAuthStore';
+
+const DEVICE_LOCATION_TIMEOUT_MS = 10_000;
+const IOT_LOCATION_MAX_AGE_MS = 5 * 60 * 1000;
+const ALLOWED_CLOCK_SKEW_MS = 60 * 1000;
+
+type IncidentLocation = {
+  latitude: number;
+  longitude: number;
+  source: 'DEVICE' | 'IOT';
+};
 
 const INCIDENT_TYPES: { label: string; value: IncidentType }[] = [
   { label: 'Hỏng xe', value: 'VEHICLE_BREAKDOWN' },
-  { label: 'Hỏng hàng hóa', value: 'CARGO_DAMAGE' },
-  { label: 'Biến động nhiệt độ', value: 'TEMPERATURE_FLUCTUATION' },
+  { label: 'Hỏng hàng hóa', value: 'DAMAGE_CARGO' },
+  { label: 'Biến động nhiệt độ', value: 'TEMP_EXCURSION' },
   { label: 'Tai nạn', value: 'ACCIDENT' },
-  { label: 'Khác', value: 'OTHER' },
+  { label: 'Chậm trễ', value: 'DELAY' },
 ];
 
 const SEVERITIES: { label: string; value: IncidentSeverity }[] = [
@@ -51,22 +62,64 @@ export default function DriverTripIncidentScreen() {
     }
   };
 
-  const getLocation = async () => {
+  const getLocation = async (): Promise<IncidentLocation | null> => {
     setLocationLoading(true);
+    let permissionStatus: Location.PermissionStatus | null = null;
+    let servicesEnabled: boolean | null = null;
+
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Lỗi', 'Vui lòng cấp quyền vị trí để gửi báo cáo chính xác.');
-        return null;
+      const permission = await Location.requestForegroundPermissionsAsync();
+      permissionStatus = permission.status;
+      servicesEnabled = await Location.hasServicesEnabledAsync();
+
+      if (permission.status === 'granted' && servicesEnabled) {
+        try {
+          const loc = await withTimeout(
+            Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.Balanced,
+              mayShowUserSettingsDialog: true,
+            }),
+            DEVICE_LOCATION_TIMEOUT_MS
+          );
+          const deviceLocation = toIncidentLocation(
+            loc.coords.latitude,
+            loc.coords.longitude,
+            'DEVICE'
+          );
+          if (deviceLocation) return deviceLocation;
+        } catch {
+          // Vehicle IoT is the business-safe fallback for an assigned trip.
+        }
       }
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      return { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
     } catch {
-      Alert.alert('Lỗi', 'Không thể lấy vị trí hiện tại. Bạn có thể thử lại.');
-      return null;
+      // Permission/provider failures still allow a fresh vehicle IoT fallback.
+    }
+
+    try {
+      const trackingResponse = await getTrackingByTripId(token!, tripId!);
+      const iotLocation = getFreshIotLocation(trackingResponse.data);
+      if (trackingResponse.success && iotLocation) return iotLocation;
+    } catch {
+      // The final message below reflects that neither source was available.
     } finally {
       setLocationLoading(false);
     }
+
+    if (permissionStatus !== 'granted') {
+      Alert.alert(
+        'Lỗi',
+        'Vui lòng cho phép ColdChainX truy cập vị trí; hiện chưa có tọa độ IoT mới của chuyến xe.'
+      );
+    } else if (servicesEnabled === false) {
+      Alert.alert(
+        'Lỗi',
+        'Vui lòng bật dịch vụ vị trí trên thiết bị; hiện chưa có tọa độ IoT mới của chuyến xe.'
+      );
+    } else {
+      Alert.alert('Lỗi', 'Chưa thể xác định vị trí hiện tại của chuyến xe từ GPS thiết bị hoặc IoT.');
+    }
+
+    return null;
   };
 
   const handleSubmit = async () => {
@@ -78,60 +131,51 @@ export default function DriverTripIncidentScreen() {
 
     setSubmitting(true);
     const coords = await getLocation();
+    if (!coords) {
+      setSubmitting(false);
+      return;
+    }
 
     try {
-      if (!photoUri && !receiptUri) {
-        const payload = {
-          tripId,
-          incidentType: type,
-          severity,
-          description: description.trim(),
-          requiresRescue,
-          driverPaidAmount: amount ? parseFloat(amount) : undefined,
-          currentLatitude: coords?.latitude,
-          currentLongitude: coords?.longitude,
-        };
-        const res = await createIncident(token, payload);
-        if (res.success) {
-          Alert.alert('Thành công', 'Đã gửi báo cáo sự cố.');
-          router.replace(`/(driver)/trips/${tripId}/incident-detail?incidentId=${res.data?.incidentId}` as any);
-        } else {
-          Alert.alert('Lỗi', res.message || 'Không thể tạo sự cố.');
-        }
-      } else {
-        const formData = new FormData();
-        formData.append('TripId', tripId);
-        formData.append('IncidentType', type);
-        formData.append('Severity', severity);
-        formData.append('Description', description.trim());
-        formData.append('RequiresRescue', String(requiresRescue));
-        if (amount) formData.append('DriverPaidAmount', amount);
-        if (coords?.latitude) formData.append('CurrentLatitude', String(coords.latitude));
-        if (coords?.longitude) formData.append('CurrentLongitude', String(coords.longitude));
+      const formData = new FormData();
+      formData.append('TripId', tripId);
+      formData.append('IncidentType', type);
+      formData.append('Severity', severity);
+      formData.append('Description', description.trim());
+      formData.append('RequiresRescue', String(requiresRescue));
+      formData.append('CurrentLatitude', String(coords.latitude));
+      formData.append('CurrentLongitude', String(coords.longitude));
+      if (amount) formData.append('DriverPaidAmount', amount);
 
-        if (photoUri) {
-          const filename = photoUri.split('/').pop() || 'photo.jpg';
-          const match = /\.(\w+)$/.exec(filename);
-          const fileType = match ? `image/${match[1]}` : 'image/jpeg';
-          formData.append('EvidenceFiles', { uri: photoUri, name: filename, type: fileType } as any);
-        }
-        if (receiptUri) {
-          const filename = receiptUri.split('/').pop() || 'receipt.jpg';
-          const match = /\.(\w+)$/.exec(filename);
-          const fileType = match ? `image/${match[1]}` : 'image/jpeg';
-          formData.append('ReceiptFiles', { uri: receiptUri, name: filename, type: fileType } as any);
-        }
-
-        const res = await createIncidentWithEvidence(token, formData);
-        if (res.success) {
-          Alert.alert('Thành công', 'Đã gửi báo cáo sự cố kèm hình ảnh.');
-          router.replace(`/(driver)/trips/${tripId}/incident-detail?incidentId=${res.data?.incidentId}` as any);
-        } else {
-          Alert.alert('Lỗi', res.message || 'Không thể tạo sự cố.');
-        }
+      if (photoUri) {
+        const filename = photoUri.split('/').pop() || 'photo.jpg';
+        formData.append('EvidenceFiles', toImageFormPart(photoUri, filename));
       }
-    } catch (err: any) {
-      Alert.alert('Thất bại', err.message || 'Không thể tạo báo cáo sự cố.');
+      if (receiptUri) {
+        const originalName = receiptUri.split('/').pop() || 'receipt.jpg';
+        const filename = originalName.toLowerCase().includes('receipt')
+          ? originalName
+          : `receipt-${originalName}`;
+        formData.append('EvidenceFiles', toImageFormPart(receiptUri, filename));
+      }
+
+      const hasEvidence = Boolean(photoUri || receiptUri);
+      const res = await createIncident(token, formData, {
+        tripId,
+        hasEvidence,
+        locationSource: coords.source,
+      });
+      if (res.success) {
+        Alert.alert(
+          'Thành công',
+          hasEvidence ? 'Đã gửi báo cáo sự cố kèm hình ảnh.' : 'Đã gửi báo cáo sự cố.'
+        );
+        router.replace(`/(driver)/trips/${tripId}/incident-detail?incidentId=${res.data?.incidentId}` as any);
+      } else {
+        Alert.alert('Lỗi', res.message || 'Không thể gửi báo cáo sự cố.');
+      }
+    } catch (error: unknown) {
+      Alert.alert('Thất bại', getIncidentSubmitErrorMessage(error));
     } finally {
       setSubmitting(false);
       setLocationLoading(false);
@@ -237,4 +281,64 @@ export default function DriverTripIncidentScreen() {
       </Pressable>
     </ScrollView>
   );
+}
+
+function toImageFormPart(uri: string, name: string) {
+  const extension = /\.(\w+)$/.exec(name)?.[1]?.toLowerCase();
+  const type = extension === 'png'
+    ? 'image/png'
+    : extension === 'webp'
+      ? 'image/webp'
+      : 'image/jpeg';
+
+  return { uri, name, type } as any;
+}
+
+function getFreshIotLocation(tracking: TrackingDataResponse | null | undefined): IncidentLocation | null {
+  const telemetry = tracking?.latestTelemetry;
+  if (!telemetry || tracking?.device?.isOnline === false || !telemetry.timestamp) return null;
+
+  const timestamp = Date.parse(telemetry.timestamp);
+  if (!Number.isFinite(timestamp)) return null;
+
+  const ageMs = Date.now() - timestamp;
+  if (ageMs < -ALLOWED_CLOCK_SKEW_MS || ageMs > IOT_LOCATION_MAX_AGE_MS) return null;
+
+  return toIncidentLocation(telemetry.lat, telemetry.lon, 'IOT');
+}
+
+function toIncidentLocation(
+  latitude: number,
+  longitude: number,
+  source: IncidentLocation['source']
+): IncidentLocation | null {
+  if (
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude) ||
+    latitude < -90 ||
+    latitude > 90 ||
+    longitude < -180 ||
+    longitude > 180 ||
+    (latitude === 0 && longitude === 0)
+  ) {
+    return null;
+  }
+
+  return { latitude, longitude, source };
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = setTimeout(() => reject(new Error('Location request timed out.')), timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timeoutId);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      }
+    );
+  });
 }

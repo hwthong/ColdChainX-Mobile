@@ -4,7 +4,7 @@ import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, Linking, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 
 import { colors } from '../../../../constants/colors';
-import { confirmTransload, continueTrip, getIncidentDetail, IncidentResponse } from '../../../../services/incidentApi';
+import { continueTrip, getIncidentDetail, IncidentResponse } from '../../../../services/incidentApi';
 import { useAuthStore } from '../../../../store/useAuthStore';
 
 const POLL_MS = 15_000;
@@ -17,10 +17,10 @@ const INCIDENT_STATUS: Record<string, string> = {
 };
 const INCIDENT_TYPE: Record<string, string> = {
   VEHICLE_BREAKDOWN: 'Hỏng xe',
-  CARGO_DAMAGE: 'Hỏng hàng hóa',
-  TEMPERATURE_FLUCTUATION: 'Biến động nhiệt độ',
+  DAMAGE_CARGO: 'Hỏng hàng hóa',
+  TEMP_EXCURSION: 'Biến động nhiệt độ',
   ACCIDENT: 'Tai nạn',
-  OTHER: 'Khác',
+  DELAY: 'Chậm trễ',
 };
 const SEVERITY: Record<string, string> = {
   LOW: 'Thấp', MEDIUM: 'Trung bình', HIGH: 'Cao', CRITICAL: 'Nghiêm trọng',
@@ -122,29 +122,6 @@ export default function DriverIncidentDetailScreen() {
     ]);
   };
 
-  const handleConfirmTransload = async () => {
-    if (!token || !incidentId) return;
-    Alert.alert('Xác nhận', 'Bạn đã hoàn tất việc sang toàn bộ hàng hoá sang xe thay thế?', [
-      { text: 'Hủy', style: 'cancel' },
-      { text: 'Xác nhận Đã Sang Hàng', onPress: async () => {
-        setActionLoading(true);
-        try {
-          const res = await confirmTransload(token, incidentId, 'Tài xế xác nhận đã sang hàng.');
-          if (res.success) {
-            Alert.alert('Thành công', 'Đã xác nhận chuyển tải thành công. Chuyến xe sẽ được tiếp tục.');
-            await loadIncident();
-          } else {
-            Alert.alert('Lỗi', res.message || 'Bạn không có quyền hoặc có lỗi xảy ra.');
-          }
-        } catch {
-          Alert.alert('Lỗi', 'Bạn không có quyền xác nhận sang hàng hoặc máy chủ bị lỗi.');
-        } finally {
-          setActionLoading(false);
-        }
-      }}
-    ]);
-  };
-
   if (loading) {
     return (
       <View style={{ backgroundColor: colors.surface.page }} className="flex-1 items-center justify-center">
@@ -176,6 +153,9 @@ export default function DriverIncidentDetailScreen() {
     );
   }
 
+  const resolutionEvidence = incident.evidences.find((e) => e.evidenceType === 'RESOLUTION_PDF');
+  const supportingEvidences = incident.evidences.filter((e) => e.evidenceType !== 'RESOLUTION_PDF');
+
   return (
     <ScrollView style={{ backgroundColor: colors.surface.page }} className="flex-1" contentContainerStyle={{ padding: 20, paddingBottom: 100, gap: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.brand.primary} />}>
       <Pressable onPress={() => router.back()} style={{ backgroundColor: colors.brand.primarySoft }} className="mb-2 self-start rounded-full p-2">
@@ -185,7 +165,7 @@ export default function DriverIncidentDetailScreen() {
       <View className="flex-row items-start justify-between gap-3">
         <View className="flex-1">
           <Text style={{ color: colors.text.secondary }} className="text-xs font-bold uppercase tracking-widest">Mã Sự Cố</Text>
-          <Text style={{ color: colors.text.primary }} className="mt-1 text-2xl font-bold">{incident.incidentCode}</Text>
+          <Text style={{ color: colors.text.primary }} className="mt-1 text-2xl font-bold">{incident.incidentId}</Text>
         </View>
         <View className="rounded-xl bg-red-100 px-3 py-2">
           <Text className="text-xs font-bold text-red-900">{INCIDENT_STATUS[incident.status] || incident.status}</Text>
@@ -206,6 +186,16 @@ export default function DriverIncidentDetailScreen() {
         <InfoRow label="Tọa độ GPS" value={incident.currentLatitude ? `${incident.currentLatitude.toFixed(5)}, ${incident.currentLongitude?.toFixed(5)}` : 'Không xác định'} />
       </View>
 
+      {!incident.requiresRescue && incident.status === 'REPORTED' && (
+        <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-4 rounded-3xl border p-5 shadow-sm">
+          <Text style={{ color: colors.text.primary }} className="font-bold">Sự cố có thể tự xử lý</Text>
+          <Text style={{ color: colors.text.secondary }} className="text-xs leading-5">Chỉ xác nhận khi xe đã an toàn và có thể tiếp tục hành trình.</Text>
+          <Pressable onPress={handleContinueTrip} disabled={actionLoading} style={{ backgroundColor: colors.brand.primary }} className="items-center rounded-xl p-3">
+            {actionLoading ? <ActivityIndicator color={colors.text.onPrimary} /> : <Text style={{ color: colors.text.onPrimary }} className="font-bold">Tiếp tục chuyến xe</Text>}
+          </Pressable>
+        </View>
+      )}
+
       {incident.requiresRescue && (
         <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-4 rounded-3xl border p-5 shadow-sm">
           <View className="flex-row items-center gap-2">
@@ -218,20 +208,14 @@ export default function DriverIncidentDetailScreen() {
           {incident.status === 'RESCUE_DISPATCHED' && (
              <View style={{ backgroundColor: colors.surface.selected, borderColor: colors.border.selected }} className="mt-4 rounded-2xl border p-4">
                <Text style={{ color: colors.text.primary }} className="mb-2 text-sm font-bold">Đang chờ sang hàng</Text>
-               <Text style={{ color: colors.text.secondary }} className="mb-4 text-xs leading-5">Xe cứu hộ đang trên đường tới hoặc đã tới hiện trường. Vui lòng xác nhận sau khi hoàn tất sang hàng hóa vào xe mới.</Text>
-               <Pressable onPress={handleConfirmTransload} disabled={actionLoading} style={{ backgroundColor: colors.brand.primary }} className="items-center rounded-xl p-3">
-                 {actionLoading ? <ActivityIndicator color={colors.text.onPrimary} /> : <Text style={{ color: colors.text.onPrimary }} className="font-bold">Xác nhận đã sang hàng</Text>}
-               </Pressable>
+               <Text style={{ color: colors.text.secondary }} className="text-xs leading-5">Xe cứu hộ đang trên đường tới hoặc đã tới hiện trường. Điều phối hoặc nhân viên kho sẽ xác nhận sau khi hoàn tất sang hàng hóa vào xe mới.</Text>
              </View>
           )}
 
           {(incident.status === 'RESOLVED' || incident.status === 'TRANSLOAD_COMPLETED') && (
              <View className="mt-4 rounded-2xl border border-green-200 bg-green-50 p-4">
                <Text className="mb-2 text-sm font-bold text-green-900">Đã sang hàng thành công</Text>
-               <Text className="mb-4 text-xs text-green-800">Xe mới sẵn sàng. Hãy bấm nút dưới đây để tiếp tục hành trình.</Text>
-               <Pressable onPress={handleContinueTrip} disabled={actionLoading} className="items-center rounded-xl bg-green-800 p-3">
-                 {actionLoading ? <ActivityIndicator color="white" /> : <Text className="font-bold text-white">Tiếp tục chuyến xe</Text>}
-               </Pressable>
+               <Text className="text-xs text-green-800">Xe mới đã sẵn sàng và chuyến xe đã được chuyển về trạng thái tiếp tục hành trình.</Text>
              </View>
           )}
         </View>
@@ -247,19 +231,18 @@ export default function DriverIncidentDetailScreen() {
         </View>
       ) : null}
 
-      {incident.evidences && incident.evidences.length > 0 && (
+      {supportingEvidences.length > 0 && (
         <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-4 rounded-3xl border p-5 shadow-sm">
           <View className="flex-row items-center gap-2">
             <Ionicons name="images-outline" size={20} color={colors.brand.primary} />
             <Text style={{ color: colors.text.primary }} className="text-base font-bold">Hình ảnh & Bằng chứng</Text>
           </View>
-          {incident.evidences.map((e) => (
+          {supportingEvidences.map((e) => (
              <Pressable key={e.evidenceId} onPress={() => Linking.openURL(e.fileUrl)} style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="flex-row items-center justify-between rounded-xl border p-3">
                 <View className="flex-row items-center gap-3">
-                  <Ionicons name={e.evidenceType === 'RECEIPT' ? "receipt" : "image"} size={24} color={colors.brand.primary} />
+                  <Ionicons name={isReceiptEvidence(e.evidenceType) ? "receipt" : "image"} size={24} color={colors.brand.primary} />
                   <View>
-                    <Text style={{ color: colors.text.primary }} className="text-sm font-medium">{e.evidenceType === 'RECEIPT' ? 'Biên lai/Hoá đơn' : 'Ảnh hiện trường'}</Text>
-                    <Text style={{ color: colors.text.secondary }} className="text-xs">{new Date(e.uploadedAt).toLocaleString('vi-VN')}</Text>
+                    <Text style={{ color: colors.text.primary }} className="text-sm font-medium">{isReceiptEvidence(e.evidenceType) ? 'Biên lai/Hoá đơn' : 'Ảnh hiện trường'}</Text>
                   </View>
                 </View>
                 <Ionicons name="open-outline" size={20} color={colors.brand.primary} />
@@ -268,9 +251,9 @@ export default function DriverIncidentDetailScreen() {
         </View>
       )}
 
-      {incident.resolutionPdfUrl && (
+      {resolutionEvidence && (
         <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-4 rounded-3xl border p-5 shadow-sm">
-          <Pressable onPress={() => Linking.openURL(incident.resolutionPdfUrl!)} className="flex-row items-center justify-between rounded-xl border border-red-200 bg-red-50 p-4">
+          <Pressable onPress={() => Linking.openURL(resolutionEvidence.fileUrl)} className="flex-row items-center justify-between rounded-xl border border-red-200 bg-red-50 p-4">
             <View className="flex-row items-center gap-3">
               <Ionicons name="document-text" size={24} color={colors.status.danger.main} />
               <Text style={{ color: colors.status.danger.main }} className="font-bold">Biên bản xử lý sự cố (PDF)</Text>
@@ -291,4 +274,8 @@ function InfoRow({ label, value }: { label: string; value: string }) {
       <Text className="flex-1 text-right text-sm font-semibold text-amber-950">{value}</Text>
     </View>
   );
+}
+
+function isReceiptEvidence(evidenceType: string) {
+  return evidenceType === 'DRIVER_RECEIPT' || evidenceType === 'REIMBURSEMENT_RECEIPT';
 }
