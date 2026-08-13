@@ -10,7 +10,8 @@ import {
  */
 export function AppPressable({ style, onPressIn, onPressOut, ...props }: PressableProps) {
   const [pressed, setPressed] = useState(false);
-  const resolvedStyle = typeof style === 'function' ? style({ pressed, hovered: false }) : style;
+  const state = { pressed } as Parameters<Extract<PressableProps['style'], Function>>[0];
+  const resolvedStyle = typeof style === 'function' ? style(state) : style;
 
   return (
     <NativePressable
