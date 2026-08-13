@@ -6,6 +6,7 @@ import { ActivityIndicator, AppState, RefreshControl, ScrollView, Text, View } f
 import { AppPressable as Pressable } from '../../../components/AppPressable';
 import { GoongRouteMap } from '../../../components/customer/GoongRouteMap';
 import { TemperatureChart } from '../../../components/customer/TemperatureChart';
+import { TripAlertsSection } from '../../../components/driver/TripAlertsSection';
 import { getApiErrorMessage } from '../../../services/apiClient';
 import {
   getTripAlerts, getTripRoute, getTripTemperatureChart, getTripTracking,
@@ -42,6 +43,7 @@ export default function DriverTripDetailScreen() {
   const [route, setRoute] = useState<TripRouteResponse | null>(null);
   const [chart, setChart] = useState<TemperatureChartData | null>(null);
   const [alerts, setAlerts] = useState<SmartAlert[]>([]);
+  const [alertsLoaded, setAlertsLoaded] = useState(false);
   const [activeIncident, setActiveIncident] = useState<IncidentResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -64,13 +66,15 @@ export default function DriverTripDetailScreen() {
   }, [setError, token, tripId]);
 
   const loadTrip = useCallback(async () => {
-    if (!tripId) return;
+    if (!tripId) return null;
     try {
       const data = await driverApi.getMyTripDetail(tripId);
       setTrip(data);
       setError('trip', null);
+      return data;
     } catch (error) {
       setError('trip', getApiErrorMessage(error));
+      return null;
     }
   }, [tripId, setError]);
 
@@ -99,6 +103,7 @@ export default function DriverTripDetailScreen() {
       if (!response.success) { setError('alerts', response.message || 'Không thể tải cảnh báo.'); return; }
       setAlerts(response.data ?? []); setError('alerts', null);
     } catch (error) { setError('alerts', getApiErrorMessage(error)); }
+    finally { setAlertsLoaded(true); }
   }, [setError, token, tripId]);
 
   const loadIncident = useCallback(async () => {
@@ -131,17 +136,37 @@ export default function DriverTripDetailScreen() {
       if (disposed || inFlight || appState !== 'active') return;
       inFlight = true;
       const current = await loadTracking();
-      inFlight = false;
-      terminal = Boolean(current?.status && TERMINAL.has(current.status.toUpperCase()));
-      if (current) { failures = 0; successes += 1; if (successes % 3 === 0) void Promise.all([loadChart(), loadAlerts(), loadIncident()]); }
+      terminal = terminal || Boolean(current?.status && TERMINAL.has(current.status.toUpperCase()));
+      if (current) {
+        failures = 0;
+        successes += 1;
+        if (successes % 3 === 0) {
+          const [latestTrip] = await Promise.all([loadTrip(), loadChart(), loadAlerts(), loadIncident()]);
+          terminal = terminal || Boolean(latestTrip?.status && TERMINAL.has(latestTrip.status.toUpperCase()));
+        }
+      }
       else failures += 1;
+      inFlight = false;
       setLoading(false);
       if (disposed || terminal) return;
       clear();
       timer = setTimeout(() => void poll(), Math.min(POLL_MS * 2 ** failures, MAX_POLL_MS));
     };
-    void Promise.all([loadTrip(), loadRoute(), loadChart(), loadAlerts(), loadIncident()]);
-    void poll();
+    const initialize = async () => {
+      const [currentTrip, currentTracking] = await Promise.all([
+        loadTrip(), loadTracking(), loadRoute(), loadChart(), loadAlerts(), loadIncident(),
+      ]);
+      if (disposed) return;
+      terminal = Boolean(
+        (currentTrip?.status && TERMINAL.has(currentTrip.status.toUpperCase()))
+        || (currentTracking?.status && TERMINAL.has(currentTracking.status.toUpperCase()))
+      );
+      setLoading(false);
+      if (!terminal && appState === 'active') {
+        timer = setTimeout(() => void poll(), POLL_MS);
+      }
+    };
+    void initialize();
     const subscription = AppState.addEventListener('change', (nextState) => {
       appState = nextState;
       if (nextState !== 'active') clear(); else if (!terminal) void poll();
@@ -163,6 +188,7 @@ export default function DriverTripDetailScreen() {
   }
   const vehiclePosition = getVehiclePosition(tracking);
   const status = trip?.status || tracking?.status || 'UNKNOWN';
+  const isCompleted = TERMINAL.has(status.toUpperCase());
 
   return (
     <ScrollView style={{ backgroundColor: colors.surface.page }} className="flex-1" contentContainerStyle={{ padding: 20, paddingBottom: 100, gap: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.brand.primary} />}>
@@ -196,7 +222,14 @@ export default function DriverTripDetailScreen() {
       </Section>
 
       <Section title="Lịch sử nhiệt độ" icon="pulse-outline">{errors.chart ? <ErrorMessage message={errors.chart} onRetry={loadChart} /> : null}{chart ? <TemperatureChart points={chart.points} /> : !errors.chart ? <Empty message="Chưa có dữ liệu nhiệt độ." /> : null}</Section>
-      <Section title="Cảnh báo vận hành" icon="notifications-outline">{errors.alerts ? <ErrorMessage message={errors.alerts} onRetry={loadAlerts} /> : null}{!errors.alerts && alerts.length === 0 ? <Empty message="Chưa có cảnh báo cho chuyến này." /> : null}{alerts.map((alert, index) => <View key={alert.alertId || `${alert.createdAt}-${index}`} className="rounded-2xl border border-red-200 bg-red-50 p-4"><Text className="font-bold text-red-900">{alert.title || alert.alertType || 'Cảnh báo'}</Text><Text className="mt-2 text-sm leading-5 text-red-800">{alert.message || 'Không có nội dung.'}</Text><Text className="mt-2 text-xs text-red-700">{formatDateTime(alert.createdAt)}</Text></View>)}</Section>
+      <TripAlertsSection
+        key={`${tripId}-${isCompleted ? 'completed' : 'active'}`}
+        alerts={alerts}
+        completed={isCompleted}
+        loading={!alertsLoaded}
+        error={errors.alerts}
+        onRetry={loadAlerts}
+      />
       <Section title={`Điểm dừng (${trip?.stopCount ?? 0})`} icon="trail-sign-outline">
         {errors.trip ? <ErrorMessage message={errors.trip} onRetry={loadTrip} /> : null}
         {trip?.stops?.map((stop, index) => (

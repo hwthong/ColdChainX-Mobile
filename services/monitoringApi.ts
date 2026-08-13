@@ -29,6 +29,7 @@ export type TripTracking = Omit<TrackingDataResponse, 'device'> & {
 export interface SmartAlert {
   alertId?: string;
   alertType?: string;
+  severity?: string;
   title?: string;
   message?: string;
   createdAt?: string;
