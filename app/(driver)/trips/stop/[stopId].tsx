@@ -62,6 +62,7 @@ type StopOrder = {
   customerId?: string | null;
   status: string;
   lpns: TripRouteLpnDto[];
+  epod: EpodResponse | null;
 };
 
 const STOP_STATUS: Record<string, string> = {
@@ -116,6 +117,7 @@ export default function StopDetailScreen() {
   const [paymentVerification, setPaymentVerification] = useState<VerifyQrPaymentResponse | null>(null);
   const [cutSeal, setCutSeal] = useState<CutSealResponse | null>(null);
   const [appliedSeal, setAppliedSeal] = useState<ApplySealResponse | null>(null);
+  const [serverSealNumber, setServerSealNumber] = useState<string | null>(null);
   const [newSealCode, setNewSealCode] = useState('');
   const [rejectionReason, setRejectionReason] = useState('');
   const [rejectEvidenceAsset, setRejectEvidenceAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
@@ -134,28 +136,41 @@ export default function StopDetailScreen() {
     () => orders.find((order) => order.orderId === selectedOrderId) ?? null,
     [orders, selectedOrderId]
   );
-  const allOrdersHandedOver = orders.every(isHandoverConfirmed);
+  const allOrdersHandedOver = orders.length > 0 && orders.every(isHandoverConfirmed);
+  const hasUnresolvedEpod = orders.some((order) => isHandoverConfirmed(order) && !order.epod);
+  const pendingPaymentOrder = orders.find((order) => isPaymentPending(order.epod)) ?? null;
+  const allPaymentsReady = allOrdersHandedOver
+    && !hasUnresolvedEpod
+    && orders.every((order) => !isPaymentPending(order.epod));
   const stopStatus = driverStop?.status?.toUpperCase() || 'UNKNOWN';
   const hasCheckedIn = stopStatus === 'ARRIVED' || stopStatus === 'SKIPPED_NOSHOW';
   const isLegacyCompletedStop = stopStatus === 'DEPARTED';
+  const serverSealIsCut = isCutSealNumber(serverSealNumber);
+  const hasCutSeal = Boolean(cutSeal) || serverSealIsCut;
   const hasRemainingStops = tripStops.some(
     (stop) => stop.stopSequence > (driverStop?.stopSequence ?? Number.MAX_SAFE_INTEGER)
       && stop.status?.toUpperCase() !== 'DEPARTED'
   );
+  const hasAppliedSeal = Boolean(appliedSeal)
+    || (allOrdersHandedOver && hasRemainingStops && Boolean(serverSealNumber) && !serverSealIsCut);
   const deliveryActionState = getDriverDeliveryActionState({
     hasCheckedIn,
-    hasCutSeal: Boolean(cutSeal),
+    hasCutSeal,
     allOrdersHandedOver,
+    hasUnresolvedEpod,
+    hasPendingPayment: Boolean(pendingPaymentOrder),
     hasRemainingStops,
-    hasAppliedSeal: Boolean(appliedSeal),
+    hasAppliedSeal,
     tripStatus,
   });
   const hasNoShowOrder = orders.some((order) => order.status.toUpperCase() === 'DELIVERY_FAILED_NOSHOW');
   const isReturnFlow = returnFlowActive
     || stopStatus === 'SKIPPED_NOSHOW'
     || orders.some((order) => RETURN_ORDER_STATUSES.has(order.status.toUpperCase()));
-  const canCloseShift = isReturnFlow
-    && allOrdersHandedOver
+  const showCloseShiftPanel = (isReturnFlow || (allOrdersHandedOver && !hasRemainingStops))
+    && tripStatus.toUpperCase() !== 'COMPLETED';
+  const canCloseShift = allOrdersHandedOver
+    && allPaymentsReady
     && !hasRemainingStops
     && !hasNoShowOrder
     && tripStatus.toUpperCase() !== 'COMPLETED';
@@ -171,9 +186,10 @@ export default function StopDetailScreen() {
     setLoadError(null);
 
     try {
-      const [tripDetail, routeResponse] = await Promise.all([
+      const [tripDetail, routeResponse, trackingResponse] = await Promise.all([
         driverApi.getMyTripDetail(tripId),
         getPlannedTripRoute(token, tripId),
+        getTrackingByTripId(token, tripId),
       ]);
       if (!routeResponse.success || !routeResponse.data) {
         throw new Error('Không thể tải tuyến đường của chuyến.');
@@ -185,6 +201,7 @@ export default function StopDetailScreen() {
       }
 
       const route = routeResponse.data;
+      setServerSealNumber(trackingResponse.data?.sealNumber ?? null);
       const routeStop = route.optimizedStops.find((stop) => stop.stopId === stopId);
       let routeOrders: TripRouteOrderDto[];
       let stopLocationId: string | null | undefined;
@@ -208,7 +225,6 @@ export default function StopDetailScreen() {
         stopLocationId = boundaryPoint.locationId;
         routeLpns = [];
 
-        const trackingResponse = await getTrackingByTripId(token, tripId);
         if (!trackingResponse.success || !trackingResponse.data) {
           throw new Error('Không thể tải danh sách đơn hàng của chuyến.');
         }
@@ -231,15 +247,25 @@ export default function StopDetailScreen() {
           customerId: order.customerId,
           status: order.status,
           lpns: routeLpns.filter((lpn) => lpn.orderId === order.orderId),
+          epod: null,
         };
       });
+
+      const restoredOrders = await Promise.all(nextOrders.map(async (order) => {
+        if (!isHandoverConfirmed(order)) return order;
+        try {
+          return { ...order, epod: await deliveryApi.getEpodByOrderId(order.orderId) };
+        } catch {
+          return order;
+        }
+      }));
 
       setDriverStop(currentStop);
       setTripStops(tripDetail.stops);
       setTripStatus(tripDetail.status || 'UNKNOWN');
-      setOrders(nextOrders);
+      setOrders(restoredOrders);
       setSelectedOrderId((current) =>
-        current && nextOrders.some((order) => order.orderId === current) ? current : null
+        current && restoredOrders.some((order) => order.orderId === current) ? current : null
       );
       return true;
     } catch (error) {
@@ -373,6 +399,8 @@ export default function StopDetailScreen() {
 
   const resetOrderForm = () => {
     setSelectedOrderId(null);
+    setEpodId('');
+    setEpod(null);
     setSignatureAsset(null);
     setHandoverPhotoAsset(null);
     setPaymentQr(null);
@@ -381,6 +409,17 @@ export default function StopDetailScreen() {
     setNoShowEvidenceAsset(null);
     setRejectionReason('');
     setStep('ORDERS');
+  };
+
+  const resumePayment = (order: StopOrder) => {
+    if (!order.epod) return;
+    setSelectedOrderId(order.orderId);
+    setEpodId(order.epod.epodId);
+    setEpod(order.epod);
+    setPaymentQr(null);
+    setPaymentVerification(null);
+    setPaymentProofAsset(null);
+    setStep('PAYMENT');
   };
 
   const handleGetPaymentQr = async () => {
@@ -422,6 +461,7 @@ export default function StopDetailScreen() {
           // The verification response is still enough to inform the driver of a pending review.
         }
       }
+      await loadData(false);
     } catch (error) {
       Alert.alert('Không thể gửi xác minh thanh toán', formatActionError(error, 'PAYMENT'));
     } finally {
@@ -434,6 +474,7 @@ export default function StopDetailScreen() {
     try {
       setIsProcessing(true);
       setCutSeal(await deliveryApi.cutSeal(tripId, stopId));
+      await loadData(false);
     } catch (error) {
       Alert.alert('Không thể cắt seal', formatActionError(error, 'CUT_SEAL'));
     } finally {
@@ -451,6 +492,7 @@ export default function StopDetailScreen() {
       setIsProcessing(true);
       setAppliedSeal(await deliveryApi.applySeal(tripId, sealCode));
       setNewSealCode('');
+      await loadData(false);
     } catch (error) {
       Alert.alert('Không thể kẹp seal mới', formatActionError(error, 'APPLY_SEAL'));
     } finally {
@@ -569,7 +611,7 @@ export default function StopDetailScreen() {
   };
 
   const loadReturnWarehouses = async () => {
-    if (!tripId || !isReturnFlow || isLoadingWarehouses) return;
+    if (!tripId || !showCloseShiftPanel || isLoadingWarehouses) return;
     try {
       setIsLoadingWarehouses(true);
       setWarehouseError(null);
@@ -911,7 +953,34 @@ const confirmCloseShift = () => {
               />
             ))}
 
-            {cutSeal && !allOrdersHandedOver && stopStatus !== 'SKIPPED_NOSHOW' ? (
+            {pendingPaymentOrder?.epod ? (
+              <View className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4">
+                <Text className="font-bold text-amber-950">Thanh toán COD đang chờ xử lý</Text>
+                <Text className="mt-1 text-sm text-amber-800">
+                  Đơn {pendingPaymentOrder.trackingCode} đã có ePOD. Tiếp tục bước thanh toán từ trạng thái Backend.
+                </Text>
+                <View className="mt-4">
+                  <AppButton
+                    label={`Tiếp tục thanh toán ${pendingPaymentOrder.trackingCode}`}
+                    disabled={isProcessing}
+                    onPress={() => resumePayment(pendingPaymentOrder)}
+                  />
+                </View>
+              </View>
+            ) : null}
+
+            {hasUnresolvedEpod ? (
+              <View className="mt-4">
+                <AppButton
+                  label="Tải lại trạng thái ePOD"
+                  variant="secondary"
+                  disabled={isProcessing}
+                  onPress={() => void loadData(false)}
+                />
+              </View>
+            ) : null}
+
+            {hasCutSeal && !allOrdersHandedOver && stopStatus !== 'SKIPPED_NOSHOW' ? (
               <View className="mt-4">
                 <AppButton
                   label="Báo khách hàng không có mặt"
@@ -922,7 +991,7 @@ const confirmCloseShift = () => {
               </View>
             ) : null}
 
-            {!cutSeal ? (
+            {!hasCutSeal ? (
               <View className="mt-6 rounded-2xl border border-amber-200 bg-white p-4">
                 <View className="flex-row items-center gap-3">
                   <Ionicons name="cut-outline" size={24} color="#92400E" />
@@ -945,18 +1014,24 @@ const confirmCloseShift = () => {
               <DeliveryNotice
                 icon="checkmark-circle"
                 title="Seal đã được cắt"
-                detail={cutSeal.aiAlertingMuted ? 'Theo dõi AI/IoT đã được tạm dừng theo phản hồi của hệ thống.' : 'Bạn có thể tiếp tục bàn giao các đơn tại điểm này.'}
+                detail={cutSeal?.aiAlertingMuted ? 'Theo dõi AI/IoT đã được tạm dừng theo phản hồi của hệ thống.' : 'Trạng thái seal đã được khôi phục từ Backend. Bạn có thể tiếp tục bàn giao.'}
                 tone="success"
               />
             )}
 
-            {isReturnFlow ? (
+            {showCloseShiftPanel ? (
               <View className="mt-6 rounded-2xl border border-orange-200 bg-orange-50 p-4">
                 <View className="flex-row items-start gap-3">
                   <Ionicons name="business-outline" size={24} color="#9A3412" />
                   <View className="flex-1">
-                    <Text className="font-bold text-orange-950">Kho quy đầu gần vị trí xe</Text>
-                    <Text className="mt-1 text-sm text-orange-800">Khoảng cách do Backend tính từ dữ liệu vị trí xe.</Text>
+                    <Text className="font-bold text-orange-950">
+                      {isReturnFlow ? 'Kho quy đầu gần vị trí xe' : 'Kho kết ca gần vị trí xe'}
+                    </Text>
+                    <Text className="mt-1 text-sm text-orange-800">
+                      {isReturnFlow
+                        ? 'Khoảng cách do Backend tính từ dữ liệu vị trí xe.'
+                        : 'Sau khi hoàn tất điểm cuối và thanh toán COD, chọn kho để đóng ca.'}
+                    </Text>
                   </View>
                 </View>
 
@@ -1009,6 +1084,9 @@ const confirmCloseShift = () => {
                 {hasNoShowOrder ? (
                   <Text className="mt-4 text-sm text-orange-800">Ca chưa thể đóng vì Backend yêu cầu mọi đơn có xác nhận bàn giao/ePOD.</Text>
                 ) : null}
+                {!allPaymentsReady ? (
+                  <Text className="mt-4 text-sm text-orange-800">Hoàn tất thanh toán COD của mọi ePOD trước khi đóng ca.</Text>
+                ) : null}
                 {canCloseShift && warehouses && warehouses.length > 0 ? (
                   <View className="mt-4">
                     <AppButton
@@ -1041,7 +1119,7 @@ const confirmCloseShift = () => {
                     : `Bàn giao tại điểm cuối đã hoàn tất. Trạng thái chuyến hiện tại: ${formatTripStatus(tripStatus)}.`
                   : 'Hoàn tất bàn giao tất cả đơn tại điểm dừng này trước khi thực hiện bước tiếp theo.'}
               </Text>
-              {allOrdersHandedOver && hasRemainingStops && !appliedSeal ? (
+              {allOrdersHandedOver && allPaymentsReady && hasRemainingStops && !hasAppliedSeal ? (
                 <View className="rounded-2xl border border-amber-200 bg-white p-4">
                   <AppInput
                     label="Mã seal mới"
@@ -1059,11 +1137,11 @@ const confirmCloseShift = () => {
                   </View>
                 </View>
               ) : null}
-              {hasRemainingStops && appliedSeal ? (
+              {hasRemainingStops && hasAppliedSeal ? (
                 <DeliveryNotice
                   icon="shield-checkmark"
                   title="Đã kẹp seal mới"
-                  detail={appliedSeal.aiAlertingRestored ? 'Theo dõi AI/IoT đã được khôi phục.' : 'Seal mới đã được hệ thống ghi nhận.'}
+                  detail={appliedSeal?.aiAlertingRestored ? 'Theo dõi AI/IoT đã được khôi phục.' : 'Trạng thái seal mới đã được khôi phục từ Backend.'}
                   tone="success"
                 />
               ) : null}
@@ -1229,7 +1307,7 @@ function PaymentPanel({
 }) {
   const amount = paymentQr?.paymentAmountDue ?? epod.paymentAmountDue ?? 0;
   const paymentStatus = paymentVerification?.currentPaymentStatus || paymentQr?.paymentStatus || epod.paymentStatus;
-  const requiresPayment = amount > 0;
+  const requiresPayment = amount > 0 && !isPaymentSettledStatus(paymentStatus);
 
   return (
     <View>
@@ -1253,12 +1331,12 @@ function PaymentPanel({
         <View className="mt-5 rounded-2xl border border-amber-200 bg-white p-4">
           <Text className="text-sm text-amber-700">Số tiền cần thanh toán</Text>
           <Text className="mt-1 text-2xl font-bold text-amber-950">{formatCurrency(amount)}</Text>
-          {!paymentQr ? (
-            <View className="mt-4">
-              <AppButton label="Lấy mã thanh toán QR" onPress={onGetQr} loading={processing} />
-            </View>
-          ) : (
-            <View className="mt-4">
+          <Text className="mt-4 font-bold text-amber-950">Chọn phương thức xác nhận thanh toán</Text>
+          <View className="mt-3">
+            <AppButton label="Thanh toán QR" onPress={onGetQr} loading={processing} />
+          </View>
+          {paymentQr ? (
+            <View className="mt-4 rounded-xl border border-amber-100 bg-amber-50 p-3">
               {paymentQr.qrCodeUrl ? (
                 <Image source={{ uri: paymentQr.qrCodeUrl }} className="h-52 w-full rounded-xl bg-amber-50" resizeMode="contain" />
               ) : null}
@@ -1267,21 +1345,27 @@ function PaymentPanel({
                   <AppButton label="Mở trang thanh toán" variant="secondary" onPress={() => onOpenUrl(paymentQr.checkoutUrl)} disabled={processing} />
                 </View>
               ) : null}
-              <View className="mt-4">
-                <ProofPicker
-                  asset={proofAsset}
-                  emptyLabel="Thêm ảnh biên lai sau khi khách thanh toán"
-                  chooseLabel={proofAsset ? 'Chọn lại ảnh biên lai' : 'Thêm ảnh biên lai'}
-                  disabled={processing}
-                  compact
-                  onPick={onPickProof}
-                />
-              </View>
-              <View className="mt-4">
-                <AppButton label="Gửi xác minh thanh toán" onPress={onVerify} loading={processing} disabled={!proofAsset} />
-              </View>
             </View>
-          )}
+          ) : null}
+          <View className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
+            <Text className="font-bold text-amber-950">Xác nhận bằng biên lai thanh toán</Text>
+            <Text className="mt-1 text-sm text-amber-700">
+              Chụp hoặc chọn ảnh biên lai/chuyển khoản thành công để Backend lưu bằng chứng và cho phép tiếp tục chuyến.
+            </Text>
+            <View className="mt-3">
+              <ProofPicker
+                asset={proofAsset}
+                emptyLabel="Thêm ảnh biên lai thanh toán"
+                chooseLabel={proofAsset ? 'Chọn lại ảnh biên lai' : 'Thêm ảnh biên lai'}
+                disabled={processing}
+                compact
+                onPick={onPickProof}
+              />
+            </View>
+            <View className="mt-4">
+              <AppButton label="Gửi bằng chứng thanh toán" onPress={onVerify} loading={processing} disabled={!proofAsset} />
+            </View>
+          </View>
           {paymentVerification ? (
             <Text className="mt-4 text-sm text-amber-800">
               {paymentVerification.isConfirmedBySystem ? 'Thanh toán đã được hệ thống ghi nhận.' : 'Bằng chứng thanh toán đã được gửi và đang chờ xác minh.'}
@@ -1463,6 +1547,9 @@ function formatActionError(
     if (action === 'PAYMENT' && /pending|verify|paid/.test(message)) {
       return 'Thanh toán đang chờ xác minh hoặc đã được ghi nhận.';
     }
+    if (action === 'PAYMENT' && /payos.*not configured|payos_client_id|payos_api_key|payos_checksum_key/.test(message)) {
+      return 'Thanh toán QR hiện chưa khả dụng. Vui lòng chọn xác nhận bằng biên lai thanh toán.';
+    }
     if (action === 'APPLY_SEAL' && /seal/.test(message)) {
       return 'Mã seal chưa hợp lệ hoặc seal đã được áp dụng.';
     }
@@ -1579,6 +1666,8 @@ function getDriverDeliveryActionState({
   hasCheckedIn,
   hasCutSeal,
   allOrdersHandedOver,
+  hasUnresolvedEpod,
+  hasPendingPayment,
   hasRemainingStops,
   hasAppliedSeal,
   tripStatus,
@@ -1586,6 +1675,8 @@ function getDriverDeliveryActionState({
   hasCheckedIn: boolean;
   hasCutSeal: boolean;
   allOrdersHandedOver: boolean;
+  hasUnresolvedEpod: boolean;
+  hasPendingPayment: boolean;
   hasRemainingStops: boolean;
   hasAppliedSeal: boolean;
   tripStatus: string;
@@ -1602,6 +1693,12 @@ function getDriverDeliveryActionState({
   if (!allOrdersHandedOver) {
     return { title: 'Bước tiếp theo: bàn giao đơn hàng', detail: 'Chọn từng đơn để thêm chữ ký người nhận.' };
   }
+  if (hasUnresolvedEpod) {
+    return { title: 'Bước tiếp theo: tải lại ePOD', detail: 'Backend chưa trả được trạng thái ePOD. Tải lại trước khi rời điểm dừng.' };
+  }
+  if (hasPendingPayment) {
+    return { title: 'Bước tiếp theo: thanh toán COD', detail: 'Mở lại ePOD đang chờ thanh toán và lấy mã QR cho khách hàng.' };
+  }
   if (hasRemainingStops && !hasAppliedSeal) {
     return { title: 'Bước tiếp theo: kẹp seal mới', detail: 'Nhập mã seal mới trước khi tiếp tục đến điểm dừng kế tiếp.' };
   }
@@ -1612,6 +1709,25 @@ function getDriverDeliveryActionState({
     title: 'Đã hoàn tất bàn giao tại điểm cuối',
     detail: `Trạng thái chuyến hiện tại: ${formatTripStatus(tripStatus)}.`,
   };
+}
+
+function isCutSealNumber(sealNumber?: string | null) {
+  const normalized = sealNumber?.toUpperCase() ?? '';
+  return normalized.includes('UNSEALED') || normalized.includes('ĐÃ CẮT');
+}
+
+function isPaymentSettledStatus(status?: string | null) {
+  return new Set([
+    'PAID',
+    'PAID_PROOF',
+    'PAID_ACTUAL_RECEIVED',
+    'PENDING_VERIFY',
+  ]).has(status?.toUpperCase() ?? '');
+}
+
+function isPaymentPending(epod?: EpodResponse | null) {
+  const amount = epod?.paymentAmountDue ?? 0;
+  return amount > 0 && !isPaymentSettledStatus(epod?.paymentStatus);
 }
 
 function formatTripStatus(status?: string | null) {

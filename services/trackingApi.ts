@@ -31,6 +31,7 @@ export interface EtaDto {
 export interface TrackingDataResponse {
   tripId: string;
   status: string;
+  sealNumber?: string | null;
   vehicle?: {
     vehicleId: string;
     truckPlate: string;
@@ -158,6 +159,7 @@ export function normalizeTrackingData(value: unknown): TrackingDataResponse | nu
   return {
     tripId: getString(readValue(value, 'tripId', 'TripId')) ?? '',
     status: getString(readValue(value, 'status', 'Status')) ?? '',
+    sealNumber: getString(readValue(value, 'sealNumber', 'SealNumber')),
     vehicle: normalizeVehicle(vehicleValue),
     device: normalizeDevice(deviceValue),
     orders: getArray(readValue(value, 'orders', 'Orders')).map(normalizeTrackingOrder),
