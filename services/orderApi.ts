@@ -249,12 +249,19 @@ export function getQuotationById(accessToken: string, quoteId: string) {
   });
 }
 
-export function acceptQuotation(accessToken: string, quoteId: string, customerId: string) {
+export function acceptQuotation(
+  accessToken: string,
+  quoteId: string,
+  customerId: string,
+  selectedServiceCatalogIds: string[] = []
+) {
   return apiRequest<ApiResponse<AcceptQuotationResponse>>(`/api/quotations/${quoteId}/accept`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
-    body: {},
+    body: {
+      selectedServiceCatalogIds,
+    },
   });
 }

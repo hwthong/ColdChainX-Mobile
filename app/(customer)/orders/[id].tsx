@@ -46,6 +46,10 @@ import {
   OrderResponse,
   QuotationResponse,
 } from '../../../services/orderApi';
+import {
+  getActiveServiceCatalogs,
+  ServiceCatalogItem,
+} from '../../../services/serviceCatalogApi';
 import { useAuthStore } from '../../../store/useAuthStore';
 
 export default function OrderDetailScreen() {
@@ -71,8 +75,42 @@ export default function OrderDetailScreen() {
   const [contractError, setContractError] = useState<string | null>(null);
   const [appendixError, setAppendixError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [catalogServices, setCatalogServices] = useState<ServiceCatalogItem[]>([]);
+  const [isCatalogLoading, setIsCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
 
   const orderId = Array.isArray(id) ? id[0] : id;
+
+  const fetchCatalogServices = useCallback(async () => {
+    if (!accessToken) return;
+    setIsCatalogLoading(true);
+    setCatalogError(null);
+    try {
+      const response = await getActiveServiceCatalogs(accessToken);
+      if (response.success && response.data) {
+        const optionalServices = response.data.filter(
+          (s) => s.isActive && s.isMandatory === false
+        );
+        setCatalogServices(optionalServices);
+      } else {
+        setCatalogError('Không thể tải danh sách dịch vụ.');
+      }
+    } catch {
+      setCatalogError('Không thể tải danh sách dịch vụ.');
+    } finally {
+      setIsCatalogLoading(false);
+    }
+  }, [accessToken]);
+
+  const handleToggleServiceSelection = useCallback((serviceId: string) => {
+    setSelectedServiceIds((prev) => {
+      const next = prev.includes(serviceId)
+        ? prev.filter((id) => id !== serviceId)
+        : [...prev, serviceId];
+      return Array.from(new Set(next));
+    });
+  }, []);
 
   const fetchContractDetail = useCallback(async () => {
     if (!accessToken || !orderId) {
@@ -170,13 +208,13 @@ export default function OrderDetailScreen() {
         // Optional tracking detail
       }
 
-      await Promise.all([fetchContractDetail(), fetchAppendixDetail()]);
+      await Promise.all([fetchContractDetail(), fetchAppendixDetail(), fetchCatalogServices()]);
     } catch (err) {
       setError(getApiErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
-  }, [accessToken, fetchAppendixDetail, fetchContractDetail, orderId]);
+  }, [accessToken, fetchAppendixDetail, fetchContractDetail, fetchCatalogServices, orderId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -208,12 +246,19 @@ export default function OrderDetailScreen() {
     setSuccessMessage(null);
 
     try {
-      const response = await acceptQuotation(accessToken, quote.quoteId, customerId);
+      const uniqueServiceCatalogIds = Array.from(new Set(selectedServiceIds));
+      const response = await acceptQuotation(
+        accessToken,
+        quote.quoteId,
+        customerId,
+        uniqueServiceCatalogIds
+      );
       if (!response.success) {
         throw new Error(response.message || 'Không thể chấp nhận báo giá.');
       }
 
       setSuccessMessage('Bạn đã chấp nhận báo giá thành công.');
+      setSelectedServiceIds([]);
       await fetchOrderDetail();
     } catch (err) {
       setError(getApiErrorMessage(err));
@@ -528,6 +573,11 @@ export default function OrderDetailScreen() {
                 quote={quote}
                 hasContract={Boolean(contract)}
                 isAccepting={isAcceptingQuoteId === quote.quoteId}
+                optionalServices={catalogServices}
+                isCatalogLoading={isCatalogLoading}
+                catalogError={catalogError}
+                selectedServiceIds={selectedServiceIds}
+                onToggleService={handleToggleServiceSelection}
                 onAccept={() => handleAcceptQuotation(quote)}
               />
             ))}
@@ -612,16 +662,30 @@ function QuotationCard({
   quote,
   hasContract,
   isAccepting,
+  optionalServices,
+  isCatalogLoading,
+  catalogError,
+  selectedServiceIds,
+  onToggleService,
   onAccept,
 }: {
   quote: QuotationResponse;
   hasContract: boolean;
   isAccepting: boolean;
+  optionalServices: ServiceCatalogItem[];
+  isCatalogLoading: boolean;
+  catalogError: string | null;
+  selectedServiceIds: string[];
+  onToggleService: (id: string) => void;
   onAccept: () => void;
 }) {
   const canAccept = isAcceptableQuote(quote.status);
   const accepted = isAcceptedQuote(quote.status);
   const fullFileUrl = getFullAssetUrl(quote.fileUrl);
+
+  const optionalTotal = optionalServices
+    .filter((s) => selectedServiceIds.includes(s.serviceCatalogId))
+    .reduce((acc, s) => acc + (s.defaultPrice || 0), 0);
 
   return (
     <View style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default }} className="rounded-2xl border p-4">
@@ -639,6 +703,13 @@ function QuotationCard({
         <InfoRow label="Phụ phí last-mile" value={formatMoney(quote.lastMileSurcharge)} />
         <InfoRow label="VAS" value={formatMoney(quote.vasAmount)} />
         <InfoRow label="VAT" value={formatMoney(quote.vatAmount)} />
+        {optionalTotal > 0 ? (
+          <InfoRow
+            label="Dự kiến tổng sau chọn dịch vụ"
+            value={formatMoney(quote.finalAmount + optionalTotal)}
+            strong
+          />
+        ) : null}
       </View>
 
       {fullFileUrl ? (
@@ -646,6 +717,58 @@ function QuotationCard({
           <Ionicons name="document-attach-outline" size={16} color={colors.brand.primary} />
           <Text style={{ color: colors.brand.primary }} className="text-sm font-semibold">Xem báo giá</Text>
         </Pressable>
+      ) : null}
+
+      {canAccept ? (
+        <View className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-3">
+          <Text style={{ color: colors.text.primary }} className="mb-2 text-sm font-bold">
+            Chọn thêm dịch vụ
+          </Text>
+          {isCatalogLoading ? (
+            <ActivityIndicator size="small" color={colors.brand.primary} className="my-2" />
+          ) : catalogError ? (
+            <Text className="text-xs text-red-500">{catalogError}</Text>
+          ) : optionalServices.length === 0 ? (
+            <Text style={{ color: colors.text.secondary }} className="text-xs">
+              Hiện chưa có dịch vụ bổ sung.
+            </Text>
+          ) : (
+            <View className="gap-2">
+              {optionalServices.map((service) => {
+                const isChecked = selectedServiceIds.includes(service.serviceCatalogId);
+                return (
+                  <Pressable
+                    key={service.serviceCatalogId}
+                    onPress={() => onToggleService(service.serviceCatalogId)}
+                    className="flex-row items-start gap-3 rounded-lg border border-gray-200 bg-white p-3"
+                  >
+                    <Ionicons
+                      name={isChecked ? 'checkbox' : 'square-outline'}
+                      size={20}
+                      color={isChecked ? colors.brand.primary : colors.text.secondary}
+                      style={{ marginTop: 2 }}
+                    />
+                    <View className="flex-1">
+                      <View className="flex-row items-center justify-between gap-2">
+                        <Text style={{ color: colors.text.primary }} className="text-sm font-semibold">
+                          {service.serviceName}
+                        </Text>
+                        <Text style={{ color: colors.brand.primary }} className="text-xs font-bold">
+                          {formatMoney(service.defaultPrice)}
+                        </Text>
+                      </View>
+                      {service.description ? (
+                        <Text style={{ color: colors.text.secondary }} className="mt-1 text-xs leading-4">
+                          {service.description}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
+        </View>
       ) : null}
 
       {canAccept ? (
