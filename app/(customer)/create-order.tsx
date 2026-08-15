@@ -20,7 +20,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppToast, ToastType } from '../../components/AppToast';
 import { colors } from '../../constants/colors';
-import { customerColors } from '../../constants/customerTheme';
 import { CargoInformationStep } from '../../features/customer/create-order/components/CargoInformationStep';
 import { CreateOrderReviewStep } from '../../features/customer/create-order/components/CreateOrderReviewStep';
 import {

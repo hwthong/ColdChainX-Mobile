@@ -23,7 +23,6 @@ import { colors } from '../../constants/colors';
 import {
   WH_COLORS,
   STATUS_STYLES,
-  formatDateTimeVi,
   type MessageTone,
 } from '../../constants/warehouseTheme';
 import { ApiClientError, getApiErrorMessage } from '../../services/apiClient';

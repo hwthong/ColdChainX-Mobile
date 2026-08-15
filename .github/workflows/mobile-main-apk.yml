@@ -28,7 +28,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Setup Expo and EAS
@@ -75,6 +75,13 @@ jobs:
 
           if (!build) {
             throw new Error("EAS build result is empty.");
+          }
+
+          if (build.status && build.status !== "finished") {
+            throw new Error(
+              `EAS build finished with status: "${build.status}". ` +
+              (build.error?.message ? `Message: ${build.error.message}` : `Logs: ${build.buildDetailsPageUrl || build.id}`)
+            );
           }
 
           const apkUrl =

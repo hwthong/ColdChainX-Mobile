@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { AppPressable as Pressable } from '../../AppPressable';
 import { colors } from '../../../constants/colors';
-import { customerControl, customerRadius, customerSpacing } from '../../../constants/customerTheme';
+import { customerRadius, customerSpacing } from '../../../constants/customerTheme';
 
 type CustomerCardProps = {
   children: ReactNode;
