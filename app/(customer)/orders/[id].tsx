@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  Linking,
   Pressable,
   ScrollView,
   Text,
@@ -16,6 +15,8 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { API_BASE_URL, ApiClientError, getApiErrorMessage } from '../../../services/apiClient';
 import { colors } from '../../../constants/colors';
+import { PdfViewerModal } from '../../../components/PdfViewerModal';
+import { downloadDocumentAsBase64 } from '../../../utils/documentViewer';
 import {
   acceptAppendix,
   ContractAppendixResponse,
@@ -79,8 +80,33 @@ export default function OrderDetailScreen() {
   const [isCatalogLoading, setIsCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
+  const [viewingDoc, setViewingDoc] = useState<{ base64: string; title: string } | null>(null);
+  const [isOpeningDoc, setIsOpeningDoc] = useState(false);
 
   const orderId = Array.isArray(id) ? id[0] : id;
+
+  const handleOpenDocument = useCallback(
+    async (url?: string | null, title?: string) => {
+      if (!url) {
+        Alert.alert('Không có file', 'File tài liệu chưa sẵn sàng.');
+        return;
+      }
+
+      setIsOpeningDoc(true);
+      try {
+        const base64Data = await downloadDocumentAsBase64(url, accessToken);
+        setViewingDoc({
+          base64: base64Data,
+          title: title || 'Tài liệu',
+        });
+      } catch (err) {
+        Alert.alert('Không thể mở tài liệu', getApiErrorMessage(err));
+      } finally {
+        setIsOpeningDoc(false);
+      }
+    },
+    [accessToken]
+  );
 
   const fetchCatalogServices = useCallback(async () => {
     if (!accessToken) return;
@@ -356,7 +382,7 @@ export default function OrderDetailScreen() {
       return;
     }
 
-    await openContractFile(getFullAssetUrl(appendix.pdfUrl));
+    await handleOpenDocument(appendix.pdfUrl, 'Phụ lục hợp đồng');
   };
 
   const handleAcceptAppendix = async () => {
@@ -460,201 +486,219 @@ export default function OrderDetailScreen() {
   const stageDescription = getStageAwareHeaderDescription(order.status, Boolean(order.masterTripId));
 
   return (
-    <ScrollView style={{ backgroundColor: colors.surface.page }} className="flex-1" contentContainerStyle={{ padding: 20, paddingBottom: 80 }}>
-      {error ? (
-        <View className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4">
-          <Text className="font-semibold leading-5 text-red-700">{error}</Text>
-        </View>
-      ) : null}
-
-      {successMessage ? (
-        <View className="mb-4 rounded-2xl border border-green-200 bg-green-50 p-4">
-          <Text className="font-semibold leading-5 text-green-700">{successMessage}</Text>
-        </View>
-      ) : null}
-
-      <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="mb-4 rounded-2xl border p-5 shadow-sm">
-        <View className="mb-4 flex-row items-start justify-between gap-3">
-          <View className="flex-1">
-            <View className="flex-row items-center gap-2">
-              <Ionicons name="barcode-outline" size={20} color={colors.brand.primary} />
-              <Text style={{ color: colors.brand.primary }} className="text-xl font-bold">{order.trackingCode}</Text>
-            </View>
-            <Text style={{ color: colors.text.secondary }} className="mt-2 text-xs">{formatDateWithoutSeconds(order.createdAt)}</Text>
+    <View style={{ flex: 1, backgroundColor: colors.surface.page }}>
+      <ScrollView style={{ backgroundColor: colors.surface.page }} className="flex-1" contentContainerStyle={{ padding: 20, paddingBottom: 80 }}>
+        {error ? (
+          <View className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4">
+            <Text className="font-semibold leading-5 text-red-700">{error}</Text>
           </View>
-          <StatusBadge status={order.status} />
+        ) : null}
+
+        {successMessage ? (
+          <View className="mb-4 rounded-2xl border border-green-200 bg-green-50 p-4">
+            <Text className="font-semibold leading-5 text-green-700">{successMessage}</Text>
+          </View>
+        ) : null}
+
+        <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="mb-4 rounded-2xl border p-5 shadow-sm">
+          <View className="mb-4 flex-row items-start justify-between gap-3">
+            <View className="flex-1">
+              <View className="flex-row items-center gap-2">
+                <Ionicons name="barcode-outline" size={20} color={colors.brand.primary} />
+                <Text style={{ color: colors.brand.primary }} className="text-xl font-bold">{order.trackingCode}</Text>
+              </View>
+              <Text style={{ color: colors.text.secondary }} className="mt-2 text-xs">{formatDateWithoutSeconds(order.createdAt)}</Text>
+            </View>
+            <StatusBadge status={order.status} />
+          </View>
+
+          {order.masterTripId ? (
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname: '/(customer)/tracking',
+                  params: { orderId: order.orderId },
+                })
+              }
+              style={{ backgroundColor: colors.brand.primary }}
+              className="flex-row items-center justify-center gap-2 rounded-xl px-4 py-3"
+            >
+              <Ionicons name="navigate-outline" size={18} color={colors.text.onPrimary} />
+              <Text style={{ color: colors.text.onPrimary }} className="font-bold">Mở giám sát chuyến</Text>
+            </Pressable>
+          ) : (
+            <Text style={{ color: colors.text.secondary }} className="text-sm font-medium leading-6">
+              {stageDescription}
+            </Text>
+          )}
         </View>
 
-        {order.masterTripId ? (
-          <Pressable
-            onPress={() =>
-              router.push({
-                pathname: '/(customer)/tracking',
-                params: { orderId: order.orderId },
-              })
-            }
-            style={{ backgroundColor: colors.brand.primary }}
-            className="flex-row items-center justify-center gap-2 rounded-xl px-4 py-3"
-          >
-            <Ionicons name="navigate-outline" size={18} color={colors.text.onPrimary} />
-            <Text style={{ color: colors.text.onPrimary }} className="font-bold">Mở giám sát chuyến</Text>
-          </Pressable>
-        ) : (
-          <Text style={{ color: colors.text.secondary }} className="text-sm font-medium leading-6">
-            {stageDescription}
+        <InfoCard title="Thông tin hàng hóa" icon="cube-outline">
+          <InfoRow label="Tên hàng" value={order.itemName} />
+          <InfoRow label="Phân loại" value={formatCategory(order.category)} />
+          <InfoRow label="Số kiện" value={`${order.quantity}`} />
+          <InfoRow label="Đóng gói" value={getPackagingLabel(order.packingType)} />
+          <InfoRow label="Tổng khối lượng" value={`${order.expectedWeightKg} kg`} />
+          <InfoRow label="Nhiệt độ yêu cầu" value={formatTemperature(order.tempCondition)} strong />
+        </InfoCard>
+
+        {order.route ? (
+          <InfoCard title="Tuyến vận chuyển" icon="git-branch-outline">
+            <InfoRow label="Điểm đi" value={formatCityName(order.route.originCity)} />
+            <InfoRow label="Điểm đến" value={formatCityName(order.route.destCity)} />
+            <InfoRow label="Thời gian vận chuyển" value={formatTransitDuration(order.route.transitTime)} />
+            <InfoRow label="Hạn nhận hàng tại kho" value={formatCutOffTime(order.route.cutOffTime)} />
+            {order.route.routeCode ? (
+              <View style={{ borderTopColor: colors.border.default }} className="mt-1 border-t pt-2">
+                <Text style={{ color: colors.text.muted }} className="text-[11px]">Mã tuyến: {order.route.routeCode}</Text>
+              </View>
+            ) : null}
+          </InfoCard>
+        ) : null}
+
+        <InfoCard title="Giao hàng đến" icon="location-sharp">
+          <Text style={{ color: colors.text.primary }} className="text-sm font-semibold leading-5">
+            {order.destination?.address || 'Chưa cập nhật địa chỉ'}
           </Text>
-        )}
-      </View>
+        </InfoCard>
 
-      <InfoCard title="Thông tin hàng hóa" icon="cube-outline">
-        <InfoRow label="Tên hàng" value={order.itemName} />
-        <InfoRow label="Phân loại" value={formatCategory(order.category)} />
-        <InfoRow label="Số kiện" value={`${order.quantity}`} />
-        <InfoRow label="Đóng gói" value={getPackagingLabel(order.packingType)} />
-        <InfoRow label="Tổng khối lượng" value={`${order.expectedWeightKg} kg`} />
-        <InfoRow label="Nhiệt độ yêu cầu" value={formatTemperature(order.tempCondition)} strong />
-      </InfoCard>
+        {hasCoordinates(order) ? (
+          <InfoCard title="Vị trí giao hàng" icon="map-outline">
+            <InfoRow label="Vĩ độ (Latitude)" value={`${order.destination?.latitude}`} />
+            <InfoRow label="Kinh độ (Longitude)" value={`${order.destination?.longitude}`} />
+            <Text style={{ color: colors.text.secondary }} className="mt-2 text-xs leading-5">
+              Bản đồ sẽ được hiển thị khi ứng dụng tích hợp thư viện bản đồ phù hợp.
+            </Text>
+          </InfoCard>
+        ) : null}
 
-      {order.route ? (
-        <InfoCard title="Tuyến vận chuyển" icon="git-branch-outline">
-          <InfoRow label="Điểm đi" value={formatCityName(order.route.originCity)} />
-          <InfoRow label="Điểm đến" value={formatCityName(order.route.destCity)} />
-          <InfoRow label="Thời gian vận chuyển" value={formatTransitDuration(order.route.transitTime)} />
-          <InfoRow label="Hạn nhận hàng tại kho" value={formatCutOffTime(order.route.cutOffTime)} />
-          {order.route.routeCode ? (
-            <View style={{ borderTopColor: colors.border.default }} className="mt-1 border-t pt-2">
-              <Text style={{ color: colors.text.muted }} className="text-[11px]">Mã tuyến: {order.route.routeCode}</Text>
+        {documentImage ? (
+          <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="mb-4 rounded-2xl border p-5 shadow-sm">
+            <View style={{ borderBottomColor: colors.border.default }} className="mb-3 flex-row items-center gap-2 border-b pb-3">
+              <Ionicons name="image-outline" size={18} color={colors.brand.primary} />
+              <Text style={{ color: colors.brand.primary }} className="text-base font-bold">Ảnh kiện hàng</Text>
             </View>
-          ) : null}
-        </InfoCard>
-      ) : null}
+            <Image source={{ uri: documentImage }} className="h-52 w-full rounded-xl bg-gray-100" resizeMode="cover" />
+          </View>
+        ) : null}
 
-      <InfoCard title="Giao hàng đến" icon="location-sharp">
-        <Text style={{ color: colors.text.primary }} className="text-sm font-semibold leading-5">
-          {order.destination?.address || 'Chưa cập nhật địa chỉ'}
-        </Text>
-      </InfoCard>
-
-      {hasCoordinates(order) ? (
-        <InfoCard title="Vị trí giao hàng" icon="map-outline">
-          <InfoRow label="Vĩ độ (Latitude)" value={`${order.destination?.latitude}`} />
-          <InfoRow label="Kinh độ (Longitude)" value={`${order.destination?.longitude}`} />
-          <Text style={{ color: colors.text.secondary }} className="mt-2 text-xs leading-5">
-            Bản đồ sẽ được hiển thị khi ứng dụng tích hợp thư viện bản đồ phù hợp.
-          </Text>
-        </InfoCard>
-      ) : null}
-
-      {documentImage ? (
         <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="mb-4 rounded-2xl border p-5 shadow-sm">
           <View style={{ borderBottomColor: colors.border.default }} className="mb-3 flex-row items-center gap-2 border-b pb-3">
-            <Ionicons name="image-outline" size={18} color={colors.brand.primary} />
-            <Text style={{ color: colors.brand.primary }} className="text-base font-bold">Ảnh kiện hàng</Text>
+            <Ionicons name="receipt-outline" size={18} color={colors.brand.primary} />
+            <Text style={{ color: colors.brand.primary }} className="text-base font-bold">Báo giá</Text>
           </View>
-          <Image source={{ uri: documentImage }} className="h-52 w-full rounded-xl bg-gray-100" resizeMode="cover" />
-        </View>
-      ) : null}
 
-      <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="mb-4 rounded-2xl border p-5 shadow-sm">
-        <View style={{ borderBottomColor: colors.border.default }} className="mb-3 flex-row items-center gap-2 border-b pb-3">
-          <Ionicons name="receipt-outline" size={18} color={colors.brand.primary} />
-          <Text style={{ color: colors.brand.primary }} className="text-base font-bold">Báo giá</Text>
-        </View>
-
-        {displayedQuotations.length === 0 ? (
-          <Text style={{ color: colors.text.secondary }} className="text-sm leading-6">
-            Đơn hàng đang chờ bộ phận Sales kiểm duyệt và gửi báo giá.
-          </Text>
-        ) : (
-          <View className="gap-4">
-            {displayedQuotations.map((quote) => (
-              <QuotationCard
-                key={quote.quoteId}
-                quote={quote}
-                hasContract={Boolean(contract)}
-                isAccepting={isAcceptingQuoteId === quote.quoteId}
-                optionalServices={catalogServices}
-                isCatalogLoading={isCatalogLoading}
-                catalogError={catalogError}
-                selectedServiceIds={selectedServiceIds}
-                onToggleService={handleToggleServiceSelection}
-                onAccept={() => handleAcceptQuotation(quote)}
-              />
-            ))}
-          </View>
-        )}
-      </View>
-
-      <ContractSection
-        contract={contract}
-        contractError={contractError}
-        isLoading={isContractLoading}
-        isUploading={isUploadingContract}
-        orderTrackingCode={order.trackingCode}
-        selectedFile={selectedSignedFile}
-        onPickFile={handlePickSignedContract}
-        onSubmit={handleUploadSignedContract}
-      />
-
-      <AppendixSection
-        appendix={appendix}
-        appendixError={appendixError}
-        action={appendixAction}
-        isLoading={isAppendixLoading}
-        orderStatus={order.status}
-        onAccept={handleAcceptAppendix}
-        onOpenPdf={handleOpenAppendixPdf}
-        onReject={handleRejectAppendix}
-        onView={handleViewAppendix}
-      />
-
-      {trackingDetail?.warehouse ? (
-        <InfoCard title="Giao hàng tại Hub" icon="business-outline">
-          <InfoRow label="Kho nhận" value={trackingDetail.warehouse.warehouseName} strong />
-          <InfoRow label="Nhiệt độ ghi nhận" value={formatTemperature(trackingDetail.warehouse.storedTemperature)} />
-          <InfoRow label="Thời gian nhận" value={formatDateWithoutSeconds(trackingDetail.warehouse.receivedAt)} />
-        </InfoCard>
-      ) : null}
-
-      {trackingDetail?.tripInfo ? (
-        <InfoCard title="Điều phối & xếp xe" icon="file-tray-stacked-outline">
-          <InfoRow label="Chuyến xe" value={trackingDetail.tripInfo.tripId?.slice(0, 8).toUpperCase()} strong />
-          <InfoRow label="Số seal" value={trackingDetail.tripInfo.sealNumber || '--'} />
-          {trackingDetail.vehicle ? (
-            <InfoRow label="Xe vận chuyển" value={`${trackingDetail.vehicle.truckPlate} - ${trackingDetail.vehicle.vehicleType}`} />
-          ) : null}
-          {trackingDetail.drivers?.length > 0 ? (
-            <InfoRow label="Tài xế" value={trackingDetail.drivers.map((d: any) => d.fullName).join(', ')} />
-          ) : null}
-          {trackingDetail.route ? (
-            <InfoRow label="Tuyến" value={`${formatCityName(trackingDetail.route.originCity)} -> ${formatCityName(trackingDetail.route.destCity)}`} />
-          ) : null}
-          <InfoRow label="Khởi hành" value={formatDateWithoutSeconds(trackingDetail.tripInfo.departedAt)} />
-          <InfoRow label="Dự kiến đến" value={formatDateWithoutSeconds(trackingDetail.estimatedArrival)} />
-        </InfoCard>
-      ) : null}
-
-      {trackingDetail?.delivery ? (
-        <InfoCard title="Giao hàng & ePOD" icon="home-outline">
-          <InfoRow label="Người nhận" value={trackingDetail.delivery.receiverName} strong />
-          <InfoRow label="SĐT nhận" value={trackingDetail.delivery.receiverPhone} />
-          <InfoRow label="Ghi chú ePOD" value={trackingDetail.delivery.note || '--'} />
-          <InfoRow label="Thời gian ký nhận" value={formatDateWithoutSeconds(trackingDetail.delivery.signedAt)} />
-
-          {trackingDetail?.returnedItems?.length > 0 ? (
-            <View className="mt-2 rounded-xl border border-red-200 bg-red-50 p-3">
-              <Text className="text-sm font-bold text-red-700">Hàng trả về ({trackingDetail.returnedItems.length})</Text>
-              {trackingDetail.returnedItems.map((item: any, idx: number) => (
-                <View key={idx} className="mt-2">
-                  <Text className="text-xs font-semibold text-red-800">{item.itemName} (SL: {item.quantity})</Text>
-                  <Text className="text-xs text-red-600">Lý do: {item.reasonNote || item.reasonType}</Text>
-                </View>
+          {displayedQuotations.length === 0 ? (
+            <Text style={{ color: colors.text.secondary }} className="text-sm leading-6">
+              Đơn hàng đang chờ bộ phận Sales kiểm duyệt và gửi báo giá.
+            </Text>
+          ) : (
+            <View className="gap-4">
+              {displayedQuotations.map((quote) => (
+                <QuotationCard
+                  key={quote.quoteId}
+                  quote={quote}
+                  hasContract={Boolean(contract)}
+                  isAccepting={isAcceptingQuoteId === quote.quoteId}
+                  optionalServices={catalogServices}
+                  isCatalogLoading={isCatalogLoading}
+                  catalogError={catalogError}
+                  selectedServiceIds={selectedServiceIds}
+                  onToggleService={handleToggleServiceSelection}
+                  onAccept={() => handleAcceptQuotation(quote)}
+                  onOpenQuote={(url) => handleOpenDocument(url, 'Báo giá chi tiết')}
+                  isOpeningQuote={isOpeningDoc}
+                />
               ))}
             </View>
-          ) : null}
-        </InfoCard>
-      ) : null}
-    </ScrollView>
+          )}
+        </View>
+
+        <ContractSection
+          contract={contract}
+          contractError={contractError}
+          isLoading={isContractLoading}
+          isUploading={isUploadingContract}
+          orderTrackingCode={order.trackingCode}
+          selectedFile={selectedSignedFile}
+          onPickFile={handlePickSignedContract}
+          onSubmit={handleUploadSignedContract}
+          onOpenDoc={handleOpenDocument}
+        />
+
+        <AppendixSection
+          appendix={appendix}
+          appendixError={appendixError}
+          action={appendixAction}
+          isLoading={isAppendixLoading}
+          orderStatus={order.status}
+          onAccept={handleAcceptAppendix}
+          onOpenPdf={handleOpenAppendixPdf}
+          onReject={handleRejectAppendix}
+          onView={handleViewAppendix}
+        />
+
+        {trackingDetail?.warehouse ? (
+          <InfoCard title="Giao hàng tại Hub" icon="business-outline">
+            <InfoRow label="Kho nhận" value={trackingDetail.warehouse.warehouseName} strong />
+            <InfoRow label="Nhiệt độ ghi nhận" value={formatTemperature(trackingDetail.warehouse.storedTemperature)} />
+            <InfoRow label="Thời gian nhận" value={formatDateWithoutSeconds(trackingDetail.warehouse.receivedAt)} />
+          </InfoCard>
+        ) : null}
+
+        {trackingDetail?.tripInfo ? (
+          <InfoCard title="Điều phối & xếp xe" icon="file-tray-stacked-outline">
+            <InfoRow label="Chuyến xe" value={trackingDetail.tripInfo.tripId?.slice(0, 8).toUpperCase()} strong />
+            <InfoRow label="Số seal" value={trackingDetail.tripInfo.sealNumber || '--'} />
+            {trackingDetail.vehicle ? (
+              <InfoRow label="Xe vận chuyển" value={`${trackingDetail.vehicle.truckPlate} - ${trackingDetail.vehicle.vehicleType}`} />
+            ) : null}
+            {trackingDetail.drivers?.length > 0 ? (
+              <InfoRow label="Tài xế" value={trackingDetail.drivers.map((d: any) => d.fullName).join(', ')} />
+            ) : null}
+            {trackingDetail.route ? (
+              <InfoRow label="Tuyến" value={`${formatCityName(trackingDetail.route.originCity)} -> ${formatCityName(trackingDetail.route.destCity)}`} />
+            ) : null}
+            <InfoRow label="Khởi hành" value={formatDateWithoutSeconds(trackingDetail.tripInfo.departedAt)} />
+            <InfoRow label="Dự kiến đến" value={formatDateWithoutSeconds(trackingDetail.estimatedArrival)} />
+          </InfoCard>
+        ) : null}
+
+        {trackingDetail?.delivery ? (
+          <InfoCard title="Giao hàng & ePOD" icon="home-outline">
+            <InfoRow label="Người nhận" value={trackingDetail.delivery.receiverName} strong />
+            <InfoRow label="SĐT nhận" value={trackingDetail.delivery.receiverPhone} />
+            <InfoRow label="Ghi chú ePOD" value={trackingDetail.delivery.note || '--'} />
+            <InfoRow label="Thời gian ký nhận" value={formatDateWithoutSeconds(trackingDetail.delivery.signedAt)} />
+
+            {trackingDetail?.returnedItems?.length > 0 ? (
+              <View className="mt-2 rounded-xl border border-red-200 bg-red-50 p-3">
+                <Text className="text-sm font-bold text-red-700">Hàng trả về ({trackingDetail.returnedItems.length})</Text>
+                {trackingDetail.returnedItems.map((item: any, idx: number) => (
+                  <View key={idx} className="mt-2">
+                    <Text className="text-xs font-semibold text-red-800">{item.itemName} (SL: {item.quantity})</Text>
+                    <Text className="text-xs text-red-600">Lý do: {item.reasonNote || item.reasonType}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </InfoCard>
+        ) : null}
+      </ScrollView>
+
+      <PdfViewerModal
+        visible={Boolean(viewingDoc)}
+        title={viewingDoc?.title ?? 'Tài liệu'}
+        subtitle={order?.trackingCode}
+        base64Data={viewingDoc?.base64}
+        onClose={() => setViewingDoc(null)}
+        primaryColor={colors.brand.primary}
+        backgroundColor={colors.surface.page}
+        cardBackgroundColor={colors.surface.card}
+        textColor={colors.text.primary}
+        borderColor={colors.border.default}
+      />
+    </View>
   );
 }
 
@@ -668,6 +712,8 @@ function QuotationCard({
   selectedServiceIds,
   onToggleService,
   onAccept,
+  onOpenQuote,
+  isOpeningQuote,
 }: {
   quote: QuotationResponse;
   hasContract: boolean;
@@ -678,6 +724,8 @@ function QuotationCard({
   selectedServiceIds: string[];
   onToggleService: (id: string) => void;
   onAccept: () => void;
+  onOpenQuote?: (url: string) => void;
+  isOpeningQuote?: boolean;
 }) {
   const canAccept = isAcceptableQuote(quote.status);
   const accepted = isAcceptedQuote(quote.status);
@@ -713,9 +761,19 @@ function QuotationCard({
       </View>
 
       {fullFileUrl ? (
-        <Pressable onPress={() => Linking.openURL(fullFileUrl)} className="mt-4 flex-row items-center gap-2">
-          <Ionicons name="document-attach-outline" size={16} color={colors.brand.primary} />
-          <Text style={{ color: colors.brand.primary }} className="text-sm font-semibold">Xem báo giá</Text>
+        <Pressable
+          onPress={() => onOpenQuote?.(fullFileUrl)}
+          disabled={isOpeningQuote}
+          className="mt-4 flex-row items-center gap-2"
+        >
+          {isOpeningQuote ? (
+            <ActivityIndicator size="small" color={colors.brand.primary} />
+          ) : (
+            <Ionicons name="document-attach-outline" size={16} color={colors.brand.primary} />
+          )}
+          <Text style={{ color: colors.brand.primary }} className="text-sm font-semibold">
+            {isOpeningQuote ? 'Đang mở báo giá...' : 'Xem báo giá'}
+          </Text>
         </Pressable>
       ) : null}
 
@@ -807,6 +865,7 @@ function ContractSection({
   selectedFile,
   onPickFile,
   onSubmit,
+  onOpenDoc,
 }: {
   contract: ContractInfoResponse | null;
   contractError: string | null;
@@ -816,6 +875,7 @@ function ContractSection({
   selectedFile: SignedContractFile | null;
   onPickFile: () => void;
   onSubmit: () => void;
+  onOpenDoc?: (url?: string | null, title?: string) => void;
 }) {
   const status = contract?.status.toUpperCase() ?? '';
   const contractFileUrl = getFullAssetUrl(contract?.fileUrl);
@@ -857,7 +917,7 @@ function ContractSection({
           </View>
 
           {contractFileUrl ? (
-            <Pressable onPress={() => openContractFile(contractFileUrl)} className="flex-row items-center gap-2">
+            <Pressable onPress={() => onOpenDoc?.(contractFileUrl, 'Hợp đồng vận chuyển')} className="flex-row items-center gap-2">
               <Ionicons name="document-attach-outline" size={16} color={colors.brand.primary} />
               <Text style={{ color: colors.brand.primary }} className="text-sm font-semibold">Xem hợp đồng</Text>
             </Pressable>
@@ -913,7 +973,7 @@ function ContractSection({
               <Text className="text-sm font-semibold leading-5 text-green-800">
                 Hợp đồng đã ký đã được gửi thành công.
               </Text>
-              <Pressable onPress={() => openContractFile(signedFileUrl)} className="mt-2 flex-row items-center gap-2">
+              <Pressable onPress={() => onOpenDoc?.(signedFileUrl, 'Hợp đồng đã ký')} className="mt-2 flex-row items-center gap-2">
                 <Ionicons name="document-attach-outline" size={16} color="#15803D" />
                 <Text className="text-sm font-bold text-green-800">Xem file đã ký</Text>
               </Pressable>
@@ -1233,22 +1293,6 @@ function getPickerMimeType(asset: Record<string, unknown>) {
   if (name.endsWith('.png')) return 'image/png';
   if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'image/jpeg';
   return 'application/pdf';
-}
-
-async function openContractFile(url?: string | null) {
-  if (!url) {
-    Alert.alert('Không có file hợp đồng', 'File hợp đồng chưa sẵn sàng.');
-    return;
-  }
-
-  try {
-    await WebBrowser.openBrowserAsync(encodeURI(url));
-  } catch (error) {
-    Alert.alert(
-      'Không thể mở file',
-      error instanceof Error ? error.message : 'Không thể mở file hợp đồng.'
-    );
-  }
 }
 
 function getFullAssetUrl(url?: string | null) {

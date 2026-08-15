@@ -1,18 +1,24 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ActivityIndicator, Linking } from 'react-native';
+import { View, Text, ActivityIndicator, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppPressable as Pressable } from '../../../../components/AppPressable';
+import { PdfViewerModal } from '../../../../components/PdfViewerModal';
 import { WH_COLORS } from '../../../../constants/warehouseTheme';
 import { driverApi } from '../../../../services/driverApi';
+import { useAuthStore } from '../../../../store/useAuthStore';
+import { downloadDocumentAsBase64 } from '../../../../utils/documentViewer';
 
 export default function DriverTripDocumentsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const token = useAuthStore((state) => state.token);
   
   const [loading, setLoading] = useState(true);
   const [waybillUrl, setWaybillUrl] = useState('');
   const [error, setError] = useState('');
+  const [viewingPdf, setViewingPdf] = useState<string | null>(null);
+  const [openingPdf, setOpeningPdf] = useState(false);
 
   useEffect(() => {
     const fetchDocs = async () => {
@@ -28,6 +34,19 @@ export default function DriverTripDocumentsScreen() {
     };
     fetchDocs();
   }, [id]);
+
+  const handleOpenWaybill = async () => {
+    if (!waybillUrl) return;
+    setOpeningPdf(true);
+    try {
+      const base64Data = await downloadDocumentAsBase64(waybillUrl, token);
+      setViewingPdf(base64Data);
+    } catch (err: any) {
+      Alert.alert('Không thể mở tài liệu', err.message || 'Lỗi tải file');
+    } finally {
+      setOpeningPdf(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -50,7 +69,8 @@ export default function DriverTripDocumentsScreen() {
         </View>
       ) : (
         <Pressable
-          onPress={() => Linking.openURL(waybillUrl)}
+          onPress={handleOpenWaybill}
+          disabled={openingPdf}
           style={({ pressed }) => ({
             backgroundColor: WH_COLORS.cardBg,
             padding: 20,
@@ -59,7 +79,7 @@ export default function DriverTripDocumentsScreen() {
             borderColor: WH_COLORS.cardBorder,
             flexDirection: 'row',
             alignItems: 'center',
-            opacity: pressed ? 0.7 : 1,
+            opacity: pressed || openingPdf ? 0.7 : 1,
           })}
         >
           <View style={{ backgroundColor: '#EEF2FF', padding: 12, borderRadius: 8, marginRight: 16 }}>
@@ -67,15 +87,34 @@ export default function DriverTripDocumentsScreen() {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 16, fontWeight: 'bold', color: WH_COLORS.textPrimary }}>Giấy Đi Đường (E-Waybill)</Text>
-            <Text style={{ fontSize: 13, color: WH_COLORS.textSecondary, marginTop: 4 }}>Bản PDF điện tử</Text>
+            <Text style={{ fontSize: 13, color: WH_COLORS.textSecondary, marginTop: 4 }}>
+              {openingPdf ? 'Đang tải PDF...' : 'Bản PDF điện tử'}
+            </Text>
           </View>
-          <Ionicons name="open-outline" size={24} color={WH_COLORS.textSecondary} />
+          {openingPdf ? (
+            <ActivityIndicator size="small" color={WH_COLORS.primary} />
+          ) : (
+            <Ionicons name="eye-outline" size={24} color={WH_COLORS.primary} />
+          )}
         </Pressable>
       )}
 
       <Pressable onPress={() => router.back()} style={{ marginTop: 'auto', padding: 16, backgroundColor: WH_COLORS.primaryLight, borderRadius: 12, alignItems: 'center' }}>
         <Text style={{ color: WH_COLORS.primary, fontWeight: 'bold' }}>Quay lại</Text>
       </Pressable>
+
+      <PdfViewerModal
+        visible={Boolean(viewingPdf)}
+        title="Giấy Đi Đường (E-Waybill)"
+        subtitle={`Chuyến xe #${id?.slice(0, 8).toUpperCase()}`}
+        base64Data={viewingPdf}
+        onClose={() => setViewingPdf(null)}
+        primaryColor={WH_COLORS.primary}
+        backgroundColor={WH_COLORS.background}
+        cardBackgroundColor={WH_COLORS.cardBg}
+        textColor={WH_COLORS.textPrimary}
+        borderColor={WH_COLORS.cardBorder}
+      />
     </View>
   );
 }
