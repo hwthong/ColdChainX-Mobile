@@ -127,6 +127,21 @@ export async function getIncidents(token: string, tripId?: string, pageNumber = 
   );
 }
 
+export interface ConfirmTransloadRequest {
+  confirmationNote: string;
+}
+
+export interface IncidentWorkflowResult {
+  incidentId: string;
+  incidentStatus: string;
+  tripId: string;
+  tripStatus: string;
+  vehicleId: string;
+  vehiclePlate: string;
+  confirmedAt: string;
+  message: string;
+}
+
 // 3. Lấy chi tiết sự cố
 export async function getIncidentDetail(token: string, incidentId: string) {
   return apiRequest<ApiResponse<IncidentResponse>>(
@@ -153,6 +168,26 @@ export async function uploadIncidentEvidence(token: string, incidentId: string, 
       headers: {
         Authorization: `Bearer ${token}`,
       },
+    }
+  );
+}
+
+// 6. Driver xác nhận đã sang hàng cứu hộ
+export async function confirmTransload(
+  token: string,
+  incidentId: string,
+  confirmationNote: string
+): Promise<ApiResponse<IncidentWorkflowResult>> {
+  const payload: ConfirmTransloadRequest = {
+    confirmationNote: confirmationNote.trim(),
+  };
+
+  return apiRequest<ApiResponse<IncidentWorkflowResult>>(
+    `/api/v1/incidents/${encodeURIComponent(incidentId)}/confirm-transload`,
+    {
+      method: 'POST',
+      body: payload,
+      headers: { Authorization: `Bearer ${token}` },
     }
   );
 }

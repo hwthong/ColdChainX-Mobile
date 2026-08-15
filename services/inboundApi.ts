@@ -169,6 +169,52 @@ export function getInboundReceiptPdf(id: string) {
   return buildApiUrl(`/api/Inbound/receipts/${id}/pdf`);
 }
 
+/**
+ * Tải file PDF Phiếu nhập kho với Bearer token và chuyển sang base64 data URL.
+ */
+export async function downloadInboundReceiptPdf(accessToken: string, receiptId: string): Promise<string> {
+  const url = buildApiUrl(`/api/Inbound/receipts/${encodeURIComponent(receiptId)}/pdf`);
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: 'application/pdf, application/json',
+    },
+  });
+
+  if (!response.ok) {
+    let errorMessage = 'Không thể tải Phiếu nhập kho.';
+    try {
+      const errorJson = (await response.json()) as { message?: string; Message?: string };
+      errorMessage = errorJson.message ?? errorJson.Message ?? errorMessage;
+    } catch {
+      if (response.status === 401) {
+        errorMessage = 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+      } else if (response.status === 403) {
+        errorMessage = 'Bạn không có quyền xem phiếu nhập kho này.';
+      } else if (response.status === 404) {
+        errorMessage = 'Không tìm thấy phiếu nhập kho.';
+      }
+    }
+    throw new Error(errorMessage);
+  }
+
+  const blob = await response.blob();
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result;
+      if (typeof result === 'string') {
+        resolve(result);
+      } else {
+        reject(new Error('Không thể đọc dữ liệu file PDF.'));
+      }
+    };
+    reader.onerror = () => reject(new Error('Lỗi chuyển đổi dữ liệu file PDF.'));
+    reader.readAsDataURL(blob);
+  });
+}
+
 function appendEvidenceImages(formData: FormData, images?: EvidenceImage[]) {
   images?.forEach((image, index) => {
     formData.append('EvidenceImages', {
