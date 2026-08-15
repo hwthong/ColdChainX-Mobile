@@ -82,6 +82,7 @@ export default function WarehouseOutboundScreen() {
   const [selectedSealTrip, setSelectedSealTrip] = useState<ReadyToSealTripDto | null>(null);
   const [scanLpnCode, setScanLpnCode] = useState('');
   const [pickLocation, setPickLocation] = useState('');
+  const [selectedLpnId, setSelectedLpnId] = useState<string | null>(null);
   const [sealCode, setSealCode] = useState('');
   const [notice, setNotice] = useState<{ text: string; tone: MessageTone } | null>(null);
   const [loadingBySection, setLoadingBySection] = useState<SectionLoadingState>({
@@ -212,6 +213,7 @@ export default function WarehouseOutboundScreen() {
           setPickingTrips([]);
           setSelectedPickingTrip(null);
           setPendingLpns([]);
+          setSelectedLpnId(null);
         }
       ),
     [runSectionRequest]
@@ -302,8 +304,20 @@ export default function WarehouseOutboundScreen() {
     setSelectedPickingTrip(trip);
     setScanLpnCode('');
     setPickLocation('');
+    setSelectedLpnId(null);
     setNotice(null);
     void loadPendingLpns(trip.tripId);
+  };
+
+  const handleSelectLpn = (lpn: AvailableTripLpnDto, storageLocation?: string) => {
+    const currentState = normalizeStatus(lpn.state);
+    if (currentState === 'LOADING_COMPLETED') {
+      return;
+    }
+    setSelectedLpnId(lpn.lpnId);
+    setScanLpnCode(lpn.lpnCode);
+    setPickLocation(storageLocation || '');
+    setNotice(null);
   };
 
   const handlePickLpn = async () => {
@@ -354,6 +368,7 @@ export default function WarehouseOutboundScreen() {
       setNotice({ text: response.message || 'Đã xác nhận bốc LPN.', tone: 'success' });
       setScanLpnCode('');
       setPickLocation('');
+      setSelectedLpnId(null);
 
       const pickingData = await loadPickingTrips();
       const updatedTrip = pickingData?.find((trip) => trip.tripId === selectedPickingTrip.tripId) ?? null;
@@ -393,6 +408,7 @@ export default function WarehouseOutboundScreen() {
       Alert.alert('Thành công', 'Đã hoàn tất bốc hàng cho chuyến.');
       setSelectedPickingTrip(null);
       setPendingLpns([]);
+      setSelectedLpnId(null);
       setActiveSection('seal');
       await Promise.all([loadPickingTrips(), loadSealTrips()]);
     } catch (error) {
@@ -595,42 +611,66 @@ export default function WarehouseOutboundScreen() {
               {!loadingBySection.picking && !errorBySection.picking && selectedPickingTrip ? (
                 <View style={{ marginTop: 16, gap: 12 }}>
                   <Text style={{ fontSize: 16, fontWeight: '700', color: WH_COLORS.textPrimary }}>
-                    Scan LPN bốc hàng
+                    Bốc LPN lên xe
                   </Text>
                   <AppMessage
                     tone={selectedPickingTrip.readyToLoad ? 'success' : 'neutral'}
                     text={`Tiến độ: ${selectedPickingTrip.loadingCompletedLpns}/${selectedPickingTrip.totalLpns} LPN đã bốc.`}
                   />
-                  <AppInput
-                    label="Mã LPN"
-                    value={scanLpnCode}
-                    onChangeText={setScanLpnCode}
-                    placeholder="Scan hoặc nhập mã LPN"
-                  />
-                  <AppInput
-                    label="Vị trí kệ lấy hàng"
-                    value={pickLocation}
-                    onChangeText={setPickLocation}
-                    placeholder="Ví dụ: A-01-01"
-                  />
-                  <AppButton
-                    icon="barcode-outline"
-                    label="Xác nhận đã bốc LPN"
-                    onPress={() => void handlePickLpn()}
-                    loading={Boolean(pickingLpnId)}
-                  />
+
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: WH_COLORS.textPrimary }}>
+                    LPN cần bốc (chạm để chọn nhanh)
+                  </Text>
 
                   <View style={{ gap: 10 }}>
-                    {selectedPickingTrip.lpns.map((lpn) => (
-                      <LpnProgressRow
-                        key={lpn.lpnId}
-                        lpn={lpn}
-                        storageLocation={
-                          pendingLocationByLpn.get(normalizeLookupKey(lpn.lpnId)) ??
-                          pendingLocationByLpn.get(normalizeLookupKey(lpn.lpnCode))
-                        }
-                      />
-                    ))}
+                    {selectedPickingTrip.lpns.map((lpn) => {
+                      const location =
+                        pendingLocationByLpn.get(normalizeLookupKey(lpn.lpnId)) ??
+                        pendingLocationByLpn.get(normalizeLookupKey(lpn.lpnCode));
+                      const isSelected =
+                        selectedLpnId === lpn.lpnId ||
+                        (Boolean(scanLpnCode.trim()) &&
+                          (normalizeLookupKey(scanLpnCode) === normalizeLookupKey(lpn.lpnCode) ||
+                            normalizeLookupKey(scanLpnCode) === normalizeLookupKey(lpn.lpnId)));
+
+                      return (
+                        <LpnProgressRow
+                          key={lpn.lpnId}
+                          lpn={lpn}
+                          storageLocation={location}
+                          selected={isSelected}
+                          onSelect={() => handleSelectLpn(lpn, location)}
+                        />
+                      );
+                    })}
+                  </View>
+
+                  <View style={{ marginTop: 4, gap: 10 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: WH_COLORS.textSecondary }}>
+                      Xác nhận bốc hàng / Nhập thủ công
+                    </Text>
+                    <AppInput
+                      label="Mã LPN"
+                      value={scanLpnCode}
+                      onChangeText={(text) => {
+                        setScanLpnCode(text);
+                        setSelectedLpnId(null);
+                      }}
+                      placeholder="Nhập mã LPN hoặc chọn LPN ở trên"
+                    />
+                    <AppInput
+                      label="Vị trí kệ lấy hàng"
+                      value={pickLocation}
+                      onChangeText={setPickLocation}
+                      placeholder="Ví dụ: A-01-01"
+                    />
+                    <AppButton
+                      icon="cube-outline"
+                      label="Xác nhận đã bốc LPN"
+                      onPress={() => void handlePickLpn()}
+                      loading={Boolean(pickingLpnId)}
+                      disabled={!scanLpnCode.trim() || !pickLocation.trim()}
+                    />
                   </View>
 
                   <AppButton
@@ -643,7 +683,7 @@ export default function WarehouseOutboundScreen() {
                   {!selectedPickingTrip.readyToLoad ? (
                     <AppMessage
                       tone="warning"
-                      text="Cần scan đủ tất cả LPN trong chuyến trước khi hoàn tất bốc hàng."
+                      text="Cần bốc đủ tất cả LPN trong chuyến trước khi hoàn tất bốc hàng."
                     />
                   ) : null}
                 </View>
@@ -958,23 +998,49 @@ function ReadyToSealTripCard({
 function LpnProgressRow({
   lpn,
   storageLocation,
+  selected = false,
+  onSelect,
 }: {
   lpn: AvailableTripLpnDto;
   storageLocation?: string;
+  selected?: boolean;
+  onSelect?: () => void;
 }) {
-  return (
+  const isCompleted = normalizeStatus(lpn.state) === 'LOADING_COMPLETED';
+  const isSelectable = !isCompleted && Boolean(onSelect);
+
+  const cardBody = (
     <View
       style={{
         borderRadius: 12,
-        borderWidth: 1,
-        borderColor: WH_COLORS.cardBorder,
-        backgroundColor: '#FFFFFF',
+        borderWidth: selected ? 2 : 1,
+        borderColor: selected ? WH_COLORS.primary : WH_COLORS.cardBorder,
+        backgroundColor: selected ? WH_COLORS.primaryLight : '#FFFFFF',
         padding: 12,
+        opacity: isCompleted ? 0.75 : 1,
       }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 14, fontWeight: '700', color: WH_COLORS.textPrimary }}>{lpn.lpnCode}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <Text style={{ fontSize: 14, fontWeight: '700', color: WH_COLORS.textPrimary }}>{lpn.lpnCode}</Text>
+            {selected ? (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 3,
+                  paddingHorizontal: 6,
+                  paddingVertical: 2,
+                  borderRadius: 4,
+                  backgroundColor: WH_COLORS.primary,
+                }}
+              >
+                <Ionicons name="checkmark-circle" size={12} color="#FFFFFF" />
+                <Text style={{ fontSize: 10, fontWeight: '700', color: '#FFFFFF' }}>Đã chọn</Text>
+              </View>
+            ) : null}
+          </View>
           <Text style={{ marginTop: 4, fontSize: 12, color: WH_COLORS.textSecondary }}>
             {lpn.itemName || 'N/A'}
           </Text>
@@ -984,8 +1050,34 @@ function LpnProgressRow({
       <AppInfoRow label="Đơn hàng" value={lpn.orderCode || lpn.orderId} />
       <AppInfoRow label="Số lượng" value={String(lpn.quantity)} />
       {storageLocation ? <AppInfoRow label="Vị trí" value={storageLocation} /> : null}
+
+      {isSelectable && !selected ? (
+        <View
+          style={{
+            marginTop: 8,
+            paddingTop: 8,
+            borderTopWidth: 1,
+            borderTopColor: colors.border.default,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            gap: 4,
+          }}
+        >
+          <Ionicons name="hand-right-outline" size={13} color={WH_COLORS.primary} />
+          <Text style={{ fontSize: 12, fontWeight: '600', color: WH_COLORS.primary }}>
+            Chạm để chọn LPN này
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
+
+  if (isSelectable) {
+    return <Pressable onPress={onSelect}>{cardBody}</Pressable>;
+  }
+
+  return cardBody;
 }
 
 function OutboundDocuments({
