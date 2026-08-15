@@ -23,19 +23,20 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
 
-      - name: Setup Expo and EAS
-        uses: expo/expo-github-action@v8
+      - name: Setup Java
+        uses: actions/setup-java@v5
         with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
+          distribution: temurin
+          java-version: 17
+          cache: gradle
 
       - name: Install dependencies
         run: npm ci
@@ -46,124 +47,65 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Build APK with EAS
-        id: eas-build
-        shell: bash
-        run: |
-          set -euo pipefail
+      - name: Sync preview environment
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: >-
+          npx --yes eas-cli@22.0.0 env:pull
+          --environment preview
+          --path .env.local
+          --non-interactive
 
-          eas build \
-            --platform android \
-            --profile preview \
-            --non-interactive \
-            --wait \
-            --json > eas-build-result.json
+      - name: Generate Android project
+        env:
+          CI: "1"
+        run: npx expo prebuild --platform android --clean
 
-      - name: Resolve build metadata
-        id: build-meta
-        shell: bash
-        run: |
-          set -euo pipefail
+      - name: Build release APK locally
+        working-directory: android
+        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
 
-          node <<'NODE'
-          const fs = require("fs");
-
-          const raw = JSON.parse(
-            fs.readFileSync("eas-build-result.json", "utf8")
-          );
-          const build = Array.isArray(raw) ? raw[0] : raw;
-
-          if (!build) {
-            throw new Error("EAS build result is empty.");
-          }
-
-          if (build.status && build.status !== "finished") {
-            throw new Error(
-              `EAS build finished with status: "${build.status}". ` +
-              (build.error?.message ? `Message: ${build.error.message}` : `Logs: ${build.buildDetailsPageUrl || build.id}`)
-            );
-          }
-
-          const apkUrl =
-            build.artifacts?.applicationArchiveUrl ||
-            build.artifacts?.buildUrl ||
-            build.artifactUrl;
-          const buildId = build.id;
-
-          if (!buildId) {
-            throw new Error("EAS build ID was not found.");
-          }
-          if (!apkUrl) {
-            throw new Error("APK artifact URL was not found.");
-          }
-
-          const appConfig = JSON.parse(
-            fs.readFileSync("app.json", "utf8")
-          ).expo;
-          const buildUrl =
-            build.buildDetailsPageUrl ||
-            `https://expo.dev/accounts/${appConfig.owner}/projects/${appConfig.slug}/builds/${buildId}`;
-          const fileName = `coldchainx-main-${process.env.GITHUB_SHA.slice(0, 7)}.apk`;
-          const outputs = {
-            apk_url: apkUrl,
-            build_url: buildUrl,
-            build_id: buildId,
-            file_name: fileName,
-            app_version: build.appVersion || appConfig.version || "unknown",
-            version_code:
-              build.appBuildVersion ||
-              appConfig.android?.versionCode ||
-              "unknown",
-            git_commit: build.gitCommitHash || process.env.GITHUB_SHA,
-          };
-
-          for (const [key, value] of Object.entries(outputs)) {
-            const text = String(value);
-            if (text.includes("\n") || text.includes("\r")) {
-              throw new Error(`Invalid multiline output for ${key}.`);
-            }
-            fs.appendFileSync(
-              process.env.GITHUB_OUTPUT,
-              `${key}=${text}\n`
-            );
-          }
-          NODE
-
-      - name: Download and verify APK
+      - name: Prepare and verify APK
         id: apk
         shell: bash
-        env:
-          APK_URL: ${{ steps.build-meta.outputs.apk_url }}
-          FILE_NAME: ${{ steps.build-meta.outputs.file_name }}
         run: |
           set -euo pipefail
 
-          curl \
-            --fail \
-            --location \
-            --retry 3 \
-            --retry-all-errors \
-            --silent \
-            --show-error \
-            "$APK_URL" \
-            --output "$FILE_NAME"
+          SOURCE_APK="android/app/build/outputs/apk/release/app-release.apk"
+          FILE_NAME="coldchainx-main-${GITHUB_SHA::7}.apk"
 
-          test -s "$FILE_NAME"
+          test -s "$SOURCE_APK"
+          cp "$SOURCE_APK" "$FILE_NAME"
 
           APK_BYTES="$(wc -c < "$FILE_NAME")"
           if [ "$APK_BYTES" -lt 5242880 ]; then
-            echo "Downloaded APK is unexpectedly small: $APK_BYTES bytes." >&2
+            echo "Generated APK is unexpectedly small: $APK_BYTES bytes." >&2
             exit 1
           fi
+          export APK_BYTES
 
           unzip -tqq "$FILE_NAME"
-          echo "apk_bytes=$APK_BYTES" >> "$GITHUB_OUTPUT"
+
+          node <<'NODE'
+          const fs = require("fs");
+          const appConfig = JSON.parse(fs.readFileSync("app.json", "utf8")).expo;
+          const outputs = {
+            file_name: `coldchainx-main-${process.env.GITHUB_SHA.slice(0, 7)}.apk`,
+            apk_bytes: process.env.APK_BYTES,
+            app_version: appConfig.version || "unknown",
+            version_code: appConfig.android?.versionCode || "unknown",
+          };
+
+          for (const [key, value] of Object.entries(outputs)) {
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${value}\n`);
+          }
+          NODE
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coldchainx-main-${{ github.sha }}
-          path: ${{ steps.build-meta.outputs.file_name }}
+          path: ${{ steps.apk.outputs.file_name }}
           if-no-files-found: error
           retention-days: 14
 
@@ -173,12 +115,11 @@ jobs:
           {
             echo "## ColdChainX Mobile APK"
             echo ""
-            echo "- Commit: \`${{ steps.build-meta.outputs.git_commit }}\`"
-            echo "- EAS build ID: \`${{ steps.build-meta.outputs.build_id }}\`"
-            echo "- App version: \`${{ steps.build-meta.outputs.app_version }}\`"
-            echo "- Android versionCode: \`${{ steps.build-meta.outputs.version_code }}\`"
-            echo "- File: \`${{ steps.build-meta.outputs.file_name }}\`"
+            echo "- Commit: \`${{ github.sha }}\`"
+            echo "- App version: \`${{ steps.apk.outputs.app_version }}\`"
+            echo "- Android versionCode: \`${{ steps.apk.outputs.version_code }}\`"
+            echo "- File: \`${{ steps.apk.outputs.file_name }}\`"
             echo "- Size: \`${{ steps.apk.outputs.apk_bytes }} bytes\`"
             echo "- APK is available in the **Artifacts** section of this workflow run."
-            echo "- EAS build: ${{ steps.build-meta.outputs.build_url }}"
+            echo "- Built locally on the GitHub runner; no EAS Build quota was used."
           } >> "$GITHUB_STEP_SUMMARY"
