@@ -104,7 +104,7 @@ export default function CustomerHomeScreen() {
               label="Đơn hàng"
               value={orderTotal}
               loading={isOrdersLoading}
-              onPress={() => router.push('/(customer)/status')}
+              onPress={() => router.push({ pathname: '/(customer)/status', params: { tab: 'ALL' } })}
             />
             <SummaryMetric
               icon="calendar-outline"
@@ -118,7 +118,11 @@ export default function CustomerHomeScreen() {
       ) : null}
 
       {/* Recent Orders List */}
-      <DashboardSection title="Đơn hàng gần đây" actionLabel="Xem tất cả" onActionPress={() => router.push('/(customer)/status')}>
+      <DashboardSection
+        title="Đơn hàng gần đây"
+        actionLabel="Xem tất cả"
+        onActionPress={() => router.push({ pathname: '/(customer)/status', params: { tab: 'ALL' } })}
+      >
         {isOrdersLoading ? <SectionLoader label="Đang tải đơn hàng..." /> : null}
         {!isOrdersLoading && isDashboardError ? <SectionError label="Không thể tải dữ liệu gần đây." onRetry={() => void refreshDashboard()} /> : null}
         {!isOrdersLoading && !isDashboardError && recentOrders.length === 0 ? <EmptyOrders onCreateOrder={() => router.push('/(customer)/create-order')} /> : null}

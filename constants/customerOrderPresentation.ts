@@ -18,13 +18,13 @@ const STATUS_PRESENTATIONS: Record<string, StatusPresentation> = {
   SENT: { label: 'Đã gửi', containerClass: 'bg-orange-100 border-orange-200', textClass: 'text-orange-800' },
   CONTRACT_PENDING: { label: 'Chờ hợp đồng', containerClass: 'bg-amber-100 border-amber-200', textClass: 'text-amber-800' },
   PENDING_CUSTOMER_SIGNATURE: { label: 'Chờ ký', containerClass: 'bg-orange-100 border-orange-200', textClass: 'text-orange-800' },
-  PENDING_SALES_VERIFICATION: { label: 'Chờ Sales xác nhận', containerClass: 'bg-blue-100 border-blue-200', textClass: 'text-blue-800' },
+  PENDING_SALES_VERIFICATION: { label: 'Chờ Sales duyệt', containerClass: 'bg-blue-100 border-blue-200', textClass: 'text-blue-800' },
   CONTRACT_SIGNED: { label: 'Đã ký hợp đồng', containerClass: 'bg-emerald-100 border-emerald-200', textClass: 'text-emerald-800' },
   ACTIVE: { label: 'Đã xác nhận', containerClass: 'bg-green-100 border-green-200', textClass: 'text-green-800' },
   ACCEPTED: { label: 'Đã chấp nhận', containerClass: 'bg-green-100 border-green-200', textClass: 'text-green-800' },
   EXECUTED: { label: 'Đã xử lý', containerClass: 'bg-green-100 border-green-200', textClass: 'text-green-800' },
   ASSIGNED: { label: 'Đã phân xe', containerClass: 'bg-blue-100 border-blue-200', textClass: 'text-blue-800' },
-  LOADING: { label: 'Đang chuẩn bị xuất kho', containerClass: 'bg-blue-100 border-blue-200', textClass: 'text-blue-800' },
+  LOADING: { label: 'Đang bốc hàng', containerClass: 'bg-blue-100 border-blue-200', textClass: 'text-blue-800' },
   SEALED: { label: 'Đã niêm phong', containerClass: 'bg-indigo-100 border-indigo-200', textClass: 'text-indigo-800' },
   DISPATCHED: { label: 'Đã điều phối', containerClass: 'bg-indigo-100 border-indigo-200', textClass: 'text-indigo-800' },
   DISPATCHED_PENDING: { label: 'Chờ điều phối', containerClass: 'bg-indigo-100 border-indigo-200', textClass: 'text-indigo-800' },
@@ -32,15 +32,15 @@ const STATUS_PRESENTATIONS: Record<string, StatusPresentation> = {
   DELAYED: { label: 'Chậm tiến độ', containerClass: 'bg-red-100 border-red-200', textClass: 'text-red-800' },
   RECEIVING: { label: 'Đang nhập kho', containerClass: 'bg-green-100 border-green-200', textClass: 'text-green-800' },
   DELIVERED: { label: 'Đã giao', containerClass: 'bg-green-100 border-green-200', textClass: 'text-green-800' },
-  PARTIALLY_DELIVERED: { label: 'Đã giao một phần', containerClass: 'bg-green-100 border-green-200', textClass: 'text-green-800' },
-  PARTIAL_DELIVER_OSD: { label: 'Đã giao một phần, đang kiểm tra sai lệch', containerClass: 'bg-orange-100 border-orange-200', textClass: 'text-orange-800' },
-  DELIVERY_RETURNED: { label: 'Đang hoàn hàng về kho', containerClass: 'bg-red-100 border-red-200', textClass: 'text-red-800' },
-  READY_FOR_ROUTING: { label: 'Đang chờ sắp xếp chuyến mới', containerClass: 'bg-blue-100 border-blue-200', textClass: 'text-blue-800' },
-  DISCREPANCY_HOLD: { label: 'Đang chờ kiểm tra hàng hóa', containerClass: 'bg-amber-100 border-amber-200', textClass: 'text-amber-800' },
-  OSD_CLAIM_REJECTED_BY_DISPATCHER: { label: 'Yêu cầu bồi thường không được chấp thuận', containerClass: 'bg-red-100 border-red-200', textClass: 'text-red-800' },
-  OSD_REJECT_PENDING: { label: 'Đang xử lý hàng bị từ chối', containerClass: 'bg-red-100 border-red-200', textClass: 'text-red-800' },
-  OSD_DOCK_PENDING: { label: 'Đang kiểm tra hàng tại điểm giao', containerClass: 'bg-orange-100 border-orange-200', textClass: 'text-orange-800' },
-  DELIVERY_FAILED_NOSHOW: { label: 'Giao hàng chưa thành công do không có người nhận', containerClass: 'bg-red-100 border-red-200', textClass: 'text-red-800' },
+  PARTIALLY_DELIVERED: { label: 'Đã giao 1 phần', containerClass: 'bg-green-100 border-green-200', textClass: 'text-green-800' },
+  PARTIAL_DELIVER_OSD: { label: 'Giao 1 phần (OS&D)', containerClass: 'bg-orange-100 border-orange-200', textClass: 'text-orange-800' },
+  DELIVERY_RETURNED: { label: 'Đang hoàn hàng', containerClass: 'bg-red-100 border-red-200', textClass: 'text-red-800' },
+  READY_FOR_ROUTING: { label: 'Chờ xếp chuyến', containerClass: 'bg-blue-100 border-blue-200', textClass: 'text-blue-800' },
+  DISCREPANCY_HOLD: { label: 'Chờ kiểm tra hàng', containerClass: 'bg-amber-100 border-amber-200', textClass: 'text-amber-800' },
+  OSD_CLAIM_REJECTED_BY_DISPATCHER: { label: 'Từ chối bồi thường', containerClass: 'bg-red-100 border-red-200', textClass: 'text-red-800' },
+  OSD_REJECT_PENDING: { label: 'Xử lý hàng từ chối', containerClass: 'bg-red-100 border-red-200', textClass: 'text-red-800' },
+  OSD_DOCK_PENDING: { label: 'Kiểm tra điểm giao', containerClass: 'bg-orange-100 border-orange-200', textClass: 'text-orange-800' },
+  DELIVERY_FAILED_NOSHOW: { label: 'Giao không thành công', containerClass: 'bg-red-100 border-red-200', textClass: 'text-red-800' },
   RETURN_PENDING: { label: 'Chờ hoàn trả', containerClass: 'bg-red-100 border-red-200', textClass: 'text-red-800' },
   RETURNED: { label: 'Đã hoàn trả', containerClass: 'bg-red-100 border-red-200', textClass: 'text-red-800' },
   REJECTED: { label: 'Từ chối', containerClass: 'bg-red-100 border-red-200', textClass: 'text-red-800' },
@@ -141,4 +141,92 @@ export function localizeCustomerOrderStatusesInText(value: string): string {
 export function getCustomerOrderCategoryLabel(category?: string | null): string | null {
   const normalizedCategory = category?.trim().toUpperCase();
   return normalizedCategory ? CATEGORY_LABELS[normalizedCategory] ?? null : null;
+}
+
+export type CustomerOrderTabGroupKey =
+  | 'ALL'
+  | 'ACTION_REQUIRED'
+  | 'WAITING'
+  | 'TRANSIT'
+  | 'COMPLETED';
+
+export interface CustomerOrderTab {
+  key: CustomerOrderTabGroupKey;
+  label: string;
+}
+
+export const CUSTOMER_ORDER_TABS: CustomerOrderTab[] = [
+  { key: 'ALL', label: 'Tất cả' },
+  { key: 'ACTION_REQUIRED', label: 'Cần xử lý' },
+  { key: 'WAITING', label: 'Chờ xử lý' },
+  { key: 'TRANSIT', label: 'Đang vận chuyển' },
+  { key: 'COMPLETED', label: 'Hoàn tất' },
+];
+
+/**
+ * Maps any backend order status to one of the 5 Customer-facing tab categories.
+ * If status is unknown, it defaults to 'ALL' so orders are never hidden.
+ */
+export function getCustomerOrderTabGroup(status?: string | null): CustomerOrderTabGroupKey {
+  if (!status) return 'ALL';
+  const normalized = status.trim().toUpperCase();
+
+  switch (normalized) {
+    // 1. Cần xử lý: Customer must perform an action
+    case 'NEEDS_UPDATE':
+    case 'CONTRACT_PENDING':
+    case 'CONTRACT_SIGNED':
+    case 'PENDING_CUSTOMER_SIGNATURE':
+      return 'ACTION_REQUIRED';
+
+    // 2. Chờ xử lý: Customer is waiting for Sales / Warehouse processing
+    case 'PENDING':
+    case 'PENDING_REVIEW':
+    case 'APPROVED':
+    case 'QUOTING':
+    case 'RECEIVING':
+    case 'DISCREPANCY_HOLD':
+    case 'IN_STOCK':
+    case 'IN_WAREHOUSE':
+      return 'WAITING';
+
+    // 3. Đang vận chuyển: Assigned, loading, or in transit
+    case 'ASSIGNED':
+    case 'DISPATCHED_PENDING':
+    case 'DISPATCHED':
+    case 'LOADING':
+    case 'SEALED':
+    case 'IN_TRANSIT':
+    case 'DELAYED':
+      return 'TRANSIT';
+
+    // 4. Hoàn tất: Completed, delivered, returned, or cancelled
+    case 'DELIVERED':
+    case 'COMPLETED':
+    case 'PARTIALLY_DELIVERED':
+    case 'PARTIAL_DELIVER_OSD':
+    case 'DELIVERY_FAILED_NOSHOW':
+    case 'DELIVERY_RETURNED':
+    case 'RETURN_PENDING':
+    case 'RETURNED':
+    case 'PENDING_REDELIVERY':
+    case 'REJECTED':
+    case 'CANCELLED':
+      return 'COMPLETED';
+
+    default:
+      return 'ALL';
+  }
+}
+
+/**
+ * Returns sort priority score for an order (lower number = higher priority on top).
+ * NEEDS_UPDATE has top priority (0).
+ * All other orders have priority (1) so they are sorted chronologically by newest date first.
+ */
+export function getCustomerOrderActionPriority(status?: string | null): number {
+  if (!status) return 1;
+  const normalized = status.trim().toUpperCase();
+  if (normalized === 'NEEDS_UPDATE') return 0;
+  return 1;
 }
