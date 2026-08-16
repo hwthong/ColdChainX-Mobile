@@ -15,7 +15,7 @@ import {
   View,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppToast, ToastType } from '../../components/AppToast';
@@ -44,7 +44,7 @@ import {
   validateCreateOrderStep,
 } from '../../features/customer/create-order/createOrderValidation';
 import { ApiClientError, getApiErrorMessage } from '../../services/apiClient';
-import { createOrder } from '../../services/orderApi';
+import { createOrder, getOrderById, updateOrder, type UpdateOrderPayload } from '../../services/orderApi';
 import {
   getRouteBookingOptions,
   getRouteOptions,
@@ -63,6 +63,8 @@ const STEP_DETAILS: Record<CreateOrderStep, { title: string }> = {
 export default function CreateOrderScreen() {
   const router = useRouter();
   const navigation = useNavigation();
+  const { mode, orderId } = useLocalSearchParams<{ mode?: string; orderId?: string }>();
+  const isEditMode = mode === 'edit' && Boolean(orderId);
   const accessToken = useAuthStore((state) => state.token);
   const insets = useSafeAreaInsets();
   const scrollViewRef = useRef<ScrollView | null>(null);
@@ -72,6 +74,13 @@ export default function CreateOrderScreen() {
   const inputRefs = useRef<Partial<Record<CreateOrderFieldKey, TextInput | null>>>({});
   const pendingErrorFieldRef = useRef<CreateOrderFieldKey | null>(null);
   const allowExitRef = useRef(false);
+
+  // — Edit mode state —
+  const [isLoadingOrder, setIsLoadingOrder] = useState(isEditMode);
+  const [originalOrderStatus, setOriginalOrderStatus] = useState<string | null>(null);
+  const [existingPhotoUrl, setExistingPhotoUrl] = useState<string | null>(null);
+  const [existingOrderCbm, setExistingOrderCbm] = useState<number | null>(null);
+  const isInitialLoadDoneRef = useRef(false);
 
   // — Goods info —
   const [category, setCategory] = useState<GoodsType>('FROZEN_FRUITS_VEGGIES');
@@ -115,6 +124,7 @@ export default function CreateOrderScreen() {
   const [currentStep, setCurrentStep] = useState<CreateOrderStep>(1);
   const [hasUserEditedForm, setHasUserEditedForm] = useState(false);
 
+  const effectiveDocumentImage = documentImage || (existingPhotoUrl ? { uri: existingPhotoUrl, mimeType: 'image/jpeg', fileName: 'cargo.jpg' } : null);
   const selectedRoute = routeOptions.find((r) => r.routeId === selectedRouteId) ?? null;
   const selectedSchedule = bookingOptions?.availableSchedules.find((s) => s.scheduleId === selectedScheduleId) ?? null;
   const selectedStop = bookingOptions?.availableStops.find((s) => s.stopId === selectedStopId) ?? null;
@@ -133,7 +143,7 @@ export default function CreateOrderScreen() {
     routeId: selectedRouteId,
     scheduleId: selectedScheduleId,
     dropoffStopId: selectedStopId,
-    documentImage,
+    documentImage: effectiveDocumentImage,
   };
   const isFormDirty = hasUserEditedForm && isCreateOrderFormDirty(formValues);
 
@@ -164,6 +174,7 @@ export default function CreateOrderScreen() {
       setRouteError(getApiErrorMessage(error));
     } finally {
       setIsLoadingRoutes(false);
+      isInitialLoadDoneRef.current = true;
     }
   }, []);
 
@@ -200,12 +211,151 @@ export default function CreateOrderScreen() {
     }
   }, []);
 
+  // ─── Initial Load (Edit Mode vs Create Mode) ─────────────────────────────────
   useEffect(() => {
-    fetchRoutes();
-  }, [fetchRoutes]);
+    let isCancelled = false;
+
+    async function init() {
+      if (isEditMode && orderId) {
+        setIsLoadingOrder(true);
+        setIsLoadingRoutes(true);
+        setRouteError(null);
+        try {
+          const [routesRes, orderRes] = await Promise.all([
+            getRouteOptions(),
+            accessToken ? getOrderById(accessToken, orderId) : Promise.resolve(null),
+          ]);
+
+          if (isCancelled) return;
+
+          let activeRoutes: RouteOptionResponse[] = [];
+          if (routesRes.success && routesRes.data) {
+            activeRoutes = routesRes.data.filter((r) => r.status?.trim().toUpperCase() === 'ACTIVE');
+            setRouteOptions(activeRoutes);
+          } else {
+            setRouteError(routesRes.message || 'Không thể tải danh sách tuyến vận chuyển.');
+          }
+
+          if (orderRes && orderRes.success && orderRes.data) {
+            const ord = orderRes.data;
+            setOriginalOrderStatus(ord.status);
+
+            // 1. Goods Info
+            if (ord.itemName) setItemName(ord.itemName);
+            if (ord.category) setCategory(ord.category as GoodsType);
+            if (ord.tempCondition) {
+              const parsedTemp = parseFloat(ord.tempCondition);
+              if (!Number.isNaN(parsedTemp)) setTempCondition(parsedTemp);
+            }
+            if (ord.expectedWeightKg) setExpectedWeightKg(String(ord.expectedWeightKg));
+            if (ord.quantity) setQuantity(String(ord.quantity));
+
+            // 2. Packaging & Dimensions
+            if (ord.packingType) {
+              const types = ord.packingType.split(',').map((s) => s.trim()).filter(Boolean);
+              setPackagingType(types);
+            }
+
+            if (ord.expectedCbm) {
+              setExistingOrderCbm(Number(ord.expectedCbm));
+            }
+
+            const ordLength = (ord as any).lengthCm ?? (ord as any).LengthCm ?? (ord as any).Length_CM;
+            const ordWidth = (ord as any).widthCm ?? (ord as any).WidthCm ?? (ord as any).Width_CM;
+            const ordHeight = (ord as any).heightCm ?? (ord as any).HeightCm ?? (ord as any).Height_CM;
+
+            if (ordLength && ordWidth && ordHeight) {
+              setLengthCm(String(ordLength));
+              setWidthCm(String(ordWidth));
+              setHeightCm(String(ordHeight));
+            } else {
+              setLengthCm('');
+              setWidthCm('');
+              setHeightCm('');
+            }
+
+            // 3. Existing Cargo Photo
+            const existingPhoto =
+              ord.documents?.find((d) => d.docType === 'CargoImage' || d.docType === 'ITEM_IMAGE')?.imageUrl ||
+              ord.documentUrl;
+            if (existingPhoto) {
+              setExistingPhotoUrl(existingPhoto);
+            }
+
+            // 4. Destination Address
+            if (ord.destination?.address) {
+              setDestAddressText(ord.destination.address);
+            }
+
+            // 5. Route & Booking Options (Schedules + Stops)
+            const targetRouteId = ord.route?.routeId || (activeRoutes.length > 0 ? activeRoutes[0].routeId : '');
+            const targetScheduleId = ord.schedule?.scheduleId || '';
+
+            if (targetRouteId) {
+              currentBookingRouteIdRef.current = targetRouteId;
+              currentSelectedRouteIdRef.current = targetRouteId;
+              setSelectedRouteId(targetRouteId);
+
+              setIsLoadingBooking(true);
+              try {
+                const bookingRes = await getRouteBookingOptions(targetRouteId);
+                if (!isCancelled && bookingRes.success && bookingRes.data) {
+                  setBookingOptions(bookingRes.data);
+
+                  // Match schedule
+                  const matchedSchedule = bookingRes.data.availableSchedules.find(
+                    (s) => s.scheduleId === targetScheduleId
+                  );
+                  if (matchedSchedule) {
+                    setSelectedScheduleId(matchedSchedule.scheduleId);
+                  } else if (bookingRes.data.availableSchedules.length > 0) {
+                    setSelectedScheduleId(bookingRes.data.availableSchedules[0].scheduleId);
+                  }
+
+                  // Match stop
+                  if (bookingRes.data.availableStops.length > 0) {
+                    const matchedStop = bookingRes.data.availableStops.find(
+                      (s) => ord.destination?.address && s.stopName && ord.destination.address.includes(s.stopName)
+                    );
+                    if (matchedStop) {
+                      setSelectedStopId(matchedStop.stopId);
+                    } else {
+                      setSelectedStopId(bookingRes.data.availableStops[0].stopId);
+                    }
+                  }
+                }
+              } catch (bErr) {
+                if (!isCancelled) setBookingError(getApiErrorMessage(bErr));
+              } finally {
+                if (!isCancelled) setIsLoadingBooking(false);
+              }
+            }
+          } else if (orderRes && !orderRes.success) {
+            showToast('error', orderRes.message || 'Không thể tải thông tin đơn hàng.', 'Lỗi tải đơn');
+          }
+        } catch (err) {
+          if (!isCancelled) showToast('error', getApiErrorMessage(err), 'Lỗi');
+        } finally {
+          if (!isCancelled) {
+            setIsLoadingOrder(false);
+            setIsLoadingRoutes(false);
+            isInitialLoadDoneRef.current = true;
+          }
+        }
+      } else {
+        void fetchRoutes();
+      }
+    }
+
+    void init();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isEditMode, orderId, accessToken, fetchRoutes]);
 
   useEffect(() => {
-    if (selectedRouteId) {
+    if (selectedRouteId && isInitialLoadDoneRef.current) {
       fetchBookingOptions(selectedRouteId);
     }
   }, [selectedRouteId, fetchBookingOptions]);
@@ -303,6 +453,14 @@ export default function CreateOrderScreen() {
     }
 
     const nextStepErrors = validateCreateOrderStep(currentStep, formValues, routeOptions, bookingOptions);
+    if (isEditMode) {
+      delete nextStepErrors.documentImage;
+      if (!formValues.lengthCm && !formValues.widthCm && !formValues.heightCm) {
+        delete nextStepErrors.lengthCm;
+        delete nextStepErrors.widthCm;
+        delete nextStepErrors.heightCm;
+      }
+    }
     setStepErrors(currentStep, nextStepErrors);
     if (Object.keys(nextStepErrors).length > 0) {
       requestFirstErrorFocus(nextStepErrors);
@@ -319,14 +477,14 @@ export default function CreateOrderScreen() {
 
   const confirmLeaveCreateOrder = useCallback((onLeave: () => void) => {
     Alert.alert(
-      'Rời khỏi trang tạo đơn?',
+      isEditMode ? 'Rời khỏi trang chỉnh sửa?' : 'Rời khỏi trang tạo đơn?',
       'Thông tin bạn đã nhập sẽ không được lưu.',
       [
         { text: 'Tiếp tục nhập', style: 'cancel' },
         { text: 'Rời khỏi', style: 'destructive', onPress: onLeave },
       ]
     );
-  }, []);
+  }, [isEditMode]);
 
   useFocusEffect(
     useCallback(() => {
@@ -384,6 +542,14 @@ export default function CreateOrderScreen() {
     }
 
     const nextErrors = validateCreateOrderForm(formValues, routeOptions, bookingOptions);
+    if (isEditMode) {
+      delete nextErrors.documentImage;
+      if (!formValues.lengthCm && !formValues.widthCm && !formValues.heightCm) {
+        delete nextErrors.lengthCm;
+        delete nextErrors.widthCm;
+        delete nextErrors.heightCm;
+      }
+    }
     setErrors(nextErrors);
 
     if (Object.keys(nextErrors).length > 0) {
@@ -393,28 +559,84 @@ export default function CreateOrderScreen() {
     }
 
     if (!accessToken) {
-      showToast('error', 'Bạn cần đăng nhập lại trước khi tạo đơn.', 'Lỗi xác thực');
+      showToast('error', 'Bạn cần đăng nhập lại trước khi tiếp tục.', 'Lỗi xác thực');
       return;
     }
 
-    if (!documentImage) {
+    if (!isEditMode && !documentImage) {
       showToast('error', 'Vui lòng chọn ảnh lô hàng.', 'Thiếu ảnh');
       return;
     }
 
     if (__DEV__) {
       console.log('[CreateOrder] payload preview:', {
+        isEditMode,
+        orderId,
         Schedule_ID: selectedScheduleId,
         Dropoff_Stop_ID: selectedStopId,
         Packaging_Type: packagingType.join(', '),
         Quantity: quantity,
-        HasCargoPhoto: Boolean(documentImage.uri),
+        HasCargoPhoto: Boolean(documentImage?.uri),
       });
     }
 
     setIsLoading(true);
     try {
-      const response = await createOrder(accessToken, mapCreateOrderRequest({ ...formValues, documentImage }));
+      if (isEditMode && orderId) {
+        const parsedLen = formValues.lengthCm ? parseCreateOrderDecimal(formValues.lengthCm) : undefined;
+        const parsedWid = formValues.widthCm ? parseCreateOrderDecimal(formValues.widthCm) : undefined;
+        const parsedHgt = formValues.heightCm ? parseCreateOrderDecimal(formValues.heightCm) : undefined;
+        const hasValidDimensions = Boolean(
+          parsedLen && parsedLen > 0 &&
+          parsedWid && parsedWid > 0 &&
+          parsedHgt && parsedHgt > 0
+        );
+
+        const updatePayload: UpdateOrderPayload = {
+          itemName: formValues.itemName.trim(),
+          category: formValues.category,
+          tempCondition: formValues.tempCondition,
+          expectedWeightKg: parseCreateOrderDecimal(formValues.expectedWeightKg),
+          quantity: Number.parseInt(formValues.quantity, 10),
+          packagingType: formValues.packagingType.join(', '),
+          lengthCm: hasValidDimensions ? parsedLen : undefined,
+          widthCm: hasValidDimensions ? parsedWid : undefined,
+          heightCm: hasValidDimensions ? parsedHgt : undefined,
+          destAddressText: formValues.destAddressText.trim(),
+          scheduleId: formValues.scheduleId || undefined,
+          dropoffStopId: formValues.dropoffStopId || undefined,
+          cargoPhoto: documentImage
+            ? {
+                uri: documentImage.uri,
+                mimeType: documentImage.mimeType || 'image/jpeg',
+                fileName: documentImage.fileName || 'cargo.jpg',
+              }
+            : null,
+        };
+
+        const response = await updateOrder(accessToken, orderId, updatePayload);
+        if (!response.success) {
+          throw new Error(response.message || 'Cập nhật đơn thất bại.');
+        }
+
+        const successMsg =
+          originalOrderStatus?.toUpperCase() === 'NEEDS_UPDATE'
+            ? 'Đã cập nhật đơn hàng thành công. Đơn đang chờ bộ phận Sales duyệt lại.'
+            : 'Đã cập nhật đơn hàng thành công.';
+
+        Alert.alert('Thành công', successMsg, [
+          {
+            text: 'Đồng ý',
+            onPress: () => {
+              allowExitRef.current = true;
+              router.replace(`/(customer)/orders/${orderId}` as never);
+            },
+          },
+        ]);
+        return;
+      }
+
+      const response = await createOrder(accessToken, mapCreateOrderRequest({ ...formValues, documentImage: documentImage! }));
 
       if (!response.success) {
         throw new Error(response.message || 'Tạo đơn thất bại.');
@@ -427,12 +649,19 @@ export default function CreateOrderScreen() {
         documentUrl: response.data?.documentUrl,
       });
     } catch (error) {
-      if (__DEV__) console.error('[CreateOrder] create order failed', error);
+      if (__DEV__) console.error('[CreateOrder] submission failed', error);
 
-      let errorMessage = 'Không thể tạo đơn hàng. Vui lòng kiểm tra lại thông tin.';
+      let errorMessage = isEditMode
+        ? 'Không thể cập nhật đơn hàng. Vui lòng kiểm tra lại thông tin.'
+        : 'Không thể tạo đơn hàng. Vui lòng kiểm tra lại thông tin.';
+
       if (error instanceof ApiClientError) {
         if (error.status === 401) {
           errorMessage = 'Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.';
+        } else if (error.status === 403) {
+          errorMessage = 'Bạn không có quyền chỉnh sửa đơn hàng này.';
+        } else if (error.status === 400 && error.message?.toLowerCase().includes('pending_review')) {
+          errorMessage = 'Đơn hàng đã chuyển trạng thái và không thể chỉnh sửa.';
         } else {
           errorMessage = getCreateOrderErrorMessage(error);
         }
@@ -446,7 +675,7 @@ export default function CreateOrderScreen() {
         setErrors((current) => ({ ...current, [serverErrorField]: errorMessage }));
         setCurrentStep(getFirstInvalidStep({ [serverErrorField]: errorMessage }));
       }
-      showToast('error', errorMessage, 'Lỗi tạo đơn');
+      showToast('error', errorMessage, isEditMode ? 'Lỗi cập nhật' : 'Lỗi tạo đơn');
     } finally {
       setIsLoading(false);
     }
@@ -519,6 +748,7 @@ export default function CreateOrderScreen() {
 
   const removeDocumentImage = () => {
     setDocumentImage(null);
+    setExistingPhotoUrl(null);
     setHasUserEditedForm(true);
     setErrors((current) => ({ ...current, documentImage: undefined }));
   };
@@ -582,6 +812,17 @@ export default function CreateOrderScreen() {
   };
 
   // ─── Render ──────────────────────────────────────────────────────────────────
+  if (isEditMode && isLoadingOrder) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.surface.page }} className="items-center justify-center p-6">
+        <ActivityIndicator size="large" color={colors.brand.primary} />
+        <Text style={{ color: colors.brand.primary }} className="mt-4 font-medium">
+          Đang tải thông tin đơn hàng...
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View className="flex-1" style={{ backgroundColor: colors.surface.page }}>
       <View className="px-5 pb-2 pt-4">
@@ -687,8 +928,9 @@ export default function CreateOrderScreen() {
             widthCm={widthCm}
             heightCm={heightCm}
             quantity={quantity}
-            image={documentImage}
+            image={effectiveDocumentImage}
             capacityWarning={capacityWarning}
+            existingCbm={existingOrderCbm}
             errors={errors}
             registerField={registerField}
             registerInput={registerInput}
@@ -721,8 +963,20 @@ export default function CreateOrderScreen() {
       </KeyboardAvoidingView>
 
       {(() => {
-        const isStepValid = currentStep === 4 || Object.keys(validateCreateOrderStep(currentStep as 1 | 2 | 3, formValues, routeOptions, bookingOptions)).length === 0;
-        const primaryLabel = currentStep === 4 ? 'Gửi đơn hàng' : 'Tiếp tục';
+        let isStepValid = true;
+        if (currentStep !== 4) {
+          const stepErrors = validateCreateOrderStep(currentStep, formValues, routeOptions, bookingOptions);
+          if (isEditMode) {
+            delete stepErrors.documentImage;
+            if (!formValues.lengthCm && !formValues.widthCm && !formValues.heightCm) {
+              delete stepErrors.lengthCm;
+              delete stepErrors.widthCm;
+              delete stepErrors.heightCm;
+            }
+          }
+          isStepValid = Object.keys(stepErrors).length === 0;
+        }
+        const primaryLabel = currentStep === 4 ? (isEditMode ? 'Lưu cập nhật' : 'Gửi đơn hàng') : 'Tiếp tục';
 
         return (
           <View style={[styles.localFooter, { paddingBottom: Math.max(insets.bottom, 12) }]}>

@@ -500,6 +500,31 @@ export default function OrderDetailScreen() {
           </View>
         ) : null}
 
+        {order.status?.toUpperCase() === 'NEEDS_UPDATE' ? (
+          <View className="mb-4 rounded-2xl border border-orange-300 bg-orange-50 p-4">
+            <View className="flex-row items-center gap-2">
+              <Ionicons name="alert-circle" size={22} color="#c2410c" />
+              <Text className="text-base font-bold text-orange-950">Đơn hàng cần cập nhật</Text>
+            </View>
+            <Text className="mt-2 text-sm leading-5 text-orange-800">
+              Bộ phận Sales yêu cầu bạn cập nhật lại thông tin đơn hàng trước khi tiếp tục duyệt.
+            </Text>
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname: '/(customer)/create-order',
+                  params: { orderId: order.orderId, mode: 'edit' },
+                })
+              }
+              style={{ backgroundColor: '#ea580c' }}
+              className="mt-3 flex-row items-center justify-center gap-2 rounded-xl py-3 shadow-sm"
+            >
+              <Ionicons name="create-outline" size={18} color="#ffffff" />
+              <Text className="font-bold text-white">Cập nhật thông tin đơn hàng</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
         <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="mb-4 rounded-2xl border p-5 shadow-sm">
           <View className="mb-4 flex-row items-start justify-between gap-3">
             <View className="flex-1">
@@ -531,6 +556,26 @@ export default function OrderDetailScreen() {
               {stageDescription}
             </Text>
           )}
+
+          {order.status?.toUpperCase() === 'PENDING_REVIEW' ? (
+            <View className="mt-4">
+              <Pressable
+                onPress={() =>
+                  router.push({
+                    pathname: '/(customer)/create-order',
+                    params: { orderId: order.orderId, mode: 'edit' },
+                  })
+                }
+                style={{ borderColor: colors.brand.primary }}
+                className="flex-row items-center justify-center gap-2 rounded-xl border bg-white py-2.5"
+              >
+                <Ionicons name="create-outline" size={18} color={colors.brand.primary} />
+                <Text style={{ color: colors.brand.primary }} className="font-bold">
+                  Chỉnh sửa đơn hàng
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
         </View>
 
         <InfoCard title="Thông tin hàng hóa" icon="cube-outline">
@@ -1209,6 +1254,8 @@ function getStageAwareHeaderDescription(status?: string | null, hasMasterTrip?: 
     case 'PENDING':
     case 'PENDING_REVIEW':
       return 'Đơn hàng đang chờ Sales duyệt.';
+    case 'NEEDS_UPDATE':
+      return 'Bộ phận Sales yêu cầu bạn cập nhật lại thông tin đơn hàng.';
     case 'QUOTING':
     case 'SENT':
       return 'Đang chờ xác nhận báo giá.';

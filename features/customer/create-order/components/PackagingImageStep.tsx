@@ -48,6 +48,7 @@ type PackagingImageStepProps = {
   quantity: string;
   image: DocumentImage | null;
   capacityWarning: string | null;
+  existingCbm?: number | null;
   errors: CreateOrderValidationErrors;
   registerField: RegisterCreateOrderField;
   registerInput: RegisterCreateOrderInput;
@@ -69,6 +70,7 @@ export function PackagingImageStep({
   quantity,
   image,
   capacityWarning,
+  existingCbm,
   errors,
   registerField,
   registerInput,
@@ -218,7 +220,18 @@ export function PackagingImageStep({
               />
             </View>
           </View>
-          {cbmPreview ? <CbmPreviewStrip preview={cbmPreview} /> : null}
+          {cbmPreview ? (
+            <CbmPreviewStrip preview={cbmPreview} />
+          ) : existingCbm ? (
+            <View style={{ backgroundColor: colors.surface.selected, borderRadius: customerRadius.control }} className="gap-1 px-4 py-3">
+              <Text style={{ color: colors.text.secondary }} className="text-xs font-medium leading-5">
+                Kích thước đã lưu trong đơn hàng
+              </Text>
+              <Text style={{ color: colors.text.primary }} className="text-sm font-bold leading-5">
+                Tổng thể tích: {existingCbm} m³ (Nhập số mới nếu bạn muốn thay đổi)
+              </Text>
+            </View>
+          ) : null}
         </View>
 
         {capacityWarning ? (

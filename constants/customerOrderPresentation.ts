@@ -13,6 +13,7 @@ const DEFAULT_STATUS_PRESENTATION: StatusPresentation = {
 const STATUS_PRESENTATIONS: Record<string, StatusPresentation> = {
   PENDING: { label: 'Chờ duyệt', containerClass: 'bg-yellow-100 border-yellow-200', textClass: 'text-yellow-800' },
   PENDING_REVIEW: { label: 'Chờ duyệt', containerClass: 'bg-yellow-100 border-yellow-200', textClass: 'text-yellow-800' },
+  NEEDS_UPDATE: { label: 'Cần cập nhật', containerClass: 'bg-orange-100 border-orange-200', textClass: 'text-orange-800' },
   QUOTING: { label: 'Đang báo giá', containerClass: 'bg-orange-100 border-orange-200', textClass: 'text-orange-800' },
   SENT: { label: 'Đã gửi', containerClass: 'bg-orange-100 border-orange-200', textClass: 'text-orange-800' },
   CONTRACT_PENDING: { label: 'Chờ hợp đồng', containerClass: 'bg-amber-100 border-amber-200', textClass: 'text-amber-800' },

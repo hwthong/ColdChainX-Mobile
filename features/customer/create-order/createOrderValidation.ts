@@ -152,8 +152,9 @@ export function validateCreateOrderStep(
 ): CreateOrderValidationErrors {
   const allErrors = validateCreateOrderForm(values, activeRoutes, bookingOptions);
   const stepErrors: CreateOrderValidationErrors = {};
+  const fields = CREATE_ORDER_STEP_FIELDS[step] ?? [];
 
-  CREATE_ORDER_STEP_FIELDS[step].forEach((field) => {
+  fields.forEach((field) => {
     if (allErrors[field]) stepErrors[field] = allErrors[field];
   });
 
