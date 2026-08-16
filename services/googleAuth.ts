@@ -11,6 +11,18 @@ type GoogleSigninErrorDetails = {
   message: string;
 };
 
+const GOOGLE_SIGNIN_USER_MESSAGE = 'Không thể đăng nhập bằng Google. Vui lòng thử lại.';
+
+export class GoogleSigninError extends Error {
+  code?: string;
+
+  constructor(code?: string) {
+    super(GOOGLE_SIGNIN_USER_MESSAGE);
+    this.name = 'GoogleSigninError';
+    this.code = code;
+  }
+}
+
 interface GoogleSignInModule {
   GoogleSignin: {
     configure: (options?: { webClientId?: string }) => void;
@@ -112,8 +124,9 @@ export async function performGoogleSignIn(webClientId?: string): Promise<GoogleA
       return { idToken: null, playServicesUnavailable: true };
     }
 
+    const { code } = getGoogleSigninErrorDetails(error);
     logGoogleSigninError(error);
-    throw error;
+    throw new GoogleSigninError(code);
   }
 }
 
