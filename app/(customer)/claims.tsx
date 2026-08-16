@@ -32,7 +32,6 @@ import { useAuthStore } from '../../store/useAuthStore';
 const ORDER_PAGE_SIZE = 100;
 const CLAIM_PAGE_SIZE = 50;
 const MAX_EVIDENCE_IMAGES = 5;
-const REQUESTED_AMOUNT_PREFIX = 'Số tiền khách yêu cầu bồi thường:';
 
 const CLAIM_CATEGORIES: {
   value: ClaimCategory;
@@ -58,7 +57,6 @@ export default function CustomerClaimsScreen() {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [claims, setClaims] = useState<ClaimResponse[]>([]);
   const [claimType, setClaimType] = useState<ClaimCategory>('DAMAGE');
-  const [requestedAmountText, setRequestedAmountText] = useState('');
   const [description, setDescription] = useState('');
   const [evidenceImages, setEvidenceImages] = useState<ClaimEvidenceImage[]>([]);
   const [isOrdersLoading, setIsOrdersLoading] = useState(true);
@@ -250,7 +248,6 @@ export default function CustomerClaimsScreen() {
 
   const handleSubmitClaim = async () => {
     const trimmedDescription = description.trim();
-    const requestedAmount = parseCurrencyInput(requestedAmountText);
 
     if (!accessToken) {
       setFormError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
@@ -259,11 +256,6 @@ export default function CustomerClaimsScreen() {
 
     if (!selectedOrderId) {
       setFormError('Vui lòng chọn đơn hàng cần khiếu nại.');
-      return;
-    }
-
-    if (!requestedAmount || requestedAmount <= 0) {
-      setFormError('Vui lòng nhập số tiền yêu cầu bồi thường.');
       return;
     }
 
@@ -280,7 +272,7 @@ export default function CustomerClaimsScreen() {
       const response = await createClaim(accessToken, {
         orderId: selectedOrderId,
         claimType,
-        description: buildClaimDescription(requestedAmount, trimmedDescription),
+        description: trimmedDescription,
         evidenceImages,
       });
 
@@ -289,7 +281,6 @@ export default function CustomerClaimsScreen() {
       }
 
       setDescription('');
-      setRequestedAmountText('');
       setEvidenceImages([]);
       setSuccessMessage(`Đã gửi khiếu nại ${response.data?.claimCode ?? ''}. Bộ phận vận hành sẽ xử lý.`);
       await loadClaims(selectedOrderId);
@@ -365,7 +356,6 @@ export default function CustomerClaimsScreen() {
             <ClaimForm
               selectedOrderLabel={selectedOrderLabel}
               claimType={claimType}
-              requestedAmountText={requestedAmountText}
               description={description}
               evidenceImages={evidenceImages}
               formError={formError}
@@ -375,10 +365,6 @@ export default function CustomerClaimsScreen() {
                 if (formError) setFormError(null);
               }}
               onChangeType={setClaimType}
-              onChangeRequestedAmount={(value) => {
-                setRequestedAmountText(value.replace(/\D/g, ''));
-                if (formError) setFormError(null);
-              }}
               onOpenImagePicker={openImagePicker}
               onRemoveEvidenceImage={removeEvidenceImage}
               onSubmit={handleSubmitClaim}
@@ -484,28 +470,24 @@ function OrderSelector({
 function ClaimForm({
   selectedOrderLabel,
   claimType,
-  requestedAmountText,
   description,
   evidenceImages,
   formError,
   isSubmitting,
   onChangeDescription,
   onChangeType,
-  onChangeRequestedAmount,
   onOpenImagePicker,
   onRemoveEvidenceImage,
   onSubmit,
 }: {
   selectedOrderLabel: string | null;
   claimType: ClaimCategory;
-  requestedAmountText: string;
   description: string;
   evidenceImages: ClaimEvidenceImage[];
   formError: string | null;
   isSubmitting: boolean;
   onChangeDescription: (value: string) => void;
   onChangeType: (value: ClaimCategory) => void;
-  onChangeRequestedAmount: (value: string) => void;
   onOpenImagePicker: () => void;
   onRemoveEvidenceImage: (uri: string) => void;
   onSubmit: () => void;
@@ -548,22 +530,6 @@ function ClaimForm({
           );
         })}
       </View>
-
-      <Text style={{ color: colors.text.secondary }} className="mb-2 mt-5 text-xs font-bold uppercase">Số tiền yêu cầu bồi thường</Text>
-      <TextInput
-        value={formatCurrencyInput(requestedAmountText)}
-        onChangeText={onChangeRequestedAmount}
-        placeholder="Ví dụ: 500.000"
-        placeholderTextColor={colors.text.muted}
-        keyboardType="numeric"
-        style={{
-          backgroundColor: colors.surface.page,
-          borderColor: colors.border.default,
-          color: colors.text.primary,
-          minHeight: 52,
-        }}
-        className="rounded-2xl border px-4 py-3 text-base font-bold"
-      />
 
       <Text style={{ color: colors.text.secondary }} className="mb-2 mt-5 text-xs font-bold uppercase">Mô tả sự cố</Text>
       <TextInput
@@ -648,7 +614,6 @@ function ClaimForm({
 
 function ClaimCard({ claim, onOpenOrder }: { claim: ClaimResponse; onOpenOrder: () => void }) {
   const evidences = claim.evidences ?? [];
-  const descriptionParts = splitClaimDescription(claim.description);
 
   return (
     <View style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default }} className="rounded-2xl border p-4">
@@ -665,14 +630,7 @@ function ClaimCard({ claim, onOpenOrder }: { claim: ClaimResponse; onOpenOrder: 
         <Text style={{ color: colors.text.primary }} className="font-semibold">{getClaimCategoryLabel(claim.claimType)}</Text>
       </View>
 
-      {descriptionParts.requestedAmount ? (
-        <View className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
-          <Text className="text-xs font-bold uppercase text-amber-700">Số tiền khách yêu cầu</Text>
-          <Text className="mt-1 text-base font-bold text-amber-900">{descriptionParts.requestedAmount}</Text>
-        </View>
-      ) : null}
-
-      <Text style={{ color: colors.text.secondary }} className="mt-2 text-sm leading-5">{descriptionParts.description}</Text>
+      <Text style={{ color: colors.text.secondary }} className="mt-2 text-sm leading-5">{claim.description}</Text>
 
       {claim.resolutionNote ? (
         <View className="mt-3 rounded-xl border border-green-200 bg-green-50 p-3">
@@ -811,41 +769,6 @@ function getClaimStatusPresentation(status?: string | null) {
     default:
       return { label: status || 'Chưa cập nhật', color: colors.text.secondary, bg: colors.surface.card, border: colors.border.default };
   }
-}
-
-function buildClaimDescription(requestedAmount: number, description: string) {
-  return `${REQUESTED_AMOUNT_PREFIX} ${formatMoney(requestedAmount)}\n${description.trim()}`;
-}
-
-function splitClaimDescription(description: string) {
-  const lines = description.split(/\r?\n/);
-  const firstLine = lines[0]?.trim() ?? '';
-
-  if (!firstLine.startsWith(REQUESTED_AMOUNT_PREFIX)) {
-    return { requestedAmount: null, description };
-  }
-
-  const requestedAmount = firstLine.slice(REQUESTED_AMOUNT_PREFIX.length).trim();
-  const remainingDescription = lines.slice(1).join('\n').trim();
-
-  return {
-    requestedAmount: requestedAmount || null,
-    description: remainingDescription || description,
-  };
-}
-
-function parseCurrencyInput(value: string) {
-  const digitsOnly = value.replace(/\D/g, '');
-  return digitsOnly ? Number(digitsOnly) : 0;
-}
-
-function formatCurrencyInput(value: string) {
-  const amount = parseCurrencyInput(value);
-  return amount ? amount.toLocaleString('vi-VN') : '';
-}
-
-function formatMoney(value: number) {
-  return `${value.toLocaleString('vi-VN')} đ`;
 }
 
 function getFullAssetUrl(url?: string | null) {
