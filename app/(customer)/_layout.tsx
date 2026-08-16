@@ -14,6 +14,7 @@ export default function CustomerLayout() {
             'create-order': 'Tạo đơn hàng',
             status: 'Đơn hàng',
             tracking: 'Giám sát',
+            claims: 'Khiếu nại',
             'chat/index': 'Hỗ trợ',
             'chat/[orderId]': 'Tin nhắn đơn hàng',
             profile: 'Hồ sơ cá nhân',
@@ -79,6 +80,14 @@ export default function CustomerLayout() {
           title: 'Giám sát',
           tabBarAccessibilityLabel: 'Giám sát',
           tabBarIcon: ({ color }) => <Ionicons name="locate-outline" size={22} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="claims"
+        options={{
+          title: 'Khiếu nại',
+          tabBarAccessibilityLabel: 'Khiếu nại',
+          tabBarIcon: ({ color }) => <Ionicons name="alert-circle-outline" size={22} color={color} />,
         }}
       />
       <Tabs.Screen
