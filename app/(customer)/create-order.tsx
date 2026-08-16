@@ -147,6 +147,36 @@ export default function CreateOrderScreen() {
   };
   const isFormDirty = hasUserEditedForm && isCreateOrderFormDirty(formValues);
 
+  // ─── Reset ───────────────────────────────────────────────────────────────────
+  const resetForm = useCallback(() => {
+    setCategory('FROZEN_FRUITS_VEGGIES');
+    setTempCondition(-6);
+    setDestAddressText('');
+    setItemName('');
+    setExpectedWeightKg('');
+    setQuantity('1');
+    setPackagingType([]);
+    setLengthCm('');
+    setWidthCm('');
+    setHeightCm('');
+    setSelectedRouteId('');
+    setSelectedScheduleId('');
+    setSelectedStopId('');
+    currentBookingRouteIdRef.current = '';
+    currentSelectedRouteIdRef.current = '';
+    setBookingOptions(null);
+    setBookingError(null);
+    setIsLoadingBooking(false);
+    setDocumentImage(null);
+    setExistingPhotoUrl(null);
+    setExistingOrderCbm(null);
+    setOriginalOrderStatus(null);
+    setErrors({});
+    setSuccessData(null);
+    setCurrentStep(1);
+    setHasUserEditedForm(false);
+  }, []);
+
   // ─── Fetch route list ────────────────────────────────────────────────────────
   const fetchRoutes = useCallback(async () => {
     setIsLoadingRoutes(true);
@@ -343,6 +373,8 @@ export default function CreateOrderScreen() {
           }
         }
       } else {
+        // Create mode: reset form completely and fetch active routes
+        resetForm();
         void fetchRoutes();
       }
     }
@@ -352,7 +384,7 @@ export default function CreateOrderScreen() {
     return () => {
       isCancelled = true;
     };
-  }, [isEditMode, orderId, accessToken, fetchRoutes]);
+  }, [isEditMode, orderId, accessToken, fetchRoutes, resetForm]);
 
   useEffect(() => {
     if (selectedRouteId && isInitialLoadDoneRef.current) {
@@ -488,6 +520,10 @@ export default function CreateOrderScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      if (!isEditMode && !hasUserEditedForm) {
+        resetForm();
+      }
+
       const handleHardwareBack = () => {
         if (currentStep > 1) {
           handleBack();
@@ -526,7 +562,7 @@ export default function CreateOrderScreen() {
         hardwareSubscription.remove();
         unsubscribeBeforeRemove();
       };
-    }, [confirmLeaveCreateOrder, currentStep, handleBack, isFormDirty, navigation, router, successData])
+    }, [confirmLeaveCreateOrder, currentStep, handleBack, hasUserEditedForm, isEditMode, isFormDirty, navigation, resetForm, router, successData])
   );
 
   const goToStep = (step: CreateOrderStep) => setCurrentStep(step);
@@ -753,32 +789,6 @@ export default function CreateOrderScreen() {
     setErrors((current) => ({ ...current, documentImage: undefined }));
   };
 
-  // ─── Reset ───────────────────────────────────────────────────────────────────
-  const resetForm = () => {
-    setCategory('FROZEN_FRUITS_VEGGIES');
-    setTempCondition(-6);
-    setDestAddressText('');
-    setItemName('');
-    setExpectedWeightKg('');
-    setQuantity('1');
-    setPackagingType([]);
-    setLengthCm('');
-    setWidthCm('');
-    setHeightCm('');
-    setSelectedRouteId('');
-    setSelectedScheduleId('');
-    setSelectedStopId('');
-    currentBookingRouteIdRef.current = '';
-    currentSelectedRouteIdRef.current = '';
-    setBookingOptions(null);
-    setBookingError(null);
-    setIsLoadingBooking(false);
-    setDocumentImage(null);
-    setErrors({});
-    setSuccessData(null);
-    setCurrentStep(1);
-    setHasUserEditedForm(false);
-  };
 
   const registerField = (field: CreateOrderFieldKey, node: View | null) => {
     fieldRefs.current[field] = node;
@@ -1029,7 +1039,7 @@ export default function CreateOrderScreen() {
         data={successData}
         onViewOrder={() => {
           const createdOrderId = successData?.orderId;
-          setSuccessData(null);
+          resetForm();
           if (createdOrderId) {
             router.replace(`/(customer)/orders/${createdOrderId}` as never);
           } else {
