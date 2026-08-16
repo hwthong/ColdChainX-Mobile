@@ -438,6 +438,64 @@ export default function StopDetailScreen() {
     }
   };
 
+  const handleCheckPaymentStatus = async (silent = false) => {
+    if (!epodId || !selectedOrder) return;
+    try {
+      if (!silent) setIsProcessing(true);
+      const [verification, updatedEpod] = await Promise.all([
+        deliveryApi.verifyQrPayment(epodId, null),
+        deliveryApi.getEpodByOrderId(selectedOrder.orderId).catch(() => null),
+      ]);
+      setPaymentVerification(verification);
+      if (updatedEpod) {
+        setEpod(updatedEpod);
+      }
+      await loadData(false);
+      if (!silent) {
+        if (verification.isConfirmedBySystem || isPaymentSettledStatus(verification.currentPaymentStatus)) {
+          Alert.alert('Thanh toán thành công', verification.statusSummary || 'Hệ thống đã xác nhận thanh toán.');
+        } else {
+          Alert.alert('Chưa nhận được thanh toán', verification.statusSummary || 'Vui lòng chờ khách chuyển khoản hoặc thử lại sau.');
+        }
+      }
+    } catch (error) {
+      if (!silent) {
+        Alert.alert('Không thể kiểm tra thanh toán', formatActionError(error, 'PAYMENT'));
+      }
+    } finally {
+      if (!silent) setIsProcessing(false);
+    }
+  };
+
+  // Auto-poll payment status while PaymentPanel is open with an active QR code
+  React.useEffect(() => {
+    if (step !== 'PAYMENT' || !epodId || !selectedOrder) return;
+    const currentStatus = epod?.paymentStatus;
+    if (isPaymentSettledStatus(currentStatus)) return;
+    if (!paymentQr) return;
+
+    let isCancelled = false;
+    const interval = setInterval(async () => {
+      if (mutationLock.current || isProcessing) return;
+      try {
+        const updatedEpod = await deliveryApi.getEpodByOrderId(selectedOrder.orderId);
+        if (!isCancelled && updatedEpod) {
+          if (isPaymentSettledStatus(updatedEpod.paymentStatus)) {
+            setEpod(updatedEpod);
+            await loadData(false);
+          }
+        }
+      } catch {
+        // Silently ignore transient errors during background polling
+      }
+    }, 5000);
+
+    return () => {
+      isCancelled = true;
+      clearInterval(interval);
+    };
+  }, [step, epodId, selectedOrder, epod?.paymentStatus, paymentQr, isProcessing, loadData]);
+
   const handleVerifyPayment = async () => {
     if (!epodId) {
       Alert.alert('Thiếu ePOD', 'Không tìm thấy ePOD để gửi bằng chứng thanh toán.');
@@ -918,6 +976,7 @@ const confirmCloseShift = () => {
             proofAsset={paymentProofAsset}
             processing={isProcessing}
             onGetQr={() => void handleGetPaymentQr()}
+            onCheckStatus={() => void handleCheckPaymentStatus(false)}
             onPickProof={() => void pickImage(setPaymentProofAsset, 'ảnh biên lai thanh toán')}
             onVerify={() => void handleVerifyPayment()}
             onOpenUrl={(url) => void openExternalUrl(url)}
@@ -1288,6 +1347,7 @@ function PaymentPanel({
   proofAsset,
   processing,
   onGetQr,
+  onCheckStatus,
   onPickProof,
   onVerify,
   onOpenUrl,
@@ -1300,6 +1360,7 @@ function PaymentPanel({
   proofAsset: ImagePicker.ImagePickerAsset | null;
   processing: boolean;
   onGetQr: () => void;
+  onCheckStatus: () => void;
   onPickProof: () => void;
   onVerify: () => void;
   onOpenUrl: (url?: string | null) => void;
@@ -1307,7 +1368,8 @@ function PaymentPanel({
 }) {
   const amount = paymentQr?.paymentAmountDue ?? epod.paymentAmountDue ?? 0;
   const paymentStatus = paymentVerification?.currentPaymentStatus || paymentQr?.paymentStatus || epod.paymentStatus;
-  const requiresPayment = amount > 0 && !isPaymentSettledStatus(paymentStatus);
+  const isSettled = isPaymentSettledStatus(paymentStatus);
+  const requiresPayment = amount > 0 && !isSettled;
 
   return (
     <View>
@@ -1318,39 +1380,63 @@ function PaymentPanel({
         <Text className="mt-2 text-sm text-green-800">{getPaymentStatusLabel(paymentStatus)}</Text>
         {epod.handoverPdfUrl ? (
           <Pressable className="mt-3" onPress={() => onOpenUrl(epod.handoverPdfUrl)}>
-            <Text className="font-bold text-amber-800">Mở biên bản bàn giao</Text>
+            <Text className="font-bold text-amber-800">Mở biên bản bàn giao (PDF)</Text>
           </Pressable>
         ) : null}
       </View>
 
       {!requiresPayment ? (
         <View className="mt-5">
-          <AppButton label="Hoàn tất" onPress={onDone} disabled={processing} />
+          <View className="mb-4 rounded-2xl border border-green-200 bg-green-50 p-4">
+            <View className="flex-row items-center gap-2">
+              <Ionicons name="checkmark-circle" size={22} color="#15803d" />
+              <Text className="font-bold text-green-900">Thanh toán hoàn tất</Text>
+            </View>
+            <Text className="mt-2 text-sm text-green-800">
+              {paymentStatus === 'PAID_PROOF' || paymentStatus === 'PENDING_VERIFY'
+                ? 'Hệ thống đã lưu ảnh biên lai thanh toán. Bạn có thể tiếp tục chuyến, kế toán sẽ đối soát sau.'
+                : 'Thanh toán COD đã được ghi nhận thành công trên hệ thống.'}
+            </Text>
+          </View>
+          <AppButton label="Hoàn tất và tiếp tục" onPress={onDone} disabled={processing} />
         </View>
       ) : (
         <View className="mt-5 rounded-2xl border border-amber-200 bg-white p-4">
-          <Text className="text-sm text-amber-700">Số tiền cần thanh toán</Text>
+          <Text className="text-sm text-amber-700">Số tiền COD cần thu</Text>
           <Text className="mt-1 text-2xl font-bold text-amber-950">{formatCurrency(amount)}</Text>
-          <Text className="mt-4 font-bold text-amber-950">Chọn phương thức xác nhận thanh toán</Text>
+          <Text className="mt-4 font-bold text-amber-950">Chọn phương thức thanh toán</Text>
+
           <View className="mt-3">
-            <AppButton label="Thanh toán QR" onPress={onGetQr} loading={processing} />
+            <AppButton
+              label={paymentQr ? "Lấy lại mã QR PayOS" : "Tạo mã QR PayOS"}
+              onPress={onGetQr}
+              loading={processing}
+            />
           </View>
+
           {paymentQr ? (
             <View className="mt-4 rounded-xl border border-amber-100 bg-amber-50 p-3">
               {paymentQr.qrCodeUrl ? (
                 <Image source={{ uri: paymentQr.qrCodeUrl }} className="h-52 w-full rounded-xl bg-amber-50" resizeMode="contain" />
               ) : null}
-              {paymentQr.checkoutUrl ? (
-                <View className="mt-3">
-                  <AppButton label="Mở trang thanh toán" variant="secondary" onPress={() => onOpenUrl(paymentQr.checkoutUrl)} disabled={processing} />
-                </View>
-              ) : null}
+              <View className="mt-3 gap-2">
+                {paymentQr.checkoutUrl ? (
+                  <AppButton label="Mở cổng thanh toán PayOS" variant="secondary" onPress={() => onOpenUrl(paymentQr.checkoutUrl)} disabled={processing} />
+                ) : null}
+                <AppButton
+                  label="Kiểm tra trạng thái thanh toán"
+                  variant="secondary"
+                  onPress={onCheckStatus}
+                  loading={processing}
+                />
+              </View>
             </View>
           ) : null}
+
           <View className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
-            <Text className="font-bold text-amber-950">Xác nhận bằng biên lai thanh toán</Text>
+            <Text className="font-bold text-amber-950">Xác nhận bằng biên lai chuyển khoản (Dự phòng)</Text>
             <Text className="mt-1 text-sm text-amber-700">
-              Chụp hoặc chọn ảnh biên lai/chuyển khoản thành công để Backend lưu bằng chứng và cho phép tiếp tục chuyến.
+              Nếu khách chuyển khoản trực tiếp hoặc quét mã ngân hàng riêng, chụp ảnh biên lai thành công để bảo lãnh tiếp tục chuyến.
             </Text>
             <View className="mt-3">
               <ProofPicker
@@ -1366,11 +1452,13 @@ function PaymentPanel({
               <AppButton label="Gửi bằng chứng thanh toán" onPress={onVerify} loading={processing} disabled={!proofAsset} />
             </View>
           </View>
-          {paymentVerification ? (
-            <Text className="mt-4 text-sm text-amber-800">
-              {paymentVerification.isConfirmedBySystem ? 'Thanh toán đã được hệ thống ghi nhận.' : 'Bằng chứng thanh toán đã được gửi và đang chờ xác minh.'}
-            </Text>
+
+          {paymentVerification?.statusSummary ? (
+            <View className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
+              <Text className="text-sm text-amber-900">{paymentVerification.statusSummary}</Text>
+            </View>
           ) : null}
+
           <View className="mt-4">
             <AppButton label="Quay lại danh sách đơn" variant="secondary" onPress={onDone} disabled={processing} />
           </View>
