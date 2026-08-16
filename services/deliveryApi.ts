@@ -147,6 +147,7 @@ type EpodApiResponse = Omit<EpodResponse, 'paymentAmountDue' | 'paymentAmountPai
 
 type PaymentQrApiResponse = Omit<PaymentQrResponse, 'paymentAmountDue'> & {
   codAmountDue: number;
+  qrCode?: string | null;
 };
 
 function getAuthHeaders() {
@@ -235,7 +236,11 @@ export const deliveryApi = {
       { method: 'GET', headers: getAuthHeaders() }
     );
     const { codAmountDue, ...paymentQr } = unwrap(response, 'Không thể tạo mã thanh toán.');
-    return { ...paymentQr, paymentAmountDue: codAmountDue };
+    return {
+      ...paymentQr,
+      paymentAmountDue: codAmountDue ?? 0,
+      qrCodeUrl: paymentQr.qrCodeUrl ?? paymentQr.qrCode ?? null,
+    };
   },
 
   rejectEntireLpn: async (stopId: string, request: RejectEntireLpnRequest) => {
@@ -288,6 +293,8 @@ export const deliveryApi = {
     const formData = new FormData();
     if (paymentEvidenceFile) {
       appendFile(formData, 'PaymentEvidenceFile', paymentEvidenceFile);
+    } else {
+      formData.append('CheckOnly', 'true');
     }
 
     const response = await apiRequest<ApiResponse<VerifyQrPaymentResponse>>(

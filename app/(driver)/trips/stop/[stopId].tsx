@@ -19,6 +19,7 @@ import { AppPressable as Pressable } from '../../../../components/AppPressable';
 import { colors } from '../../../../constants/colors';
 import { AppButton } from '../../../../components/AppButton';
 import { AppInput } from '../../../../components/AppInput';
+import { LocalQrCode } from '../../../../components/local-qr-code';
 import { TemperatureChart } from '../../../../components/customer/TemperatureChart';
 import { ApiClientError } from '../../../../services/apiClient';
 import {
@@ -718,7 +719,7 @@ export default function StopDetailScreen() {
     }
   };
 
-const confirmCloseShift = () => {
+  const confirmCloseShift = () => {
     if (!selectedWarehouseId || !canCloseShift || isProcessing) return;
     const warehouse = warehouses?.find((item) => item.warehouseId === selectedWarehouseId);
     Alert.alert(
@@ -1270,9 +1271,8 @@ function OrderCard({
     <Pressable
       disabled={disabled || confirmed}
       onPress={onSelect}
-      className={`mb-3 rounded-2xl border bg-white p-4 ${
-        selected ? 'border-amber-700' : 'border-amber-200'
-      }`}
+      className={`mb-3 rounded-2xl border bg-white p-4 ${selected ? 'border-amber-700' : 'border-amber-200'
+        }`}
       style={({ pressed }) => ({
         opacity: confirmed ? 0.75 : pressed ? 0.7 : 1,
       })}
@@ -1366,10 +1366,11 @@ function PaymentPanel({
   onOpenUrl: (url?: string | null) => void;
   onDone: () => void;
 }) {
-  const amount = paymentQr?.paymentAmountDue ?? epod.paymentAmountDue ?? 0;
+  const codAmount = epod.paymentAmountDue ?? 0;
+  const amount = paymentQr?.paymentAmountDue ?? codAmount;
   const paymentStatus = paymentVerification?.currentPaymentStatus || paymentQr?.paymentStatus || epod.paymentStatus;
   const isSettled = isPaymentSettledStatus(paymentStatus);
-  const requiresPayment = amount > 0 && !isSettled;
+  const requiresPayment = (codAmount > 0 || amount > 0) && !isSettled;
 
   return (
     <View>
@@ -1402,8 +1403,17 @@ function PaymentPanel({
         </View>
       ) : (
         <View className="mt-5 rounded-2xl border border-amber-200 bg-white p-4">
-          <Text className="text-sm text-amber-700">Số tiền COD cần thu</Text>
-          <Text className="mt-1 text-2xl font-bold text-amber-950">{formatCurrency(amount)}</Text>
+          <Text className="text-sm text-amber-700">Số tiền COD của đơn</Text>
+          <Text className="mt-1 text-2xl font-bold text-amber-950">{formatCurrency(codAmount)}</Text>
+
+          {paymentQr?.paymentAmountDue && paymentQr.paymentAmountDue !== codAmount && paymentQr.paymentAmountDue > 0 ? (
+            <View className="mt-2 rounded-lg bg-amber-100/80 px-3 py-2">
+              <Text className="text-xs font-semibold text-amber-900">
+                Thanh toán thử nghiệm PayOS: {formatCurrency(paymentQr.paymentAmountDue)}
+              </Text>
+            </View>
+          ) : null}
+
           <Text className="mt-4 font-bold text-amber-950">Chọn phương thức thanh toán</Text>
 
           <View className="mt-3">
@@ -1414,14 +1424,50 @@ function PaymentPanel({
             />
           </View>
 
+          {processing && !paymentQr ? (
+            <View className="mt-3 flex-row items-center justify-center gap-2">
+              <ActivityIndicator size="small" color="#d97706" />
+              <Text className="text-xs font-medium text-amber-800">Đang tải mã QR...</Text>
+            </View>
+          ) : null}
+
           {paymentQr ? (
-            <View className="mt-4 rounded-xl border border-amber-100 bg-amber-50 p-3">
+            <View className="mt-4 rounded-xl border border-amber-100 bg-amber-50 p-4 items-center">
               {paymentQr.qrCodeUrl ? (
-                <Image source={{ uri: paymentQr.qrCodeUrl }} className="h-52 w-full rounded-xl bg-amber-50" resizeMode="contain" />
+                paymentQr.qrCodeUrl.startsWith('http://') ||
+                paymentQr.qrCodeUrl.startsWith('https://') ||
+                paymentQr.qrCodeUrl.startsWith('data:image/') ? (
+                  <Image
+                    source={{ uri: paymentQr.qrCodeUrl }}
+                    style={{ width: 220, height: 220 }}
+                    className="rounded-xl bg-white"
+                    resizeMode="contain"
+                  />
+                ) : (
+                  <LocalQrCode value={paymentQr.qrCodeUrl} size={220} />
+                )
+              ) : (
+                <View className="w-full py-4 items-center justify-center rounded-xl bg-amber-100/60">
+                  <Text className="text-xs font-semibold text-amber-800">
+                    Không thể hiển thị mã QR trực tiếp.
+                  </Text>
+                </View>
+              )}
+
+              {paymentQr.payosOrderCode ? (
+                <Text className="mt-2 text-xs text-amber-800 font-mono">
+                  Mã đơn PayOS: #{paymentQr.payosOrderCode}
+                </Text>
               ) : null}
-              <View className="mt-3 gap-2">
+
+              <View className="mt-3 w-full gap-2">
                 {paymentQr.checkoutUrl ? (
-                  <AppButton label="Mở cổng thanh toán PayOS" variant="secondary" onPress={() => onOpenUrl(paymentQr.checkoutUrl)} disabled={processing} />
+                  <AppButton
+                    label="Mở cổng thanh toán PayOS"
+                    variant="secondary"
+                    onPress={() => onOpenUrl(paymentQr.checkoutUrl)}
+                    disabled={processing}
+                  />
                 ) : null}
                 <AppButton
                   label="Kiểm tra trạng thái thanh toán"
