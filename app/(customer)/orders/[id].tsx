@@ -557,6 +557,20 @@ export default function OrderDetailScreen() {
             </Text>
           )}
 
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: '/(customer)/claims',
+                params: { orderId: order.orderId, trackingCode: order.trackingCode },
+              } as never)
+            }
+            style={{ backgroundColor: colors.surface.card, borderColor: colors.brand.primary }}
+            className="mt-3 flex-row items-center justify-center gap-2 rounded-xl border px-4 py-3"
+          >
+            <Ionicons name="alert-circle-outline" size={18} color={colors.brand.primary} />
+            <Text style={{ color: colors.brand.primary }} className="font-bold">Tạo / xem khiếu nại</Text>
+          </Pressable>
+
           {order.status?.toUpperCase() === 'PENDING_REVIEW' ? (
             <View className="mt-4">
               <Pressable
