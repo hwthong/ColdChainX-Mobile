@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   RefreshControl,
@@ -295,7 +296,14 @@ export default function WarehouseInboundScreen() {
   }, [schedule, searchQuery]);
 
   const handleDateChange = (event: DateTimePickerEvent, date?: Date) => {
-    setShowDatePicker(Platform.OS === 'ios');
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
+      if (event.type === 'set' && date) {
+        setScheduleDate(formatDateInput(date));
+      }
+      return;
+    }
+
     if (date) {
       setScheduleDate(formatDateInput(date));
     }
@@ -708,11 +716,55 @@ export default function WarehouseInboundScreen() {
                 </Pressable>
               </View>
 
-              {showDatePicker ? (
+              {/* ── Date Picker (Platform-adaptive: Native Dialog on Android, Modal Popup on iOS) ── */}
+              {Platform.OS === 'ios' ? (
+                <Modal
+                  visible={showDatePicker}
+                  transparent
+                  animationType="fade"
+                  onRequestClose={() => setShowDatePicker(false)}
+                >
+                  <Pressable
+                    style={styles.datePickerModalOverlay}
+                    onPress={() => setShowDatePicker(false)}
+                  >
+                    <Pressable
+                      style={styles.datePickerModalCard}
+                      onPress={(e) => e.stopPropagation()}
+                    >
+                      <View style={styles.datePickerModalHeader}>
+                        <Text style={styles.datePickerModalTitle}>Chọn ngày tiếp nhận</Text>
+                        <Pressable
+                          onPress={() => setShowDatePicker(false)}
+                          hitSlop={8}
+                        >
+                          <Ionicons name="close" size={20} color={colors.text.secondary} />
+                        </Pressable>
+                      </View>
+
+                      <DateTimePicker
+                        value={parseDateInput(scheduleDate)}
+                        mode="date"
+                        display="inline"
+                        themeVariant="light"
+                        accentColor={colors.brand.primary}
+                        onChange={handleDateChange}
+                      />
+
+                      <Pressable
+                        onPress={() => setShowDatePicker(false)}
+                        style={styles.datePickerModalConfirmBtn}
+                      >
+                        <Text style={styles.datePickerModalConfirmText}>Xong</Text>
+                      </Pressable>
+                    </Pressable>
+                  </Pressable>
+                </Modal>
+              ) : showDatePicker ? (
                 <DateTimePicker
                   value={parseDateInput(scheduleDate)}
                   mode="date"
-                  display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                  display="default"
                   onChange={handleDateChange}
                 />
               ) : null}
@@ -1366,9 +1418,11 @@ function parseDecimal(value: string) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function formatDateInput(date: Date) {
-  const offset = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+function formatDateInput(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function formatDisplayDate(dateStr: string): string {
@@ -1497,5 +1551,53 @@ const styles = StyleSheet.create({
   },
   qcSubmitTextDisabled: {
     color: colors.text.secondary,
+  },
+  datePickerModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  datePickerModalCard: {
+    backgroundColor: colors.surface.card,
+    borderRadius: 20,
+    padding: 16,
+    width: '100%',
+    maxWidth: 360,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+  },
+  datePickerModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.default,
+  },
+  datePickerModalTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  datePickerModalConfirmBtn: {
+    marginTop: 10,
+    backgroundColor: colors.brand.primary,
+    borderRadius: 12,
+    paddingVertical: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  datePickerModalConfirmText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });
