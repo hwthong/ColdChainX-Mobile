@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Linking,
   Pressable,
   ScrollView,
   Text,
@@ -11,6 +12,7 @@ import {
 import * as DocumentPicker from 'expo-document-picker';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as WebBrowser from 'expo-web-browser';
 
 import { API_BASE_URL, ApiClientError, getApiErrorMessage } from '../../../services/apiClient';
 import { colors } from '../../../constants/colors';
@@ -80,7 +82,7 @@ export default function OrderDetailScreen() {
   const [isCatalogLoading, setIsCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
-  const [viewingDoc, setViewingDoc] = useState<{ base64: string; title: string } | null>(null);
+  const [viewingDoc, setViewingDoc] = useState<{ base64: string; title: string; url?: string } | null>(null);
   const [isOpeningDoc, setIsOpeningDoc] = useState(false);
 
   const orderId = Array.isArray(id) ? id[0] : id;
@@ -98,6 +100,7 @@ export default function OrderDetailScreen() {
         setViewingDoc({
           base64: base64Data,
           title: title || 'Tài liệu',
+          url,
         });
       } catch (err) {
         Alert.alert('Không thể mở tài liệu', getApiErrorMessage(err));
@@ -106,6 +109,32 @@ export default function OrderDetailScreen() {
       }
     },
     [accessToken]
+  );
+
+  const handleDownloadDocument = useCallback(
+    async (url?: string | null, title?: string) => {
+      if (!url) {
+        Alert.alert('Không có file', 'Đường dẫn file chưa sẵn sàng.');
+        return;
+      }
+
+      const fullUrl = getFullAssetUrl(url) || url;
+      try {
+        const canOpen = await Linking.canOpenURL(fullUrl);
+        if (canOpen) {
+          await Linking.openURL(fullUrl);
+        } else {
+          await WebBrowser.openBrowserAsync(fullUrl);
+        }
+      } catch (err) {
+        try {
+          await WebBrowser.openBrowserAsync(fullUrl);
+        } catch {
+          Alert.alert('Không thể tải file', getApiErrorMessage(err));
+        }
+      }
+    },
+    []
   );
 
   const fetchCatalogServices = useCallback(async () => {
@@ -735,6 +764,7 @@ export default function OrderDetailScreen() {
           onPickFile={handlePickSignedContract}
           onSubmit={handleUploadSignedContract}
           onOpenDoc={handleOpenDocument}
+          onDownloadDoc={handleDownloadDocument}
         />
 
         <AppendixSection
@@ -802,6 +832,7 @@ export default function OrderDetailScreen() {
         subtitle={order?.trackingCode}
         base64Data={viewingDoc?.base64}
         onClose={() => setViewingDoc(null)}
+        onDownload={viewingDoc?.url ? () => handleDownloadDocument(viewingDoc.url, viewingDoc.title) : undefined}
         primaryColor={colors.brand.primary}
         backgroundColor={colors.surface.page}
         cardBackgroundColor={colors.surface.card}
@@ -976,6 +1007,7 @@ function ContractSection({
   onPickFile,
   onSubmit,
   onOpenDoc,
+  onDownloadDoc,
 }: {
   contract: ContractInfoResponse | null;
   contractError: string | null;
@@ -986,6 +1018,7 @@ function ContractSection({
   onPickFile: () => void;
   onSubmit: () => void;
   onOpenDoc?: (url?: string | null, title?: string) => void;
+  onDownloadDoc?: (url?: string | null, title?: string) => void;
 }) {
   const status = contract?.status.toUpperCase() ?? '';
   const contractFileUrl = getFullAssetUrl(contract?.fileUrl);
@@ -1027,10 +1060,25 @@ function ContractSection({
           </View>
 
           {contractFileUrl ? (
-            <Pressable onPress={() => onOpenDoc?.(contractFileUrl, 'Hợp đồng vận chuyển')} className="flex-row items-center gap-2">
-              <Ionicons name="document-attach-outline" size={16} color={colors.brand.primary} />
-              <Text style={{ color: colors.brand.primary }} className="text-sm font-semibold">Xem hợp đồng</Text>
-            </Pressable>
+            <View className="flex-row items-center gap-2.5">
+              <Pressable
+                onPress={() => onOpenDoc?.(contractFileUrl, 'Hợp đồng vận chuyển')}
+                style={{ backgroundColor: colors.surface.page, borderColor: colors.brand.primary }}
+                className="flex-1 flex-row items-center justify-center gap-2 rounded-xl border py-2.5"
+              >
+                <Ionicons name="document-attach-outline" size={16} color={colors.brand.primary} />
+                <Text style={{ color: colors.brand.primary }} className="text-sm font-semibold">Xem hợp đồng</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => onDownloadDoc?.(contractFileUrl, 'Hợp đồng vận chuyển')}
+                style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default }}
+                className="flex-1 flex-row items-center justify-center gap-2 rounded-xl border py-2.5"
+              >
+                <Ionicons name="download-outline" size={16} color={colors.text.primary} />
+                <Text style={{ color: colors.text.primary }} className="text-sm font-semibold">Tải file về</Text>
+              </Pressable>
+            </View>
           ) : null}
 
           {status === 'DRAFT' || status === 'PENDING_SIGNATURE' ? (
@@ -1083,10 +1131,23 @@ function ContractSection({
               <Text className="text-sm font-semibold leading-5 text-green-800">
                 Hợp đồng đã ký đã được gửi thành công.
               </Text>
-              <Pressable onPress={() => onOpenDoc?.(signedFileUrl, 'Hợp đồng đã ký')} className="mt-2 flex-row items-center gap-2">
-                <Ionicons name="document-attach-outline" size={16} color="#15803D" />
-                <Text className="text-sm font-bold text-green-800">Xem file đã ký</Text>
-              </Pressable>
+              <View className="mt-2.5 flex-row items-center gap-2.5">
+                <Pressable
+                  onPress={() => onOpenDoc?.(signedFileUrl, 'Hợp đồng đã ký')}
+                  className="flex-1 flex-row items-center justify-center gap-2 rounded-xl border border-green-300 bg-white py-2"
+                >
+                  <Ionicons name="document-attach-outline" size={16} color="#15803D" />
+                  <Text className="text-sm font-bold text-green-800">Xem file đã ký</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => onDownloadDoc?.(signedFileUrl, 'Hợp đồng đã ký')}
+                  className="flex-1 flex-row items-center justify-center gap-2 rounded-xl border border-green-300 bg-white py-2"
+                >
+                  <Ionicons name="download-outline" size={16} color="#15803D" />
+                  <Text className="text-sm font-bold text-green-800">Tải file về</Text>
+                </Pressable>
+              </View>
             </View>
           ) : null}
         </View>

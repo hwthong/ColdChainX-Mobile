@@ -16,6 +16,7 @@ interface PdfViewerModalProps {
   subtitle?: string | null;
   base64Data?: string | null;
   onClose: () => void;
+  onDownload?: () => void;
   primaryColor?: string;
   backgroundColor?: string;
   cardBackgroundColor?: string;
@@ -33,6 +34,7 @@ export function PdfViewerModal({
   subtitle,
   base64Data,
   onClose,
+  onDownload,
   primaryColor = '#0284c7',
   backgroundColor = '#f8fafc',
   cardBackgroundColor = '#ffffff',
@@ -73,17 +75,32 @@ export function PdfViewerModal({
               </Text>
             ) : null}
           </View>
-          <Pressable
-            onPress={onClose}
-            hitSlop={8}
-            style={{
-              padding: 8,
-              borderRadius: 20,
-              backgroundColor,
-            }}
-          >
-            <Ionicons name="close" size={22} color={textColor} />
-          </Pressable>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            {onDownload ? (
+              <Pressable
+                onPress={onDownload}
+                hitSlop={8}
+                style={{
+                  padding: 8,
+                  borderRadius: 20,
+                  backgroundColor,
+                }}
+              >
+                <Ionicons name="download-outline" size={22} color={textColor} />
+              </Pressable>
+            ) : null}
+            <Pressable
+              onPress={onClose}
+              hitSlop={8}
+              style={{
+                padding: 8,
+                borderRadius: 20,
+                backgroundColor,
+              }}
+            >
+              <Ionicons name="close" size={22} color={textColor} />
+            </Pressable>
+          </View>
         </View>
 
         {/* WebView with PDF.js Engine */}
