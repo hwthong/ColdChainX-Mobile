@@ -9,7 +9,6 @@ import {
   View,
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
-import * as WebBrowser from 'expo-web-browser';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -21,7 +20,6 @@ import {
   acceptAppendix,
   ContractAppendixResponse,
   getAppendixByOrder,
-  getAppendixHtml,
   rejectAppendix,
 } from '../../../services/appendixApi';
 import { customerApi } from '../../../services/customerApi';
@@ -351,32 +349,6 @@ export default function OrderDetailScreen() {
   };
 
   const handleViewAppendix = async () => {
-    if (!appendix) {
-      return;
-    }
-
-    setAppendixError(null);
-
-    try {
-      let htmlContent = appendix.draftHtmlContent;
-
-      if (!htmlContent && accessToken) {
-        const response = await getAppendixHtml(accessToken, appendix.appendixId);
-        htmlContent = typeof response === 'string' ? response : response.data ?? null;
-      }
-
-      if (!htmlContent) {
-        Alert.alert('Không có phụ lục', 'Nội dung HTML của phụ lục chưa sẵn sàng.');
-        return;
-      }
-
-      await WebBrowser.openBrowserAsync(`data:text/html;charset=utf-8,${encodeURIComponent(htmlContent)}`);
-    } catch (err) {
-      setAppendixError(getApiErrorMessage(err));
-    }
-  };
-
-  const handleOpenAppendixPdf = async () => {
     if (!appendix?.pdfUrl) {
       Alert.alert('Không có PDF', 'File PDF của phụ lục chưa sẵn sàng.');
       return;
@@ -692,7 +664,6 @@ export default function OrderDetailScreen() {
           isLoading={isAppendixLoading}
           orderStatus={order.status}
           onAccept={handleAcceptAppendix}
-          onOpenPdf={handleOpenAppendixPdf}
           onReject={handleRejectAppendix}
           onView={handleViewAppendix}
         />
@@ -1051,7 +1022,6 @@ function AppendixSection({
   isLoading,
   orderStatus,
   onAccept,
-  onOpenPdf,
   onReject,
   onView,
 }: {
@@ -1061,7 +1031,6 @@ function AppendixSection({
   isLoading: boolean;
   orderStatus: string;
   onAccept: () => void;
-  onOpenPdf: () => void;
   onReject: () => void;
   onView: () => void;
 }) {
@@ -1148,15 +1117,6 @@ function AppendixSection({
           <View className="flex-row flex-wrap gap-3">
             <Pressable
               onPress={onView}
-              style={{ backgroundColor: colors.surface.card, borderColor: colors.brand.primary }}
-              className="h-11 flex-row items-center justify-center gap-2 rounded-xl border px-4"
-            >
-              <Ionicons name="eye-outline" size={16} color={colors.brand.primary} />
-              <Text style={{ color: colors.brand.primary }} className="text-sm font-bold">Xem phụ lục</Text>
-            </Pressable>
-
-            <Pressable
-              onPress={onOpenPdf}
               disabled={!hasPdf}
               style={{
                 backgroundColor: hasPdf ? colors.surface.card : colors.surface.page,
@@ -1164,9 +1124,9 @@ function AppendixSection({
               }}
               className="h-11 flex-row items-center justify-center gap-2 rounded-xl border px-4"
             >
-              <Ionicons name="open-outline" size={16} color={hasPdf ? colors.brand.primary : colors.text.muted} />
+              <Ionicons name="eye-outline" size={16} color={hasPdf ? colors.brand.primary : colors.text.muted} />
               <Text style={{ color: hasPdf ? colors.brand.primary : colors.text.muted }} className="text-sm font-bold">
-                Mở PDF
+                Xem phụ lục
               </Text>
             </Pressable>
           </View>
