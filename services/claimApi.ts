@@ -57,6 +57,22 @@ export interface ApiResponse<T> {
   data?: T | null;
 }
 
+export function getAllClaims(accessToken: string, pageNumber = 1, pageSize = 100) {
+  const params = new URLSearchParams();
+  params.append('pageNumber', String(pageNumber));
+  params.append('pageSize', String(pageSize));
+
+  return apiRequest<ApiResponse<ClaimPage>>(`/api/v1/claims?${params.toString()}`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  }).then((response): ApiResponse<ClaimPage> => ({
+    ...response,
+    data: normalizeClaimPage(response.data),
+  }));
+}
+
 export function getClaimsByOrder(accessToken: string, orderId: string, pageNumber = 1, pageSize = 20) {
   const params = new URLSearchParams();
   params.append('orderId', orderId);
@@ -80,7 +96,10 @@ export function getClaimById(accessToken: string, claimId: string) {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
-  });
+  }).then((response): ApiResponse<ClaimResponse> => ({
+    ...response,
+    data: response.data ? normalizeClaimResponse(response.data) : null,
+  }));
 }
 
 export function createClaim(accessToken: string, payload: CreateClaimPayload) {
@@ -103,19 +122,53 @@ export function createClaim(accessToken: string, payload: CreateClaimPayload) {
       Authorization: `Bearer ${accessToken}`,
     },
     body: formData,
-  });
+  }).then((response): ApiResponse<ClaimResponse> => ({
+    ...response,
+    data: response.data ? normalizeClaimResponse(response.data) : null,
+  }));
 }
 
-function normalizeClaimPage(page?: ClaimPage | null): ClaimPage | null {
+export function normalizeClaimResponse(raw: any): ClaimResponse {
+  if (!raw) return raw;
+  const evidencesRaw = raw.evidences ?? raw.Evidences ?? raw.claimEvidences ?? raw.ClaimEvidences ?? [];
+  return {
+    claimId: raw.claimId ?? raw.ClaimId ?? '',
+    claimCode: raw.claimCode ?? raw.ClaimCode ?? '',
+    orderId: raw.orderId ?? raw.OrderId ?? null,
+    orderTrackingCode: raw.orderTrackingCode ?? raw.OrderTrackingCode ?? null,
+    claimType: raw.claimType ?? raw.ClaimType ?? '',
+    description: raw.description ?? raw.Description ?? '',
+    faultOwner: raw.faultOwner ?? raw.FaultOwner ?? null,
+    status: raw.status ?? raw.Status ?? 'OPEN',
+    resolutionNote: raw.resolutionNote ?? raw.ResolutionNote ?? null,
+    createdAt: raw.createdAt ?? raw.CreatedAt ?? null,
+    resolvedAt: raw.resolvedAt ?? raw.ResolvedAt ?? null,
+    evidences: Array.isArray(evidencesRaw)
+      ? evidencesRaw.map((e: any) => ({
+          evidenceId: e.evidenceId ?? e.EvidenceId ?? '',
+          evidenceType: e.evidenceType ?? e.EvidenceType ?? '',
+          imageUrl: e.imageUrl ?? e.ImageUrl ?? null,
+          uploadedBy: e.uploadedBy ?? e.UploadedBy ?? null,
+          uploadedByUsername: e.uploadedByUsername ?? e.UploadedByUsername ?? null,
+          createdAt: e.createdAt ?? e.CreatedAt ?? null,
+          uploadedAt: e.uploadedAt ?? e.UploadedAt ?? null,
+        }))
+      : [],
+  };
+}
+
+function normalizeClaimPage(page?: any): ClaimPage | null {
   if (!page) return null;
-  const data = page.data ?? page.items ?? [];
+  const rawList = Array.isArray(page)
+    ? page
+    : page.data ?? page.Data ?? page.items ?? page.Items ?? [];
+  const list = Array.isArray(rawList) ? rawList.map(normalizeClaimResponse) : [];
 
   return {
-    ...page,
-    data,
-    totalRecords: page.totalRecords ?? data.length,
-    totalPages: page.totalPages ?? 1,
-    currentPage: page.currentPage ?? page.pageNumber ?? 1,
-    pageSize: page.pageSize ?? data.length,
+    data: list,
+    totalRecords: page.totalRecords ?? page.TotalRecords ?? list.length,
+    totalPages: page.totalPages ?? page.TotalPages ?? 1,
+    currentPage: page.currentPage ?? page.CurrentPage ?? page.pageNumber ?? page.PageNumber ?? 1,
+    pageSize: page.pageSize ?? page.PageSize ?? list.length,
   };
 }

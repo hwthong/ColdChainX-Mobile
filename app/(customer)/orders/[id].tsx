@@ -22,6 +22,7 @@ import {
   getAppendixByOrder,
   rejectAppendix,
 } from '../../../services/appendixApi';
+import { ClaimResponse, getClaimsByOrder } from '../../../services/claimApi';
 import { customerApi } from '../../../services/customerApi';
 import {
   formatCityName,
@@ -62,6 +63,7 @@ export default function OrderDetailScreen() {
   const [quotations, setQuotations] = useState<QuotationResponse[]>([]);
   const [contract, setContract] = useState<ContractInfoResponse | null>(null);
   const [appendix, setAppendix] = useState<ContractAppendixResponse | null>(null);
+  const [claims, setClaims] = useState<ClaimResponse[]>([]);
   const [trackingDetail, setTrackingDetail] = useState<any>(null);
   const [selectedSignedFile, setSelectedSignedFile] = useState<SignedContractFile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -200,6 +202,24 @@ export default function OrderDetailScreen() {
     }
   }, [accessToken, orderId]);
 
+  const fetchClaimsDetail = useCallback(async () => {
+    if (!accessToken || !orderId) {
+      setClaims([]);
+      return;
+    }
+
+    try {
+      const response = await getClaimsByOrder(accessToken, orderId, 1, 10);
+      if (response.success && Array.isArray(response.data?.data)) {
+        setClaims(response.data.data);
+      } else {
+        setClaims([]);
+      }
+    } catch {
+      setClaims([]);
+    }
+  }, [accessToken, orderId]);
+
   const fetchOrderDetail = useCallback(async () => {
     if (!accessToken || !orderId) {
       setError('Không tìm thấy phiên đăng nhập hoặc mã đơn hàng.');
@@ -232,13 +252,13 @@ export default function OrderDetailScreen() {
         // Optional tracking detail
       }
 
-      await Promise.all([fetchContractDetail(), fetchAppendixDetail(), fetchCatalogServices()]);
+      await Promise.all([fetchContractDetail(), fetchAppendixDetail(), fetchCatalogServices(), fetchClaimsDetail()]);
     } catch (err) {
       setError(getApiErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
-  }, [accessToken, fetchAppendixDetail, fetchContractDetail, fetchCatalogServices, orderId]);
+  }, [accessToken, fetchAppendixDetail, fetchContractDetail, fetchCatalogServices, fetchClaimsDetail, orderId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -529,19 +549,35 @@ export default function OrderDetailScreen() {
             </Text>
           )}
 
-          <Pressable
-            onPress={() =>
-              router.push({
-                pathname: '/(customer)/claims',
-                params: { orderId: order.orderId, trackingCode: order.trackingCode },
-              } as never)
-            }
-            style={{ backgroundColor: colors.surface.card, borderColor: colors.brand.primary }}
-            className="mt-3 flex-row items-center justify-center gap-2 rounded-xl border px-4 py-3"
-          >
-            <Ionicons name="alert-circle-outline" size={18} color={colors.brand.primary} />
-            <Text style={{ color: colors.brand.primary }} className="font-bold">Tạo / xem khiếu nại</Text>
-          </Pressable>
+          {claims.length > 0 ? (
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname: '/(customer)/claims',
+                  params: { orderId: order.orderId, trackingCode: order.trackingCode, mode: 'view' },
+                } as never)
+              }
+              style={{ backgroundColor: colors.surface.card, borderColor: colors.brand.primary }}
+              className="mt-3 flex-row items-center justify-center gap-2 rounded-xl border px-4 py-3"
+            >
+              <Ionicons name="document-text-outline" size={18} color={colors.brand.primary} />
+              <Text style={{ color: colors.brand.primary }} className="font-bold">Xem khiếu nại</Text>
+            </Pressable>
+          ) : ['DELIVERED', 'COMPLETED', 'PARTIALLY_DELIVERED', 'PARTIAL_DELIVER_OSD'].includes(order.status?.toUpperCase() ?? '') ? (
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname: '/(customer)/claims',
+                  params: { orderId: order.orderId, trackingCode: order.trackingCode, mode: 'create' },
+                } as never)
+              }
+              style={{ backgroundColor: colors.surface.card, borderColor: colors.brand.primary }}
+              className="mt-3 flex-row items-center justify-center gap-2 rounded-xl border px-4 py-3"
+            >
+              <Ionicons name="alert-circle-outline" size={18} color={colors.brand.primary} />
+              <Text style={{ color: colors.brand.primary }} className="font-bold">Khiếu nại</Text>
+            </Pressable>
+          ) : null}
 
           {order.status?.toUpperCase() === 'PENDING_REVIEW' ? (
             <View className="mt-4">
@@ -563,6 +599,50 @@ export default function OrderDetailScreen() {
             </View>
           ) : null}
         </View>
+
+        {claims.length > 0 && claims[0] ? (
+          <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="mb-4 rounded-2xl border p-5 shadow-sm">
+            <View style={{ borderBottomColor: colors.border.default }} className="mb-3 flex-row items-center justify-between border-b pb-3">
+              <View className="flex-row items-center gap-2">
+                <Ionicons name="alert-circle-outline" size={18} color={colors.brand.primary} />
+                <Text style={{ color: colors.brand.primary }} className="text-base font-bold">Thông tin khiếu nại</Text>
+              </View>
+              <ClaimStatusBadge status={claims[0].status} />
+            </View>
+
+            <View className="gap-3">
+              <InfoRow label="Mã khiếu nại" value={claims[0].claimCode} />
+              <InfoRow label="Loại khiếu nại" value={getClaimCategoryLabel(claims[0].claimType)} />
+              <View>
+                <Text style={{ color: colors.text.secondary }} className="text-sm">Mô tả sự cố</Text>
+                <Text style={{ color: colors.text.primary }} className="mt-1 text-sm font-semibold leading-5">
+                  {claims[0].description}
+                </Text>
+              </View>
+
+              {claims[0].resolutionNote ? (
+                <View className="rounded-xl border border-green-200 bg-green-50 p-3">
+                  <Text className="text-xs font-bold uppercase text-green-700">Phản hồi xử lý</Text>
+                  <Text className="mt-1 text-sm font-semibold text-green-800">{claims[0].resolutionNote}</Text>
+                </View>
+              ) : null}
+
+              <Pressable
+                onPress={() =>
+                  router.push({
+                    pathname: '/(customer)/claims',
+                    params: { orderId: order.orderId, trackingCode: order.trackingCode, mode: 'view' },
+                  } as never)
+                }
+                style={{ backgroundColor: colors.surface.page, borderColor: colors.brand.primary }}
+                className="mt-1 flex-row items-center justify-center gap-2 rounded-xl border py-2.5"
+              >
+                <Ionicons name="eye-outline" size={16} color={colors.brand.primary} />
+                <Text style={{ color: colors.brand.primary }} className="text-sm font-bold">Xem chi tiết trên trang khiếu nại</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
 
         <InfoCard title="Thông tin hàng hóa" icon="cube-outline">
           <InfoRow label="Tên hàng" value={order.itemName} />
@@ -1367,5 +1447,49 @@ function hasCoordinates(order: OrderResponse) {
     order.destination?.latitude !== undefined &&
     order.destination?.longitude !== null &&
     order.destination?.longitude !== undefined
+  );
+}
+
+const CLAIM_CATEGORY_MAP: Record<string, string> = {
+  DAMAGE: 'Hư hỏng',
+  QUALITY_VIOLATION: 'Nhiệt độ',
+  LOSS: 'Thất lạc',
+  DELAY: 'Chậm trễ',
+  WRONG_ITEM: 'Sai hàng',
+};
+
+function getClaimCategoryLabel(value?: string | null): string {
+  const normalized = value?.trim().toUpperCase();
+  return (normalized && CLAIM_CATEGORY_MAP[normalized]) || value || 'Chưa phân loại';
+}
+
+function getClaimStatusPresentation(status?: string | null) {
+  switch (status?.trim().toUpperCase()) {
+    case 'OPEN':
+      return { label: 'Mới tạo', color: colors.text.secondary, bg: colors.surface.card, border: colors.border.strong };
+    case 'PENDING_REVIEW':
+    case 'PENDING_DISPATCHER_REVIEW':
+      return { label: 'Chờ điều phối', color: colors.status.warning.main, bg: colors.status.warning.bg, border: colors.status.warning.border };
+    case 'PENDING_ACCOUNTANT_REVIEW':
+      return { label: 'Chờ kế toán', color: colors.status.info.main, bg: colors.status.info.bg, border: colors.status.info.border };
+    case 'RESOLVED_PAID':
+    case 'RESOLVED':
+    case 'APPROVED':
+      return { label: 'Đã xử lý', color: colors.status.success.main, bg: colors.status.success.bg, border: colors.status.success.border };
+    case 'REJECTED':
+      return { label: 'Đã từ chối', color: colors.status.danger.main, bg: colors.status.danger.bg, border: colors.status.danger.border };
+    case 'CLOSED':
+      return { label: 'Đã đóng', color: colors.text.muted, bg: colors.surface.page, border: colors.border.default };
+    default:
+      return { label: status || 'Chưa cập nhật', color: colors.text.secondary, bg: colors.surface.card, border: colors.border.default };
+  }
+}
+
+function ClaimStatusBadge({ status }: { status?: string | null }) {
+  const presentation = getClaimStatusPresentation(status);
+  return (
+    <View style={{ backgroundColor: presentation.bg, borderColor: presentation.border }} className="rounded-full border px-2.5 py-1">
+      <Text style={{ color: presentation.color }} className="text-[10px] font-bold uppercase">{presentation.label}</Text>
+    </View>
   );
 }

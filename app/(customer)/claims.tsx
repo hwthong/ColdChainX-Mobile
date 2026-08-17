@@ -24,13 +24,13 @@ import {
   ClaimEvidenceImage,
   ClaimResponse,
   createClaim,
+  getAllClaims,
   getClaimsByOrder,
 } from '../../services/claimApi';
 import { customerApi, CustomerOrderSummaryResponse } from '../../services/customerApi';
 import { useAuthStore } from '../../store/useAuthStore';
 
 const ORDER_PAGE_SIZE = 100;
-const CLAIM_PAGE_SIZE = 50;
 const MAX_EVIDENCE_IMAGES = 5;
 const CLAIMABLE_DELIVERY_STATUSES = new Set([
   'DELIVERED',
@@ -54,14 +54,21 @@ const CLAIM_CATEGORIES: {
 
 export default function CustomerClaimsScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ orderId?: string | string[]; trackingCode?: string | string[] }>();
+  const params = useLocalSearchParams<{
+    orderId?: string | string[];
+    trackingCode?: string | string[];
+    mode?: string | string[];
+  }>();
   const requestedOrderId = getSingleParam(params.orderId);
   const requestedTrackingCode = getSingleParam(params.trackingCode);
+  const requestedMode = getSingleParam(params.mode);
   const accessToken = useAuthStore((state) => state.token);
 
   const [orders, setOrders] = useState<CustomerOrderSummaryResponse[]>([]);
-  const [claimedOrderIds, setClaimedOrderIds] = useState<string[]>([]);
+  const [claimedOrders, setClaimedOrders] = useState<CustomerOrderSummaryResponse[]>([]);
+  const [claimsByOrderId, setClaimsByOrderId] = useState<Record<string, ClaimResponse[]>>({});
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [isCreateMode, setIsCreateMode] = useState(false);
   const [claims, setClaims] = useState<ClaimResponse[]>([]);
   const [claimType, setClaimType] = useState<ClaimCategory>('DAMAGE');
   const [description, setDescription] = useState('');
@@ -75,14 +82,20 @@ export default function CustomerClaimsScreen() {
   const [formError, setFormError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const selectedOrder = useMemo(
-    () => orders.find((order) => order.orderId === selectedOrderId) ?? null,
-    [orders, selectedOrderId]
-  );
-  const claimedOrderIdSet = useMemo(() => new Set(claimedOrderIds), [claimedOrderIds]);
-  const claimableOrders = useMemo(
-    () => orders.filter((order) => !claimedOrderIdSet.has(order.orderId)),
+  const claimedOrderIdSet = useMemo(() => new Set(Object.keys(claimsByOrderId)), [claimsByOrderId]);
+
+  // Delivered orders without claims (eligible for creating a new claim)
+  const claimableOrdersWithoutClaims = useMemo(
+    () => orders.filter((order) => isClaimableDeliveryOrder(order) && !claimedOrderIdSet.has(order.orderId)),
     [claimedOrderIdSet, orders]
+  );
+
+  const selectedOrder = useMemo(
+    () =>
+      claimedOrders.find((order) => order.orderId === selectedOrderId) ??
+      orders.find((order) => order.orderId === selectedOrderId) ??
+      null,
+    [claimedOrders, orders, selectedOrderId]
   );
 
   const selectedOrderLabel =
@@ -90,9 +103,11 @@ export default function CustomerClaimsScreen() {
     requestedTrackingCode ??
     (selectedOrderId ? selectedOrderId.slice(0, 8).toUpperCase() : null);
 
-  const loadOrders = useCallback(async (showRequestedOrderError = true) => {
+  const loadData = useCallback(async () => {
     if (!accessToken) {
       setOrders([]);
+      setClaimedOrders([]);
+      setClaimsByOrderId({});
       setSelectedOrderId(null);
       setOrdersError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
       setIsOrdersLoading(false);
@@ -101,92 +116,119 @@ export default function CustomerClaimsScreen() {
 
     try {
       setOrdersError(null);
-      const allOrders = await fetchAllCustomerOrders();
-      const deliveredOrders = allOrders.filter(isClaimableDeliveryOrder);
-      const claimedIds = await fetchClaimedOrderIds(accessToken, deliveredOrders);
-      const claimedSet = new Set(claimedIds);
-      const nextClaimableOrders = deliveredOrders.filter((order) => !claimedSet.has(order.orderId));
 
-      setOrders(deliveredOrders);
-      setClaimedOrderIds(claimedIds);
+      // 1. Fetch customer's own orders
+      const allOrders = await fetchAllCustomerOrders().catch(() => []);
+      const myOrderIds = new Set(allOrders.map((order) => order.orderId));
 
-      setSelectedOrderId((currentOrderId) => {
-        if (requestedOrderId && nextClaimableOrders.some((order) => order.orderId === requestedOrderId)) {
-          return requestedOrderId;
+      // 2. Fetch claims
+      const claimsResponse = await getAllClaims(accessToken, 1, 100).catch(() => ({ success: false, data: null }));
+      const allClaims = claimsResponse.data?.data ?? [];
+
+      // 3. Strictly filter claims to ONLY orders belonging to this customer
+      const myClaims = allClaims.filter((claim) => claim.orderId && myOrderIds.has(claim.orderId));
+
+      const newClaimsMap: Record<string, ClaimResponse[]> = {};
+      myClaims.forEach((claim) => {
+        if (claim.orderId) {
+          if (!newClaimsMap[claim.orderId]) newClaimsMap[claim.orderId] = [];
+          newClaimsMap[claim.orderId].push(claim);
         }
-
-        if (currentOrderId && nextClaimableOrders.some((order) => order.orderId === currentOrderId)) {
-          return currentOrderId;
-        }
-
-        return nextClaimableOrders[0]?.orderId ?? null;
       });
 
-      if (requestedOrderId && showRequestedOrderError) {
-        const requestedOrder = allOrders.find((order) => order.orderId === requestedOrderId);
-        if (!requestedOrder) {
-          setOrdersError('Không tìm thấy đơn hàng này trong tài khoản Customer hiện tại.');
-        } else if (!isClaimableDeliveryOrder(requestedOrder)) {
-          setOrdersError('Chỉ đơn hàng đã giao xong mới có thể gửi khiếu nại.');
-        } else if (claimedSet.has(requestedOrderId)) {
-          setOrdersError('Đơn hàng này đã có khiếu nại, không thể tạo thêm.');
+      // 4. Build claimed orders list: ONLY customer's own orders that have claims
+      const claimedList = allOrders.filter((order) => newClaimsMap[order.orderId]?.length > 0);
+
+      setOrders(allOrders);
+      setClaimedOrders(claimedList);
+      setClaimsByOrderId(newClaimsMap);
+
+      // Decide target selected order & mode
+      let targetOrderId: string | null = null;
+      let shouldBeCreateMode = requestedMode === 'create';
+
+      if (requestedOrderId && myOrderIds.has(requestedOrderId)) {
+        targetOrderId = requestedOrderId;
+        if (newClaimsMap[requestedOrderId]?.length > 0) {
+          shouldBeCreateMode = requestedMode === 'create';
+        } else {
+          shouldBeCreateMode = true;
         }
+      } else {
+        targetOrderId = claimedList[0]?.orderId ?? null;
+      }
+
+      setSelectedOrderId(targetOrderId);
+      setIsCreateMode(shouldBeCreateMode);
+
+      if (targetOrderId && newClaimsMap[targetOrderId]) {
+        setClaims(newClaimsMap[targetOrderId]);
+      } else if (targetOrderId && !shouldBeCreateMode) {
+        // Fallback fetch for individual order
+        try {
+          const singleOrderClaims = await getClaimsByOrder(accessToken, targetOrderId, 1, 20);
+          setClaims(singleOrderClaims.data?.data ?? []);
+        } catch {
+          setClaims([]);
+        }
+      } else {
+        setClaims([]);
       }
     } catch (error) {
       setOrders([]);
-      setClaimedOrderIds([]);
+      setClaimedOrders([]);
+      setClaimsByOrderId({});
       setSelectedOrderId(null);
       setOrdersError(getCustomerDataErrorMessage(error));
     } finally {
       setIsOrdersLoading(false);
     }
-  }, [accessToken, requestedOrderId]);
-
-  const loadClaims = useCallback(async (orderId: string) => {
-    if (!accessToken) return;
-
-    setIsClaimsLoading(true);
-    try {
-      setClaimsError(null);
-      const response = await getClaimsByOrder(accessToken, orderId, 1, CLAIM_PAGE_SIZE);
-      if (!response.success) {
-        setClaims([]);
-        setClaimsError(response.message || 'Không thể tải danh sách khiếu nại.');
-        return;
-      }
-
-      setClaims(response.data?.data ?? []);
-    } catch (error) {
-      setClaims([]);
-      setClaimsError(getApiErrorMessage(error));
-    } finally {
-      setIsClaimsLoading(false);
-    }
-  }, [accessToken]);
+  }, [accessToken, requestedMode, requestedOrderId]);
 
   useFocusEffect(
     useCallback(() => {
       setIsOrdersLoading(true);
-      void loadOrders();
-    }, [loadOrders])
+      void loadData();
+    }, [loadData])
   );
 
-  useEffect(() => {
-    if (!selectedOrderId) {
-      setClaims([]);
+  const handleSelectOrder = useCallback(
+    async (orderId: string) => {
+      setSelectedOrderId(orderId);
+      setSuccessMessage(null);
+      setFormError(null);
       setClaimsError(null);
-      return;
-    }
 
-    void loadClaims(selectedOrderId);
-  }, [loadClaims, selectedOrderId]);
+      // Instantly load from memory if available
+      if (claimsByOrderId[orderId]?.length > 0) {
+        setClaims(claimsByOrderId[orderId]);
+        return;
+      }
+
+      // Or fetch from API
+      if (accessToken) {
+        setIsClaimsLoading(true);
+        try {
+          const response = await getClaimsByOrder(accessToken, orderId, 1, 20);
+          const list = response.data?.data ?? [];
+          setClaims(list);
+          setClaimsByOrderId((prev) => ({ ...prev, [orderId]: list }));
+        } catch (err) {
+          setClaimsError(getApiErrorMessage(err));
+          setClaims([]);
+        } finally {
+          setIsClaimsLoading(false);
+        }
+      }
+    },
+    [accessToken, claimsByOrderId]
+  );
 
   const refreshScreen = useCallback(async () => {
     setIsRefreshing(true);
-    await loadOrders();
-    if (selectedOrderId) await loadClaims(selectedOrderId);
+    await loadData();
     setIsRefreshing(false);
-  }, [loadClaims, loadOrders, selectedOrderId]);
+  }, [loadData]);
 
   const openImagePicker = () => {
     if (evidenceImages.length >= MAX_EVIDENCE_IMAGES) {
@@ -285,16 +327,6 @@ export default function CustomerClaimsScreen() {
       return;
     }
 
-    if (!selectedOrder || !isClaimableDeliveryOrder(selectedOrder)) {
-      setFormError('Chỉ đơn hàng đã giao xong mới có thể gửi khiếu nại.');
-      return;
-    }
-
-    if (claimedOrderIdSet.has(selectedOrderId)) {
-      setFormError('Đơn hàng này đã có khiếu nại, không thể tạo thêm.');
-      return;
-    }
-
     if (trimmedDescription.length < 10) {
       setFormError('Vui lòng mô tả sự cố ít nhất 10 ký tự.');
       return;
@@ -319,7 +351,8 @@ export default function CustomerClaimsScreen() {
       setDescription('');
       setEvidenceImages([]);
       setSuccessMessage(`Đã gửi khiếu nại ${response.data?.claimCode ?? ''}. Bộ phận vận hành sẽ xử lý.`);
-      await loadOrders(false);
+      setIsCreateMode(false);
+      await loadData();
     } catch (error) {
       setFormError(getApiErrorMessage(error));
     } finally {
@@ -331,7 +364,7 @@ export default function CustomerClaimsScreen() {
     return (
       <View style={{ backgroundColor: colors.surface.page }} className="flex-1 items-center justify-center">
         <ActivityIndicator size="large" color={colors.brand.primary} />
-        <Text style={{ color: colors.brand.primary }} className="mt-4 font-medium">Đang tải khiếu nại...</Text>
+        <Text style={{ color: colors.brand.primary }} className="mt-4 font-medium">Đang tải thông tin khiếu nại...</Text>
       </View>
     );
   }
@@ -350,180 +383,254 @@ export default function CustomerClaimsScreen() {
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void refreshScreen()} tintColor={colors.brand.primary} />}
         showsVerticalScrollIndicator={false}
       >
+        {/* ── Top Header Banner ── */}
         <View style={{ backgroundColor: colors.text.primary }} className="rounded-3xl p-5">
           <View className="flex-row items-start justify-between gap-4">
             <View className="flex-1">
-              <Text style={{ color: colors.brand.primaryForeground }} className="text-xl font-bold">Khiếu nại vận chuyển</Text>
+              <Text style={{ color: colors.brand.primaryForeground }} className="text-xl font-bold">
+                {isCreateMode ? 'Tạo khiếu nại mới' : 'Khiếu nại vận chuyển'}
+              </Text>
               <Text className="mt-2 text-sm leading-5 text-white/70">
-                Chỉ đơn đã giao xong và chưa từng khiếu nại mới có thể tạo hồ sơ mới.
+                {isCreateMode
+                  ? 'Gửi thông tin sự cố hàng hóa hoặc vận chuyển để bộ phận vận hành tiếp nhận xử lý.'
+                  : 'Danh sách các đơn hàng đã có khiếu nại và tiến độ xử lý giải quyết bồi thường.'}
               </Text>
             </View>
             <View className="h-11 w-11 items-center justify-center rounded-2xl bg-white/10">
-              <Ionicons name="alert-circle-outline" size={24} color={colors.brand.primaryForeground} />
+              <Ionicons
+                name={isCreateMode ? 'create-outline' : 'alert-circle-outline'}
+                size={24}
+                color={colors.brand.primaryForeground}
+              />
             </View>
+          </View>
+
+          {/* Banner Action Buttons */}
+          <View className="mt-4 flex-row items-center gap-3">
+            {isCreateMode ? (
+              <Pressable
+                onPress={() => {
+                  setIsCreateMode(false);
+                  setFormError(null);
+                  if (claimedOrders.length > 0) {
+                    setSelectedOrderId(claimedOrders[0].orderId);
+                    setClaims(claimsByOrderId[claimedOrders[0].orderId] ?? []);
+                  }
+                }}
+                style={{ backgroundColor: 'rgba(255, 255, 255, 0.15)' }}
+                className="flex-row items-center gap-2 rounded-xl px-4 py-2.5"
+              >
+                <Ionicons name="arrow-back" size={16} color="#FFFFFF" />
+                <Text className="text-sm font-bold text-white">Xem danh sách khiếu nại</Text>
+              </Pressable>
+            ) : claimableOrdersWithoutClaims.length > 0 ? (
+              <Pressable
+                onPress={() => {
+                  setIsCreateMode(true);
+                  setFormError(null);
+                  setSelectedOrderId(claimableOrdersWithoutClaims[0].orderId);
+                }}
+                style={{ backgroundColor: colors.brand.primary }}
+                className="flex-row items-center gap-2 rounded-xl px-4 py-2.5"
+              >
+                <Ionicons name="add-circle-outline" size={16} color={colors.text.onPrimary} />
+                <Text style={{ color: colors.text.onPrimary }} className="text-sm font-bold">Tạo khiếu nại mới</Text>
+              </Pressable>
+            ) : null}
           </View>
         </View>
 
-        {ordersError ? <ErrorBlock message={ordersError} onRetry={loadOrders} /> : null}
+        {ordersError ? <ErrorBlock message={ordersError} onRetry={loadData} /> : null}
         {successMessage ? <SuccessBlock message={successMessage} /> : null}
 
-        {!ordersError && orders.length === 0 ? (
-          <EmptyState
-            icon="receipt-outline"
-            title="Chưa có đơn đã giao"
-            message="Khiếu nại chỉ áp dụng cho đơn hàng đã giao xong."
-            actionLabel="Xem đơn hàng"
-            onAction={() => router.push('/(customer)/status' as never)}
-          />
+        {/* ── CREATE MODE ── */}
+        {isCreateMode ? (
+          <View className="gap-4">
+            {claimableOrdersWithoutClaims.length > 1 && !requestedOrderId ? (
+              <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="rounded-2xl border p-5">
+                <View className="mb-3 flex-row items-center gap-2">
+                  <Ionicons name="receipt-outline" size={18} color={colors.brand.primary} />
+                  <Text style={{ color: colors.text.primary }} className="text-base font-bold">Chọn đơn hàng cần khiếu nại</Text>
+                </View>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 4 }}>
+                  {claimableOrdersWithoutClaims.map((order) => {
+                    const selected = order.orderId === selectedOrderId;
+                    return (
+                      <Pressable
+                        key={order.orderId}
+                        onPress={() => {
+                          setSelectedOrderId(order.orderId);
+                          setFormError(null);
+                        }}
+                        style={{
+                          backgroundColor: selected ? colors.surface.selected : colors.surface.page,
+                          borderColor: selected ? colors.border.selected : colors.border.default,
+                          width: 220,
+                        }}
+                        className="rounded-2xl border p-4"
+                      >
+                        <Text style={{ color: selected ? colors.text.brand : colors.text.primary }} className="font-bold" numberOfLines={1}>
+                          {order.trackingCode}
+                        </Text>
+                        <Text style={{ color: colors.text.secondary }} className="mt-1 text-sm" numberOfLines={2}>
+                          {order.itemName}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            ) : null}
+
+            <ClaimForm
+              selectedOrderLabel={selectedOrderLabel}
+              claimType={claimType}
+              description={description}
+              evidenceImages={evidenceImages}
+              formError={formError}
+              isSubmitting={isSubmitting}
+              onChangeDescription={(value) => {
+                setDescription(value);
+                if (formError) setFormError(null);
+              }}
+              onChangeType={setClaimType}
+              onOpenImagePicker={openImagePicker}
+              onRemoveEvidenceImage={removeEvidenceImage}
+              onSubmit={handleSubmitClaim}
+            />
+          </View>
         ) : null}
 
-        {orders.length > 0 ? (
+        {/* ── VIEW MODE: Trang khiếu nại CHỈ hiển thị các order đã có khiếu nại ── */}
+        {!isCreateMode ? (
           <>
-            <OrderSelector
-              orders={orders}
-              claimedOrderIds={claimedOrderIdSet}
-              selectedOrderId={selectedOrderId}
-              onSelect={(orderId) => {
-                setSelectedOrderId(orderId);
-                setSuccessMessage(null);
-                setFormError(null);
-              }}
-            />
-
-            {claimableOrders.length === 0 ? (
+            {claimedOrders.length === 0 ? (
               <EmptyState
-                compact
-                icon="checkmark-done-circle-outline"
-                title="Không còn đơn có thể khiếu nại"
-                message="Các đơn đã giao hiện có đều đã được gửi khiếu nại trước đó."
-              />
-            ) : null}
-
-            {selectedOrderId ? (
-              <ClaimForm
-                selectedOrderLabel={selectedOrderLabel}
-                claimType={claimType}
-                description={description}
-                evidenceImages={evidenceImages}
-                formError={formError}
-                isSubmitting={isSubmitting}
-                onChangeDescription={(value) => {
-                  setDescription(value);
-                  if (formError) setFormError(null);
+                icon="chatbox-ellipses-outline"
+                title="Chưa có khiếu nại nào"
+                message="Trang này chỉ hiển thị các đơn hàng đã có khiếu nại. Khi có sự cố về hàng hóa hoặc thời gian giao, bạn có thể tạo khiếu nại từ chi tiết đơn hàng."
+                actionLabel={claimableOrdersWithoutClaims.length > 0 ? 'Tạo khiếu nại mới' : 'Xem danh sách đơn hàng'}
+                onAction={() => {
+                  if (claimableOrdersWithoutClaims.length > 0) {
+                    setIsCreateMode(true);
+                    setSelectedOrderId(claimableOrdersWithoutClaims[0].orderId);
+                  } else {
+                    router.push('/(customer)/status' as never);
+                  }
                 }}
-                onChangeType={setClaimType}
-                onOpenImagePicker={openImagePicker}
-                onRemoveEvidenceImage={removeEvidenceImage}
-                onSubmit={handleSubmitClaim}
               />
-            ) : null}
+            ) : (
+              <>
+                {/* ── Claimed Orders Carousel Selector (Chỉ hiển thị các đơn đã có khiếu nại) ── */}
+                <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="rounded-2xl border p-5">
+                  <View className="mb-3 flex-row items-center justify-between">
+                    <View className="flex-row items-center gap-2">
+                      <Ionicons name="receipt-outline" size={18} color={colors.brand.primary} />
+                      <Text style={{ color: colors.text.primary }} className="text-base font-bold">
+                        Đơn đã khiếu nại ({claimedOrders.length})
+                      </Text>
+                    </View>
+                    <Text style={{ color: colors.text.muted }} className="text-xs">
+                      Chọn đơn để xem khiếu nại
+                    </Text>
+                  </View>
 
-            {selectedOrderId ? (
-              <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="rounded-2xl border p-5">
-              <View className="mb-4 flex-row items-center justify-between gap-3">
-                <View className="flex-1 flex-row items-center gap-2">
-                  <Ionicons name="list-outline" size={18} color={colors.brand.primary} />
-                  <Text style={{ color: colors.text.primary }} className="text-base font-bold">Khiếu nại đã gửi</Text>
-                </View>
-                <Pressable onPress={() => selectedOrderId && void loadClaims(selectedOrderId)} className="min-h-10 justify-center">
-                  <Text style={{ color: colors.brand.primary }} className="text-sm font-bold">Làm mới</Text>
-                </Pressable>
-              </View>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 4 }}>
+                    {claimedOrders.map((order) => {
+                      const selected = order.orderId === selectedOrderId;
+                      const orderClaimsList = claimsByOrderId[order.orderId] ?? [];
+                      const latestClaimStatus = orderClaimsList[0]?.status;
 
-              {isClaimsLoading ? <SectionLoader label="Đang tải danh sách..." /> : null}
-              {claimsError ? (
-                <View className="rounded-xl border border-red-200 bg-red-50 p-3">
-                  <Text className="text-sm font-semibold leading-5 text-red-700">{claimsError}</Text>
+                      return (
+                        <Pressable
+                          key={order.orderId}
+                          onPress={() => void handleSelectOrder(order.orderId)}
+                          style={{
+                            backgroundColor: selected ? colors.surface.selected : colors.surface.page,
+                            borderColor: selected ? colors.border.selected : colors.border.default,
+                            borderWidth: selected ? 2 : 1,
+                            width: 230,
+                          }}
+                          className="rounded-2xl p-4 shadow-sm"
+                        >
+                          <View className="flex-row items-start justify-between gap-2">
+                            <View className="flex-1">
+                              <Text style={{ color: selected ? colors.text.brand : colors.text.primary }} className="font-bold" numberOfLines={1}>
+                                {order.trackingCode}
+                              </Text>
+                              <Text style={{ color: colors.text.secondary }} className="mt-1 text-xs" numberOfLines={2}>
+                                {order.itemName}
+                              </Text>
+                              <View className="mt-2.5 flex-row items-center gap-1.5">
+                                <ClaimStatusBadge status={latestClaimStatus} />
+                              </View>
+                            </View>
+                            {selected ? (
+                              <View className="h-6 w-6 items-center justify-center rounded-full bg-[#367eb8]">
+                                <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+                              </View>
+                            ) : null}
+                          </View>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
                 </View>
-              ) : null}
-              {!isClaimsLoading && !claimsError && claims.length === 0 ? (
-                <EmptyState
-                  compact
-                  icon="chatbox-ellipses-outline"
-                  title="Chưa có khiếu nại"
-                  message="Khiếu nại của đơn này sẽ xuất hiện tại đây sau khi gửi."
-                />
-              ) : null}
-              {!isClaimsLoading && !claimsError && claims.length > 0 ? (
-                <View className="gap-3">
-                  {claims.map((claim) => (
-                    <ClaimCard
-                      key={claim.claimId}
-                      claim={claim}
-                      onOpenOrder={() => {
-                        const orderId = claim.orderId ?? selectedOrderId;
-                        if (orderId) router.push(`/(customer)/orders/${orderId}` as never);
-                      }}
-                    />
-                  ))}
-                </View>
-              ) : null}
-              </View>
-            ) : null}
+
+                {/* ── Thông tin khiếu nại của order đang chọn ── */}
+                {selectedOrderId ? (
+                  <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="rounded-2xl border p-5 shadow-sm">
+                    <View className="mb-4 flex-row items-center justify-between gap-3 border-b border-gray-100 pb-3">
+                      <View className="flex-1 flex-row items-center gap-2">
+                        <Ionicons name="document-text-outline" size={20} color={colors.brand.primary} />
+                        <Text style={{ color: colors.text.primary }} className="text-base font-bold">
+                          Thông tin khiếu nại {selectedOrder?.trackingCode ? `· ${selectedOrder.trackingCode}` : ''}
+                        </Text>
+                      </View>
+                      <Pressable onPress={() => void handleSelectOrder(selectedOrderId)} className="min-h-10 justify-center">
+                        <Text style={{ color: colors.brand.primary }} className="text-sm font-bold">Làm mới</Text>
+                      </Pressable>
+                    </View>
+
+                    {isClaimsLoading ? <SectionLoader label="Đang tải thông tin khiếu nại..." /> : null}
+
+                    {claimsError ? (
+                      <View className="rounded-xl border border-red-200 bg-red-50 p-3">
+                        <Text className="text-sm font-semibold leading-5 text-red-700">{claimsError}</Text>
+                      </View>
+                    ) : null}
+
+                    {!isClaimsLoading && !claimsError && claims.length === 0 ? (
+                      <EmptyState
+                        compact
+                        icon="chatbox-ellipses-outline"
+                        title="Chưa có thông tin khiếu nại"
+                        message="Không tìm thấy chi tiết khiếu nại cho đơn hàng này."
+                      />
+                    ) : null}
+
+                    {!isClaimsLoading && !claimsError && claims.length > 0 ? (
+                      <View className="gap-4">
+                        {claims.map((claim) => (
+                          <ClaimCard
+                            key={claim.claimId}
+                            claim={claim}
+                            onOpenOrder={() => {
+                              const orderId = claim.orderId ?? selectedOrderId;
+                              if (orderId) router.push(`/(customer)/orders/${orderId}` as never);
+                            }}
+                          />
+                        ))}
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null}
+              </>
+            )}
           </>
         ) : null}
       </ScrollView>
     </KeyboardAvoidingView>
-  );
-}
-
-function OrderSelector({
-  orders,
-  claimedOrderIds,
-  selectedOrderId,
-  onSelect,
-}: {
-  orders: CustomerOrderSummaryResponse[];
-  claimedOrderIds: Set<string>;
-  selectedOrderId: string | null;
-  onSelect: (orderId: string) => void;
-}) {
-  return (
-    <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="rounded-2xl border p-5">
-      <View className="mb-3 flex-row items-center gap-2">
-        <Ionicons name="receipt-outline" size={18} color={colors.brand.primary} />
-        <Text style={{ color: colors.text.primary }} className="text-base font-bold">Chọn đơn hàng</Text>
-      </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 4 }}>
-        {orders.map((order) => {
-          const selected = order.orderId === selectedOrderId;
-          const hasClaim = claimedOrderIds.has(order.orderId);
-          return (
-            <Pressable
-              key={order.orderId}
-              onPress={() => {
-                if (!hasClaim) onSelect(order.orderId);
-              }}
-              disabled={hasClaim}
-              accessibilityRole="button"
-              accessibilityState={{ disabled: hasClaim, selected }}
-              style={{
-                backgroundColor: selected ? colors.surface.selected : colors.surface.page,
-                borderColor: selected ? colors.border.selected : colors.border.default,
-                opacity: hasClaim ? 0.55 : 1,
-                width: 220,
-              }}
-              className="rounded-2xl border p-4"
-            >
-              <View className="flex-row items-start justify-between gap-3">
-                <View className="flex-1">
-                  <Text style={{ color: selected ? colors.text.brand : colors.text.primary }} className="font-bold" numberOfLines={1}>
-                    {order.trackingCode}
-                  </Text>
-                  <Text style={{ color: colors.text.secondary }} className="mt-1 text-sm" numberOfLines={2}>
-                    {order.itemName}
-                  </Text>
-                  <Text style={{ color: hasClaim ? colors.status.warning.main : colors.status.success.main }} className="mt-2 text-xs font-bold">
-                    {hasClaim ? 'Đã có khiếu nại' : 'Có thể khiếu nại'}
-                  </Text>
-                </View>
-                {selected ? <Ionicons name="checkmark-circle" size={20} color={colors.brand.primary} /> : null}
-              </View>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-    </View>
   );
 }
 
@@ -556,7 +663,7 @@ function ClaimForm({
     <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="rounded-2xl border p-5">
       <View className="mb-4 flex-row items-start justify-between gap-3">
         <View className="flex-1">
-          <Text style={{ color: colors.text.primary }} className="text-base font-bold">Tạo khiếu nại mới</Text>
+          <Text style={{ color: colors.text.primary }} className="text-base font-bold">Nội dung khiếu nại</Text>
           <Text style={{ color: colors.text.secondary }} className="mt-1 text-sm leading-5">
             {selectedOrderLabel ? `Đơn đang chọn: ${selectedOrderLabel}` : 'Chọn đơn hàng trước khi gửi.'}
           </Text>
@@ -595,7 +702,7 @@ function ClaimForm({
       <TextInput
         value={description}
         onChangeText={onChangeDescription}
-        placeholder="Ví dụ: Kiện hàng số 2 bị móp méo khi nhận tại điểm giao..."
+        placeholder="Ví dụ: Kiện hàng số 2 bị móp méo, rách bao bì khi nhận tại điểm giao..."
         placeholderTextColor={colors.text.muted}
         multiline
         textAlignVertical="top"
@@ -677,44 +784,70 @@ function ClaimCard({ claim, onOpenOrder }: { claim: ClaimResponse; onOpenOrder: 
 
   return (
     <View style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default }} className="rounded-2xl border p-4">
+      {/* Header with code, date and status badge */}
       <View className="flex-row items-start justify-between gap-3">
         <View className="flex-1">
-          <Text style={{ color: colors.brand.primary }} className="font-bold">{claim.claimCode}</Text>
-          <Text style={{ color: colors.text.secondary }} className="mt-1 text-xs">{formatDateTime(claim.createdAt)}</Text>
+          <Text style={{ color: colors.brand.primary }} className="text-base font-bold">{claim.claimCode}</Text>
+          <Text style={{ color: colors.text.secondary }} className="mt-1 text-xs">
+            Gửi lúc: {formatDateTime(claim.createdAt)}
+          </Text>
         </View>
         <ClaimStatusBadge status={claim.status} />
       </View>
 
-      <View className="mt-3 flex-row items-center gap-2">
-        <Ionicons name={getClaimCategoryIcon(claim.claimType)} size={16} color={colors.brand.primary} />
-        <Text style={{ color: colors.text.primary }} className="font-semibold">{getClaimCategoryLabel(claim.claimType)}</Text>
+      {/* Claim Type */}
+      <View className="mt-3 flex-row items-center gap-2 rounded-xl bg-white/70 p-2.5">
+        <Ionicons name={getClaimCategoryIcon(claim.claimType)} size={18} color={colors.brand.primary} />
+        <View className="flex-1">
+          <Text style={{ color: colors.text.muted }} className="text-[11px] font-bold uppercase">Loại khiếu nại</Text>
+          <Text style={{ color: colors.text.primary }} className="font-semibold">{getClaimCategoryLabel(claim.claimType)}</Text>
+        </View>
       </View>
 
-      <Text style={{ color: colors.text.secondary }} className="mt-2 text-sm leading-5">{claim.description}</Text>
+      {/* Incident Description */}
+      <View className="mt-3">
+        <Text style={{ color: colors.text.muted }} className="text-[11px] font-bold uppercase">Mô tả sự cố</Text>
+        <Text style={{ color: colors.text.primary }} className="mt-1 text-sm leading-5">{claim.description}</Text>
+      </View>
 
+      {/* Resolution Note if present */}
       {claim.resolutionNote ? (
         <View className="mt-3 rounded-xl border border-green-200 bg-green-50 p-3">
-          <Text className="text-xs font-bold uppercase text-green-700">Phản hồi xử lý</Text>
-          <Text className="mt-1 text-sm leading-5 text-green-800">{claim.resolutionNote}</Text>
+          <View className="flex-row items-center gap-1.5">
+            <Ionicons name="checkmark-circle" size={16} color="#15803D" />
+            <Text className="text-xs font-bold uppercase text-green-800">Phản hồi xử lý</Text>
+          </View>
+          <Text className="mt-1 text-sm leading-5 text-green-900">{claim.resolutionNote}</Text>
+          {claim.resolvedAt ? (
+            <Text className="mt-1 text-[11px] text-green-700">Thời gian: {formatDateTime(claim.resolvedAt)}</Text>
+          ) : null}
         </View>
       ) : null}
 
+      {/* Evidence Images */}
       {evidences.length > 0 ? (
-        <View className="mt-3 flex-row flex-wrap gap-2">
-          {evidences.map((evidence) => {
-            const imageUrl = getFullAssetUrl(evidence.imageUrl);
-            if (!imageUrl) return null;
-            return <Image key={evidence.evidenceId} source={{ uri: imageUrl }} className="h-16 w-16 rounded-xl bg-gray-100" resizeMode="cover" />;
-          })}
+        <View className="mt-3">
+          <Text style={{ color: colors.text.muted }} className="mb-1.5 text-[11px] font-bold uppercase">
+            Ảnh bằng chứng ({evidences.length})
+          </Text>
+          <View className="flex-row flex-wrap gap-2">
+            {evidences.map((evidence) => {
+              const imageUrl = getFullAssetUrl(evidence.imageUrl);
+              if (!imageUrl) return null;
+              return <Image key={evidence.evidenceId} source={{ uri: imageUrl }} className="h-16 w-16 rounded-xl bg-gray-100" resizeMode="cover" />;
+            })}
+          </View>
         </View>
       ) : null}
 
-      <View className="mt-3 flex-row items-center justify-between gap-3">
+      {/* Order Link */}
+      <View style={{ borderTopColor: colors.border.default }} className="mt-4 flex-row items-center justify-between border-t pt-3">
         <Text style={{ color: colors.text.muted }} className="flex-1 text-xs" numberOfLines={1}>
-          Đơn {claim.orderTrackingCode || claim.orderId?.slice(0, 8).toUpperCase() || '--'}
+          Đơn: {claim.orderTrackingCode || claim.orderId?.slice(0, 8).toUpperCase() || '--'}
         </Text>
-        <Pressable onPress={onOpenOrder} className="min-h-10 justify-center">
-          <Text style={{ color: colors.brand.primary }} className="text-sm font-bold">Xem đơn</Text>
+        <Pressable onPress={onOpenOrder} className="flex-row items-center gap-1">
+          <Text style={{ color: colors.brand.primary }} className="text-sm font-bold">Xem chi tiết đơn</Text>
+          <Ionicons name="chevron-forward" size={14} color={colors.brand.primary} />
         </Pressable>
       </View>
     </View>
@@ -802,24 +935,6 @@ async function fetchAllCustomerOrders(): Promise<CustomerOrderSummaryResponse[]>
   ];
 }
 
-async function fetchClaimedOrderIds(accessToken: string, orders: CustomerOrderSummaryResponse[]): Promise<string[]> {
-  if (orders.length === 0) return [];
-
-  const claimChecks = await Promise.all(
-    orders.map(async (order) => {
-      const response = await getClaimsByOrder(accessToken, order.orderId, 1, 1);
-      if (!response.success) {
-        throw new Error(response.message || 'Không thể kiểm tra khiếu nại của đơn hàng.');
-      }
-
-      const claimCount = response.data?.totalRecords ?? response.data?.data?.length ?? 0;
-      return claimCount > 0 ? order.orderId : null;
-    })
-  );
-
-  return claimChecks.filter((orderId): orderId is string => Boolean(orderId));
-}
-
 function isClaimableDeliveryOrder(order: CustomerOrderSummaryResponse) {
   return CLAIMABLE_DELIVERY_STATUSES.has(order.status?.trim().toUpperCase());
 }
@@ -845,9 +960,12 @@ function getClaimStatusPresentation(status?: string | null) {
       return { label: 'Chờ kế toán', color: colors.status.info.main, bg: colors.status.info.bg, border: colors.status.info.border };
     case 'RESOLVED_PAID':
     case 'RESOLVED':
-      return { label: 'Đã giải ngân', color: colors.status.success.main, bg: colors.status.success.bg, border: colors.status.success.border };
+    case 'APPROVED':
+      return { label: 'Đã xử lý', color: colors.status.success.main, bg: colors.status.success.bg, border: colors.status.success.border };
     case 'REJECTED':
       return { label: 'Đã từ chối', color: colors.status.danger.main, bg: colors.status.danger.bg, border: colors.status.danger.border };
+    case 'CLOSED':
+      return { label: 'Đã đóng', color: colors.text.muted, bg: colors.surface.page, border: colors.border.default };
     default:
       return { label: status || 'Chưa cập nhật', color: colors.text.secondary, bg: colors.surface.card, border: colors.border.default };
   }
