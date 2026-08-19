@@ -130,10 +130,21 @@ export function buildRoutePoints(route?: TripRouteResponse | null): RouteMapPoin
     .forEach((stop, index) => {
       const sequence = stop.optimizedSequence ?? index + 1;
       const point = toMapPoint(stop, 'stop', `Điểm dừng ${sequence}`, sequence);
-      if (point) points.push(point);
+      if (point) {
+        const isDuplicateOrigin = origin && Math.abs(point.lat - origin.lat) < 0.0001 && Math.abs(point.lon - origin.lon) < 0.0001;
+        const isDuplicateDest = destination && Math.abs(point.lat - destination.lat) < 0.0001 && Math.abs(point.lon - destination.lon) < 0.0001;
+        if (!isDuplicateOrigin && !isDuplicateDest) {
+          points.push(point);
+        }
+      }
     });
 
-  if (destination) points.push(destination);
+  if (destination) {
+    const isDuplicateOrigin = origin && Math.abs(destination.lat - origin.lat) < 0.0001 && Math.abs(destination.lon - origin.lon) < 0.0001;
+    if (!isDuplicateOrigin) {
+      points.push(destination);
+    }
+  }
   return points;
 }
 
