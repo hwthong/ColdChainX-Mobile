@@ -235,18 +235,6 @@ export default function DriverTripDetailScreen() {
     setRefreshing(true); await Promise.all([loadTrip(), loadTracking(), loadRoute(), loadChart(), loadAlerts(), loadIncident()]); setRefreshing(false);
   }, [loadTrip, loadAlerts, loadChart, loadRoute, loadTracking, loadIncident]);
 
-  if (loading) {
-    return (
-      <View style={{ backgroundColor: colors.surface.page }} className="flex-1 items-center justify-center">
-        <ActivityIndicator size="large" color={colors.brand.primary} />
-        <Text style={{ color: colors.brand.primary }} className="mt-4 font-medium">Đang tải chi tiết chuyến...</Text>
-      </View>
-    );
-  }
-  const vehiclePosition = getVehiclePosition(tracking);
-  const status = trip?.status || tracking?.status || 'UNKNOWN';
-  const isCompleted = TERMINAL.has(status.toUpperCase());
-
   const displayStops = useMemo<DriverTripStopDto[]>(() => {
     if (trip?.stops && trip.stops.length > 0) {
       return trip.stops;
@@ -275,6 +263,18 @@ export default function DriverTripDetailScreen() {
     }
     return [];
   }, [trip?.stops, route?.optimizedStops, tracking?.orders]);
+
+  if (loading) {
+    return (
+      <View style={{ backgroundColor: colors.surface.page }} className="flex-1 items-center justify-center">
+        <ActivityIndicator size="large" color={colors.brand.primary} />
+        <Text style={{ color: colors.brand.primary }} className="mt-4 font-medium">Đang tải chi tiết chuyến...</Text>
+      </View>
+    );
+  }
+  const vehiclePosition = getVehiclePosition(tracking);
+  const status = trip?.status || tracking?.status || 'UNKNOWN';
+  const isCompleted = TERMINAL.has(status.toUpperCase());
 
   return (
     <ScrollView style={{ backgroundColor: colors.surface.page }} className="flex-1" contentContainerStyle={{ padding: 20, paddingBottom: 100, gap: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.brand.primary} />}>
