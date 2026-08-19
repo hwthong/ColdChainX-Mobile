@@ -10,6 +10,7 @@ import { useAuthStore } from '../../store/useAuthStore';
 import { driverApi, TripListDto } from '../../services/driverApi';
 import { getIncidents, IncidentResponse } from '../../services/incidentApi';
 import { getVehicleDetail } from '../../services/vehicleApi';
+import { getTripRoute } from '../../services/monitoringApi';
 
 const STATUS_PRIORITY: Record<string, number> = {
   IN_TRANSIT: 1,
@@ -32,6 +33,7 @@ export default function DriverHomeScreen() {
   const router = useRouter();
 
   const [activeTrip, setActiveTrip] = useState<TripListDto | null>(null);
+  const [tripDistanceKm, setTripDistanceKm] = useState<number | null>(null);
   const [activeIncident, setActiveIncident] = useState<IncidentResponse | null>(null);
   const [replacementPlate, setReplacementPlate] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -57,6 +59,20 @@ export default function DriverHomeScreen() {
       if (active) {
         setActiveTrip(active);
 
+        // Lấy khoảng cách thực tế từ tuyến đường nếu trip chưa có distanceKm
+        let dist = active.distanceKm || null;
+        if (token && active.tripId) {
+          try {
+            const routeRes = await getTripRoute(token, active.tripId);
+            if (routeRes.success && routeRes.data?.totalDistanceMeters) {
+              dist = Math.round((routeRes.data.totalDistanceMeters / 1000) * 10) / 10;
+            }
+          } catch {
+            // fallback to active.distanceKm
+          }
+        }
+        setTripDistanceKm(dist);
+
         // Kiểm tra xem chuyến này có sự cố và được đổi xe cứu hộ không
         if (token && active.tripId) {
           try {
@@ -68,7 +84,9 @@ export default function DriverHomeScreen() {
                 incidents[0];
               setActiveIncident(activeInc);
 
-              if (activeInc.replacementVehicleId) {
+              if (activeInc.externalReeferPlan?.vehiclePlate) {
+                setReplacementPlate(activeInc.externalReeferPlan.vehiclePlate);
+              } else if (activeInc.replacementVehicleId) {
                 try {
                   const vRes = await getVehicleDetail(token, activeInc.replacementVehicleId);
                   if (vRes.success && vRes.data?.truckPlate) {
@@ -93,12 +111,14 @@ export default function DriverHomeScreen() {
         }
       } else {
         setActiveTrip(null);
+        setTripDistanceKm(null);
         setActiveIncident(null);
         setReplacementPlate(null);
       }
     } catch (error) {
       console.warn('Failed to load active trip', error);
       setActiveTrip(null);
+      setTripDistanceKm(null);
       setActiveIncident(null);
       setReplacementPlate(null);
     } finally {
@@ -258,7 +278,7 @@ export default function DriverHomeScreen() {
                     {activeTrip.totalOrders} đơn hàng
                   </Text>
                   <Text style={{ color: colors.text.secondary }} className="text-xs font-medium">
-                    Khoảng cách: {activeTrip.distanceKm || 0} km
+                    Khoảng cách: {tripDistanceKm ? `${tripDistanceKm} km` : activeTrip.distanceKm ? `${activeTrip.distanceKm} km` : '--'}
                   </Text>
                 </View>
 
