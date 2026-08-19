@@ -12,6 +12,7 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors } from '../../constants/colors';
 import { getApiErrorMessage } from '../../services/apiClient';
@@ -30,6 +31,7 @@ import {
 } from '../../utils/notificationPresenter';
 
 export default function DriverNotificationsScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const token = useAuthStore((state) => state.token);
 
@@ -180,7 +182,14 @@ export default function DriverNotificationsScreen() {
   return (
     <View style={{ backgroundColor: colors.surface.page }} className="flex-1">
       {/* Header */}
-      <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="border-b px-4 pt-12 pb-4 shadow-sm">
+      <View
+        style={{
+          backgroundColor: colors.surface.card,
+          borderColor: colors.border.default,
+          paddingTop: Math.max(insets.top + 6, 48),
+        }}
+        className="border-b px-4 pb-3.5 shadow-sm"
+      >
         <View className="flex-row items-center justify-between">
           <Pressable onPress={() => router.back()} style={{ backgroundColor: colors.brand.primarySoft }} className="rounded-full p-2">
             <Ionicons name="arrow-back" size={20} color={colors.brand.primary} />

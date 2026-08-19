@@ -45,6 +45,7 @@ import {
   VehicleDetailResponse,
 } from '../../../../services/vehicleApi';
 import { useAuthStore } from '../../../../store/useAuthStore';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const POLL_MS = 10_000;
 
@@ -68,6 +69,7 @@ const SEVERITY_LABEL: Record<string, string> = {
 const BREAKDOWN_TYPES = ['VEHICLE_BREAKDOWN', 'REEFER_BREAKDOWN'];
 
 export default function DriverIncidentDetailScreen() {
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ id?: string | string[]; incidentId?: string | string[] }>();
   const incidentId = Array.isArray(params.incidentId) ? params.incidentId[0] : params.incidentId;
   const currentTripId = Array.isArray(params.id) ? params.id[0] : params.id;
@@ -458,8 +460,12 @@ export default function DriverIncidentDetailScreen() {
 
       {/* ── APPBAR CỐ ĐỊNH: mã Incident, badge trạng thái, stepper có thể bấm tua ── */}
       <View
-        style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }}
-        className="border-b px-4 pt-12 pb-3 shadow-sm"
+        style={{
+          backgroundColor: colors.surface.card,
+          borderColor: colors.border.default,
+          paddingTop: Math.max(insets.top + 6, 48),
+        }}
+        className="border-b px-4 pb-3 shadow-sm"
       >
         <View className="flex-row items-center justify-between mb-2">
           <Pressable onPress={() => router.back()} style={{ backgroundColor: colors.brand.primarySoft }} className="rounded-full p-2.5">

@@ -2,14 +2,18 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, ActivityIndicator, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 import { AppPressable as Pressable } from '../../../../components/AppPressable';
 import { PdfViewerModal } from '../../../../components/PdfViewerModal';
+import { colors } from '../../../../constants/colors';
 import { WH_COLORS } from '../../../../constants/warehouseTheme';
 import { driverApi } from '../../../../services/driverApi';
 import { useAuthStore } from '../../../../store/useAuthStore';
 import { downloadDocumentAsBase64 } from '../../../../utils/documentViewer';
 
 export default function DriverTripDocumentsScreen() {
+  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const token = useAuthStore((state) => state.token);
@@ -57,51 +61,77 @@ export default function DriverTripDocumentsScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: WH_COLORS.background, padding: 20 }}>
-      
-      <Text style={{ fontSize: 20, fontWeight: 'bold', color: WH_COLORS.textPrimary, marginBottom: 20 }}>
-        Chứng từ & Waybill
-      </Text>
-
-      {error ? (
-        <View style={{ backgroundColor: '#FEF2F2', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#FECACA', marginBottom: 20 }}>
-          <Text style={{ color: '#991B1B' }}>{error}</Text>
-        </View>
-      ) : (
-        <Pressable
-          onPress={handleOpenWaybill}
-          disabled={openingPdf}
-          style={({ pressed }) => ({
-            backgroundColor: WH_COLORS.cardBg,
-            padding: 20,
-            borderRadius: 12,
-            borderWidth: 1,
-            borderColor: WH_COLORS.cardBorder,
-            flexDirection: 'row',
-            alignItems: 'center',
-            opacity: pressed || openingPdf ? 0.7 : 1,
-          })}
-        >
-          <View style={{ backgroundColor: '#EEF2FF', padding: 12, borderRadius: 8, marginRight: 16 }}>
-            <Ionicons name="document-text" size={32} color="#3730A3" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 16, fontWeight: 'bold', color: WH_COLORS.textPrimary }}>Giấy Đi Đường (E-Waybill)</Text>
-            <Text style={{ fontSize: 13, color: WH_COLORS.textSecondary, marginTop: 4 }}>
-              {openingPdf ? 'Đang tải PDF...' : 'Bản PDF điện tử'}
+    <View style={{ flex: 1, backgroundColor: WH_COLORS.background }}>
+      {/* AppBar Header */}
+      <View
+        style={{
+          backgroundColor: colors.surface.card,
+          borderColor: colors.border.default,
+          paddingTop: Math.max(insets.top + 6, 48),
+        }}
+        className="border-b px-4 pb-3 shadow-sm"
+      >
+        <View className="flex-row items-center justify-between">
+          <Pressable
+            onPress={() => router.back()}
+            style={{ backgroundColor: colors.brand.primarySoft }}
+            className="rounded-full p-2.5"
+          >
+            <Ionicons name="arrow-back" size={18} color={colors.brand.primary} />
+          </Pressable>
+          <View className="flex-1 px-3">
+            <Text style={{ color: colors.text.secondary }} className="text-[10px] font-bold uppercase tracking-wider">
+              Hồ Sơ Chứng Từ
+            </Text>
+            <Text numberOfLines={1} style={{ color: colors.text.primary }} className="text-base font-bold">
+              Chuyến #{id?.slice(0, 8).toUpperCase()}
             </Text>
           </View>
-          {openingPdf ? (
-            <ActivityIndicator size="small" color={WH_COLORS.primary} />
-          ) : (
-            <Ionicons name="eye-outline" size={24} color={WH_COLORS.primary} />
-          )}
-        </Pressable>
-      )}
+          <View className="w-10" />
+        </View>
+      </View>
 
-      <Pressable onPress={() => router.back()} style={{ marginTop: 'auto', padding: 16, backgroundColor: WH_COLORS.primaryLight, borderRadius: 12, alignItems: 'center' }}>
-        <Text style={{ color: WH_COLORS.primary, fontWeight: 'bold' }}>Quay lại</Text>
-      </Pressable>
+      <View className="flex-1 p-5">
+        <Text style={{ fontSize: 18, fontWeight: 'bold', color: WH_COLORS.textPrimary, marginBottom: 16 }}>
+          Chứng từ & E-Waybill
+        </Text>
+
+        {error ? (
+          <View style={{ backgroundColor: '#FEF2F2', padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#FECACA', marginBottom: 20 }}>
+            <Text style={{ color: '#991B1B' }}>{error}</Text>
+          </View>
+        ) : (
+          <Pressable
+            onPress={handleOpenWaybill}
+            disabled={openingPdf}
+            style={({ pressed }) => ({
+              backgroundColor: WH_COLORS.cardBg,
+              padding: 20,
+              borderRadius: 16,
+              borderWidth: 1,
+              borderColor: WH_COLORS.cardBorder,
+              flexDirection: 'row',
+              alignItems: 'center',
+              opacity: pressed || openingPdf ? 0.7 : 1,
+            })}
+          >
+            <View style={{ backgroundColor: '#EEF2FF', padding: 12, borderRadius: 12, marginRight: 16 }}>
+              <Ionicons name="document-text" size={32} color="#3730A3" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 16, fontWeight: 'bold', color: WH_COLORS.textPrimary }}>Giấy Đi Đường (E-Waybill)</Text>
+              <Text style={{ fontSize: 13, color: WH_COLORS.textSecondary, marginTop: 4 }}>
+                {openingPdf ? 'Đang tải PDF...' : 'Bản PDF điện tử'}
+              </Text>
+            </View>
+            {openingPdf ? (
+              <ActivityIndicator size="small" color={WH_COLORS.primary} />
+            ) : (
+              <Ionicons name="eye-outline" size={24} color={WH_COLORS.primary} />
+            )}
+          </Pressable>
+        )}
+      </View>
 
       <PdfViewerModal
         visible={Boolean(viewingPdf)}

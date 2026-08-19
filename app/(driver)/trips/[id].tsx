@@ -20,6 +20,7 @@ import { driverApi, DriverTripDetailResponseDto, DriverTripStopDto } from '../..
 import { getOrderById, OrderResponse } from '../../../services/orderApi';
 import { colors } from '../../../constants/colors';
 import { useAuthStore } from '../../../store/useAuthStore';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const POLL_MS = 15_000;
 const MAX_POLL_MS = 60_000;
@@ -37,6 +38,7 @@ const STOP_STATUS: Record<string, string> = {
 };
 
 export default function DriverTripDetailScreen() {
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const tripId = Array.isArray(params.id) ? params.id[0] : params.id;
   const router = useRouter();
@@ -278,88 +280,120 @@ export default function DriverTripDetailScreen() {
   const isCompleted = TERMINAL.has(status.toUpperCase());
 
   return (
-    <ScrollView style={{ backgroundColor: colors.surface.page }} className="flex-1" contentContainerStyle={{ padding: 20, paddingBottom: 100, gap: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.brand.primary} />}>
-      <View className="flex-row items-start justify-between gap-3">
-        <View className="flex-1">
-          <Text style={{ color: colors.text.secondary }} className="text-xs font-bold uppercase tracking-widest">Chuyến vận chuyển</Text>
-          <Text style={{ color: colors.text.primary }} className="mt-1 text-2xl font-bold">{tripId?.slice(0, 8).toUpperCase() || '--'}</Text>
-        </View>
-        <View style={{ backgroundColor: colors.surface.selected }} className="rounded-xl px-3 py-2">
-          <Text style={{ color: colors.brand.primary }} className="text-xs font-bold">{STATUS[status.toUpperCase()] || status}</Text>
+    <View style={{ backgroundColor: colors.surface.page }} className="flex-1">
+      {/* ── TOP APP BAR WITH SAFE AREA INSETS ── */}
+      <View
+        style={{
+          backgroundColor: colors.surface.card,
+          borderBottomColor: colors.border.default,
+          paddingTop: Math.max(insets.top + 6, 48),
+        }}
+        className="border-b px-4 pb-3.5 shadow-sm"
+      >
+        <View className="flex-row items-center justify-between">
+          <Pressable
+            onPress={() => router.back()}
+            style={{ backgroundColor: colors.brand.primarySoft }}
+            className="rounded-full p-2.5"
+          >
+            <Ionicons name="arrow-back" size={18} color={colors.brand.primary} />
+          </Pressable>
+
+          <View className="flex-1 px-3">
+            <Text style={{ color: colors.text.secondary }} className="text-[10px] font-bold uppercase tracking-wider">
+              Chuyến xe vận chuyển
+            </Text>
+            <Text numberOfLines={1} style={{ color: colors.text.primary }} className="text-base font-bold">
+              {tripId ? `Chuyến #${tripId.slice(0, 8).toUpperCase()}` : '--'}
+            </Text>
+          </View>
+
+          <View style={{ backgroundColor: colors.surface.selected }} className="rounded-xl px-3 py-1.5">
+            <Text style={{ color: colors.brand.primary }} className="text-xs font-bold">
+              {STATUS[status.toUpperCase()] || status}
+            </Text>
+          </View>
         </View>
       </View>
 
-      {/* ── NÚT THAO TÁC TRÊN ĐẦU: CHỨNG TỪ + XEM SỰ CỐ / BÁO SỰ CỐ ── */}
-      <View className="flex-row gap-3">
-        <Action icon="document-text-outline" label="Chứng từ" onPress={() => router.push(`/(driver)/trips/${tripId}/documents` as never)} />
-        {activeIncident ? (
-          <>
+      <ScrollView
+        style={{ backgroundColor: colors.surface.page }}
+        className="flex-1"
+        contentContainerStyle={{ padding: 16, paddingBottom: 100, gap: 16 }}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.brand.primary} />
+        }
+      >
+        {/* ── NÚT THAO TÁC TRÊN ĐẦU: CHỨNG TỪ + XEM SỰ CỐ / BÁO SỰ CỐ ── */}
+        <View className="flex-row gap-3">
+          <Action icon="document-text-outline" label="Chứng từ" onPress={() => router.push(`/(driver)/trips/${tripId}/documents` as never)} />
+          {activeIncident ? (
+            <>
+              <Action 
+                icon="warning" 
+                label="Xem sự cố đã báo" 
+                danger 
+                onPress={() => router.push(`/(driver)/trips/${tripId}/incident-detail?incidentId=${activeIncident.incidentId}` as never)} 
+              />
+              <Action 
+                icon="add-circle-outline" 
+                label="Báo thêm" 
+                onPress={() => router.push(`/(driver)/trips/${tripId}/incident` as never)} 
+              />
+            </>
+          ) : (
             <Action 
-              icon="warning" 
-              label="Xem sự cố đã báo" 
+              icon="warning-outline" 
+              label="Báo sự cố" 
               danger 
-              onPress={() => router.push(`/(driver)/trips/${tripId}/incident-detail?incidentId=${activeIncident.incidentId}` as never)} 
-            />
-            <Action 
-              icon="add-circle-outline" 
-              label="Báo thêm" 
               onPress={() => router.push(`/(driver)/trips/${tripId}/incident` as never)} 
             />
-          </>
-        ) : (
-          <Action 
-            icon="warning-outline" 
-            label="Báo sự cố" 
-            danger 
-            onPress={() => router.push(`/(driver)/trips/${tripId}/incident` as never)} 
-          />
-        )}
-      </View>
+          )}
+        </View>
 
-      {/* ── CARD BANNER NỔI BẬT: THÔNG BÁO TIẾN TRÌNH SỰ CỐ ĐÃ BÁO CÁO ── */}
-      {activeIncident ? (
-        <Pressable
-          onPress={() =>
-            router.push(
-              `/(driver)/trips/${tripId}/incident-detail?incidentId=${activeIncident.incidentId}` as never
-            )
-          }
-          style={{
-            backgroundColor:
-              activeIncident.status === 'RESOLVED'
-                ? colors.status.success.bg
-                : activeIncident.severity === 'CRITICAL'
-                ? '#FEF2F2'
-                : colors.status.warning.bg,
-            borderColor:
-              activeIncident.status === 'RESOLVED'
-                ? colors.status.success.border
-                : activeIncident.severity === 'CRITICAL'
-                ? '#FECACA'
-                : colors.status.warning.border,
-          }}
-          className="flex-row items-center justify-between rounded-2xl border p-4 shadow-sm"
-        >
-          <View className="flex-row items-center gap-3 flex-1 pr-2">
-            <View
-              style={{
-                backgroundColor:
-                  activeIncident.status === 'RESOLVED'
-                    ? colors.status.success.main
-                    : activeIncident.severity === 'CRITICAL'
-                    ? '#DC2626'
-                    : colors.status.warning.main,
-              }}
-              className="h-10 w-10 items-center justify-center rounded-xl"
-            >
-              <Ionicons
-                name={activeIncident.status === 'RESOLVED' ? 'checkmark-done' : 'warning'}
-                size={22}
-                color="#ffffff"
-              />
-            </View>
-            <View className="flex-1">
-              <View className="flex-row items-center gap-2 mb-0.5">
+        {/* ── CARD BANNER NỔI BẬT: THÔNG BÁO TIẾN TRÌNH SỰ CỐ ĐÃ BÁO CÁO ── */}
+        {activeIncident ? (
+          <Pressable
+            onPress={() =>
+              router.push(
+                `/(driver)/trips/${tripId}/incident-detail?incidentId=${activeIncident.incidentId}` as never
+              )
+            }
+            style={{
+              backgroundColor:
+                activeIncident.status === 'RESOLVED'
+                  ? colors.status.success.bg
+                  : activeIncident.severity === 'CRITICAL'
+                  ? '#FEF2F2'
+                  : colors.status.warning.bg,
+              borderColor:
+                activeIncident.status === 'RESOLVED'
+                  ? colors.status.success.border
+                  : activeIncident.severity === 'CRITICAL'
+                  ? '#FECACA'
+                  : colors.status.warning.border,
+            }}
+            className="flex-row items-center justify-between rounded-2xl border p-4 shadow-sm"
+          >
+            <View className="flex-row items-center gap-3 flex-1 pr-2">
+              <View
+                style={{
+                  backgroundColor:
+                    activeIncident.status === 'RESOLVED'
+                      ? colors.status.success.main
+                      : activeIncident.severity === 'CRITICAL'
+                      ? '#DC2626'
+                      : colors.status.warning.main,
+                }}
+                className="h-10 w-10 items-center justify-center rounded-xl"
+              >
+                <Ionicons
+                  name={activeIncident.status === 'RESOLVED' ? 'checkmark-circle' : 'warning'}
+                  size={22}
+                  color="#ffffff"
+                />
+              </View>
+              <View className="flex-1">
                 <Text
                   style={{
                     color:
@@ -369,57 +403,48 @@ export default function DriverTripDetailScreen() {
                         ? '#B91C1C'
                         : colors.status.warning.main,
                   }}
-                  className="text-[11px] font-bold uppercase tracking-wider"
+                  className="text-xs font-bold uppercase tracking-wider"
                 >
-                  {activeIncident.status === 'RESOLVED' ? 'Sự cố đã hoàn tất' : 'Chuyến có sự cố đã báo'}
+                  {activeIncident.status === 'RESOLVED'
+                    ? 'Sự cố đã hoàn tất'
+                    : 'Chuyến có sự cố đã báo'}
                 </Text>
-                <StatusBadge status={activeIncident.status} showVietnameseLabel />
+                <Text
+                  numberOfLines={1}
+                  style={{ color: colors.text.primary }}
+                  className="mt-0.5 text-xs font-semibold"
+                >
+                  {activeIncident.description || 'Đang chờ điều phối cứu hộ'}
+                </Text>
               </View>
-              <Text
-                style={{ color: colors.text.primary }}
-                className="text-xs font-bold"
-                numberOfLines={1}
-              >
-                {activeIncident.description || 'Xem tiến trình xử lý & phương án cứu hộ'}
-              </Text>
             </View>
-          </View>
-          <View className="flex-row items-center gap-1">
-            <Text
-              style={{
-                color:
-                  activeIncident.status === 'RESOLVED'
-                    ? colors.status.success.main
-                    : colors.brand.primary,
-              }}
-              className="text-xs font-bold"
-            >
-              Xem lại
-            </Text>
-            <Ionicons
-              name="chevron-forward"
-              size={16}
-              color={
-                activeIncident.status === 'RESOLVED'
-                  ? colors.status.success.main
-                  : colors.brand.primary
-              }
-            />
-          </View>
-        </Pressable>
-      ) : null}
+            <View className="flex-row items-center gap-1.5">
+              <StatusBadge status={activeIncident.status} showVietnameseLabel />
+              <Ionicons name="chevron-forward" size={16} color={colors.text.muted} />
+            </View>
+          </Pressable>
+        ) : null}
 
-      <Section title="Bản đồ tuyến đường" icon="map-outline">
-        {errors.route ? <ErrorMessage message={errors.route} onRetry={loadRoute} /> : null}
-        {route ? <><InfoRow label="Quãng đường" value={formatDistance(route.totalDistanceMeters)} /><InfoRow label="Thời gian dự kiến" value={formatDuration(route.totalDurationSeconds)} /><GoongRouteMap route={route} vehiclePosition={vehiclePosition} />{!vehiclePosition ? <Empty message="Chưa nhận được vị trí từ thiết bị." /> : null}</> : !errors.route ? <Empty message="Chưa có dữ liệu tuyến đường." /> : null}
-      </Section>
+        <Section title="Bản đồ tuyến đường" icon="map-outline">
+          {errors.route ? <ErrorMessage message={errors.route} onRetry={loadRoute} /> : null}
+          {route ? (
+            <>
+              <InfoRow label="Quãng đường" value={formatDistance(route.totalDistanceMeters)} />
+              <InfoRow label="Thời gian dự kiến" value={formatDuration(route.totalDurationSeconds)} />
+              <GoongRouteMap route={route} vehiclePosition={vehiclePosition} />
+              {!vehiclePosition ? <Empty message="Chưa nhận được vị trí từ thiết bị." /> : null}
+            </>
+          ) : !errors.route ? (
+            <Empty message="Chưa có dữ liệu tuyến đường." />
+          ) : null}
+        </Section>
 
-      <TripOrdersSection
-        route={route}
-        fallbackOrders={tracking?.orders}
-        orderDetailsMap={orderDetailsMap}
-        loadingDetails={loadingOrderDetails}
-      />
+        <TripOrdersSection
+          route={route}
+          fallbackOrders={tracking?.orders}
+          orderDetailsMap={orderDetailsMap}
+          loadingDetails={loadingOrderDetails}
+        />
 
       <Section title="Xe và thiết bị IoT" icon="hardware-chip-outline">
         {errors.tracking ? <ErrorMessage message={errors.tracking} onRetry={loadTracking} /> : null}
@@ -451,6 +476,7 @@ export default function DriverTripDetailScreen() {
         {!displayStops.length ? <Empty message="Chưa có điểm dừng." /> : null}
       </Section>
     </ScrollView>
+  </View>
   );
 }
 

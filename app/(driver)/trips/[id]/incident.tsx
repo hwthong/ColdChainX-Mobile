@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 
 import { colors } from '../../../../constants/colors';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   createIncident,
   getIncidentSubmitErrorMessage,
@@ -67,6 +68,7 @@ const SEVERITIES: {
 ];
 
 export default function DriverTripIncidentScreen() {
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const tripId = Array.isArray(params.id) ? params.id[0] : params.id;
   const router = useRouter();
@@ -236,8 +238,12 @@ export default function DriverTripIncidentScreen() {
     <View style={{ backgroundColor: colors.surface.page }} className="flex-1">
       {/* AppBar Header */}
       <View
-        style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }}
-        className="border-b px-4 pt-12 pb-3 shadow-sm"
+        style={{
+          backgroundColor: colors.surface.card,
+          borderColor: colors.border.default,
+          paddingTop: Math.max(insets.top + 6, 48),
+        }}
+        className="border-b px-4 pb-3 shadow-sm"
       >
         <View className="flex-row items-center justify-between">
           <Pressable
