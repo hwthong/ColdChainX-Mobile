@@ -34,9 +34,9 @@ export const EXTERNAL_REEFER_STEPS: StepItem[] = [
 // ── Stepper CRITICAL: Xe nội bộ trong hệ thống sang hàng trực tiếp (5 bước) ─
 export const INTERNAL_FLEET_STEPS: StepItem[] = [
   { id: 1, label: 'Báo sự cố', statuses: ['REPORTED', 'CONTAINMENT_REQUIRED'] },
-  { id: 2, label: 'Điều xe', statuses: ['RESCUE_PLANNING', 'RESCUE_DISPATCHED'] },
-  { id: 3, label: 'Sang hàng', statuses: ['TRANSLOAD_COMPLETED'] },
-  { id: 4, label: 'Tiếp tục đi', statuses: ['IN_TRANSIT', 'CONTINUED'] },
+  { id: 2, label: 'Điều xe', statuses: ['RESCUE_PLANNING'] },
+  { id: 3, label: 'Sang hàng', statuses: ['RESCUE_DISPATCHED'] },
+  { id: 4, label: 'Tiếp tục đi', statuses: ['TRANSLOAD_COMPLETED', 'IN_TRANSIT', 'CONTINUED'] },
   { id: 5, label: 'Giao khách', statuses: ['DELIVERING', 'RESOLVED'] },
 ];
 

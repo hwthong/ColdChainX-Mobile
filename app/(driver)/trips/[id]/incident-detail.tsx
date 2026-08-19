@@ -25,6 +25,7 @@ import { colors } from '../../../../constants/colors';
 import { getApiErrorMessage } from '../../../../services/apiClient';
 import {
   assessIncidentRisk,
+  confirmTransload,
   continueTrip,
   getIncidentDetail,
   IncidentResponse,
@@ -94,6 +95,11 @@ export default function DriverIncidentDetailScreen() {
   const [isContinueTripModalVisible, setIsContinueTripModalVisible] = useState(false);
   const [continueTripNote, setContinueTripNote] = useState('');
   const [isContinueTripSubmitting, setIsContinueTripSubmitting] = useState(false);
+
+  // ── Nhánh CRITICAL: Transload confirmation modal (Bước 3) ───────────────────
+  const [isTransloadModalVisible, setIsTransloadModalVisible] = useState(false);
+  const [transloadNote, setTransloadNote] = useState('');
+  const [isTransloadSubmitting, setIsTransloadSubmitting] = useState(false);
 
   // ── Resolve Modal ─────────────────────────────────────────────────────────
   const [isResolveModalVisible, setIsResolveModalVisible] = useState(false);
@@ -309,6 +315,33 @@ export default function DriverIncidentDetailScreen() {
       Alert.alert('Lỗi', getApiErrorMessage(e));
     } finally {
       setIsContinueTripSubmitting(false);
+    }
+  };
+
+  // ── CRITICAL: Xác nhận đã sang hàng cứu hộ (Bước 3) ──────────────────────
+  const handleConfirmTransload = async () => {
+    if (!token || !incidentId) return;
+    setIsTransloadSubmitting(true);
+    try {
+      const res = await confirmTransload(
+        token,
+        incidentId,
+        transloadNote.trim() || 'Đã hoàn thành sang hàng và chuyển thiết bị IoT sang xe cứu hộ.'
+      );
+      if (res.success) {
+        setIsTransloadModalVisible(false);
+        Alert.alert(
+          'Thành công',
+          'Đã xác nhận sang hàng sang xe mới thành công! Chuyển sang Bước 4: Tiếp tục vận chuyển.'
+        );
+        await loadIncident();
+      } else {
+        Alert.alert('Lỗi', res.message || 'Không thể xác nhận sang hàng.');
+      }
+    } catch (e: unknown) {
+      Alert.alert('Lỗi', getApiErrorMessage(e));
+    } finally {
+      setIsTransloadSubmitting(false);
     }
   };
 
@@ -790,6 +823,20 @@ export default function DriverIncidentDetailScreen() {
                   </View>
                 )}
               </View>
+
+              {/* Nút xác nhận sang hàng nếu đang ở bước RESCUE_DISPATCHED */}
+              {incident.status === 'RESCUE_DISPATCHED' && (
+                <Pressable
+                  onPress={() => setIsTransloadModalVisible(true)}
+                  style={{ backgroundColor: colors.brand.primary, minHeight: 48 }}
+                  className="flex-row items-center justify-center gap-2 rounded-2xl mt-3 shadow-sm"
+                >
+                  <Ionicons name="swap-horizontal" size={20} color="#ffffff" />
+                  <Text className="font-bold text-white text-base">
+                    Xác nhận đã sang hàng sang xe {replacementVehicle?.truckPlate || 'mới'}
+                  </Text>
+                </Pressable>
+              )}
             </View>
           )
         )}
@@ -1170,19 +1217,35 @@ export default function DriverIncidentDetailScreen() {
               </Pressable>
             ) : null}
 
+            {/* CTA: Bước 3 Xác nhận đã sang hàng sang xe mới */}
+            {currentStep === 3 && incident.status === 'RESCUE_DISPATCHED' ? (
+              <Pressable
+                onPress={() => setIsTransloadModalVisible(true)}
+                style={{ backgroundColor: colors.brand.primary, minHeight: 48 }}
+                className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm"
+              >
+                <Ionicons name="swap-horizontal" size={20} color="#ffffff" />
+                <Text className="text-base font-bold text-white">
+                  Xác nhận đã sang hàng (Chuyển sang Bước 4)
+                </Text>
+              </Pressable>
+            ) : null}
+
+            {/* CTA: Bước 4 Mở chuyến xe để tiếp tục vận chuyển */}
+            {currentStep === 4 && (incident.status === 'TRANSLOAD_COMPLETED' || incident.status === 'CONTINUED') ? (
+              <Pressable
+                onPress={() => router.push(`/trips/${incident.tripId || currentTripId}` as never)}
+                style={{ backgroundColor: colors.brand.primary, minHeight: 48 }}
+                className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm"
+              >
+                <Ionicons name="navigate" size={18} color="#ffffff" />
+                <Text className="text-base font-bold text-white">Mở chuyến xe & Tiếp tục hành trình</Text>
+              </Pressable>
+            ) : null}
+
             {/* CTA: Bước 5 Hoàn tất & Đóng sự cố */}
             {currentStep === 5 && incident.status !== 'RESOLVED' ? (
               <View className="gap-2">
-                {incident.status === 'TRANSLOAD_COMPLETED' ? (
-                  <Pressable
-                    onPress={() => router.push(`/trips/${incident.tripId || currentTripId}` as never)}
-                    style={{ backgroundColor: colors.brand.primary, minHeight: 48 }}
-                    className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm"
-                  >
-                    <Ionicons name="navigate" size={18} color="#ffffff" />
-                    <Text className="text-base font-bold text-white">Mở chuyến xe để giao khách</Text>
-                  </Pressable>
-                ) : null}
                 <Pressable
                   onPress={() => setIsResolveModalVisible(true)}
                   style={{ borderColor: colors.status.success.main, backgroundColor: colors.status.success.bg, minHeight: 48 }}
@@ -1236,6 +1299,58 @@ export default function DriverIncidentDetailScreen() {
                   <ActivityIndicator color="#fff" />
                 ) : (
                   <Text className="font-bold text-white">Xác nhận</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── TRANSLOAD CONFIRMATION MODAL (CRITICAL STEP 3) ── */}
+      <Modal
+        visible={isTransloadModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setIsTransloadModalVisible(false)}
+      >
+        <View style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} className="flex-1 justify-end">
+          <View style={{ backgroundColor: colors.surface.card }} className="gap-4 rounded-t-3xl p-6">
+            <View className="flex-row items-center gap-2 border-b border-slate-100 pb-3">
+              <Ionicons name="swap-horizontal" size={22} color={colors.brand.primary} />
+              <Text style={{ color: colors.text.primary }} className="text-lg font-bold">
+                Xác nhận sang hàng sang xe mới
+              </Text>
+            </View>
+            <Text style={{ color: colors.text.secondary }} className="text-xs leading-5">
+              Xác nhận toàn bộ kiện hàng, mã LPN và thiết bị giám sát nhiệt độ IoT đã được chuyển đầy đủ sang xe cứu hộ <Text className="font-bold text-slate-800">{replacementVehicle?.truckPlate || 'thay thế'}</Text>.
+            </Text>
+            <TextInput
+              value={transloadNote}
+              onChangeText={setTransloadNote}
+              placeholder="Ghi chú xác nhận sang hàng (tùy chọn)..."
+              multiline
+              numberOfLines={3}
+              style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default, color: colors.text.primary }}
+              className="rounded-2xl border p-4 text-sm"
+            />
+            <View className="flex-row gap-3">
+              <Pressable
+                onPress={() => setIsTransloadModalVisible(false)}
+                style={{ borderColor: colors.border.default }}
+                className="flex-1 items-center rounded-2xl border p-3.5"
+              >
+                <Text style={{ color: colors.text.secondary }} className="font-semibold">Hủy</Text>
+              </Pressable>
+              <Pressable
+                onPress={handleConfirmTransload}
+                disabled={isTransloadSubmitting}
+                style={{ backgroundColor: colors.brand.primary, minHeight: 48 }}
+                className="flex-1 items-center justify-center rounded-2xl shadow-sm"
+              >
+                {isTransloadSubmitting ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text className="font-bold text-white">Xác nhận sang hàng</Text>
                 )}
               </Pressable>
             </View>
