@@ -8,6 +8,7 @@ import { GoongRouteMap } from '../../../components/customer/GoongRouteMap';
 import { TemperatureChart } from '../../../components/customer/TemperatureChart';
 import { TripAlertsSection } from '../../../components/driver/TripAlertsSection';
 import { TripOrdersSection } from '../../../components/driver/TripOrdersSection';
+import { StatusBadge } from '../../../components/StatusBadge';
 import { getApiErrorMessage } from '../../../services/apiClient';
 import {
   getTripAlerts, getTripRoute, getTripTemperatureChart, getTripTracking,
@@ -166,11 +167,11 @@ export default function DriverTripDetailScreen() {
   const loadIncident = useCallback(async () => {
     if (!token || !tripId) return;
     try {
-      const response = await getIncidents(token, tripId, 1, 1);
-      if (response.success && response.data?.data?.length) {
-        // Find first non-resolved incident, or the first one if all are resolved
-        const active = response.data.data.find((i: IncidentResponse) => i.status !== 'RESOLVED');
-        setActiveIncident(active || response.data.data[0]);
+      const response = await getIncidents(token, tripId, 1, 20);
+      if (response.success && response.data?.data && response.data.data.length > 0) {
+        const incidents = response.data.data;
+        const active = incidents.find((i: IncidentResponse) => i.status !== 'RESOLVED');
+        setActiveIncident(active || incidents[0]);
       } else {
         setActiveIncident(null);
       }
@@ -287,15 +288,126 @@ export default function DriverTripDetailScreen() {
           <Text style={{ color: colors.brand.primary }} className="text-xs font-bold">{STATUS[status.toUpperCase()] || status}</Text>
         </View>
       </View>
+
+      {/* ── NÚT THAO TÁC TRÊN ĐẦU: CHỨNG TỪ + XEM SỰ CỐ / BÁO SỰ CỐ ── */}
       <View className="flex-row gap-3">
         <Action icon="document-text-outline" label="Chứng từ" onPress={() => router.push(`/(driver)/trips/${tripId}/documents` as never)} />
-        <Action 
-          icon={activeIncident ? "warning" : "warning-outline"} 
-          label={activeIncident ? "Sự cố đang xử lý" : "Báo sự cố"} 
-          danger 
-          onPress={() => router.push(activeIncident ? `/(driver)/trips/${tripId}/incident-detail?incidentId=${activeIncident.incidentId}` as never : `/(driver)/trips/${tripId}/incident` as never)} 
-        />
+        {activeIncident ? (
+          <>
+            <Action 
+              icon="warning" 
+              label="Xem sự cố đã báo" 
+              danger 
+              onPress={() => router.push(`/(driver)/trips/${tripId}/incident-detail?incidentId=${activeIncident.incidentId}` as never)} 
+            />
+            <Action 
+              icon="add-circle-outline" 
+              label="Báo thêm" 
+              onPress={() => router.push(`/(driver)/trips/${tripId}/incident` as never)} 
+            />
+          </>
+        ) : (
+          <Action 
+            icon="warning-outline" 
+            label="Báo sự cố" 
+            danger 
+            onPress={() => router.push(`/(driver)/trips/${tripId}/incident` as never)} 
+          />
+        )}
       </View>
+
+      {/* ── CARD BANNER NỔI BẬT: THÔNG BÁO TIẾN TRÌNH SỰ CỐ ĐÃ BÁO CÁO ── */}
+      {activeIncident ? (
+        <Pressable
+          onPress={() =>
+            router.push(
+              `/(driver)/trips/${tripId}/incident-detail?incidentId=${activeIncident.incidentId}` as never
+            )
+          }
+          style={{
+            backgroundColor:
+              activeIncident.status === 'RESOLVED'
+                ? colors.status.success.bg
+                : activeIncident.severity === 'CRITICAL'
+                ? '#FEF2F2'
+                : colors.status.warning.bg,
+            borderColor:
+              activeIncident.status === 'RESOLVED'
+                ? colors.status.success.border
+                : activeIncident.severity === 'CRITICAL'
+                ? '#FECACA'
+                : colors.status.warning.border,
+          }}
+          className="flex-row items-center justify-between rounded-2xl border p-4 shadow-sm"
+        >
+          <View className="flex-row items-center gap-3 flex-1 pr-2">
+            <View
+              style={{
+                backgroundColor:
+                  activeIncident.status === 'RESOLVED'
+                    ? colors.status.success.main
+                    : activeIncident.severity === 'CRITICAL'
+                    ? '#DC2626'
+                    : colors.status.warning.main,
+              }}
+              className="h-10 w-10 items-center justify-center rounded-xl"
+            >
+              <Ionicons
+                name={activeIncident.status === 'RESOLVED' ? 'checkmark-done' : 'warning'}
+                size={22}
+                color="#ffffff"
+              />
+            </View>
+            <View className="flex-1">
+              <View className="flex-row items-center gap-2 mb-0.5">
+                <Text
+                  style={{
+                    color:
+                      activeIncident.status === 'RESOLVED'
+                        ? colors.status.success.main
+                        : activeIncident.severity === 'CRITICAL'
+                        ? '#B91C1C'
+                        : colors.status.warning.main,
+                  }}
+                  className="text-[11px] font-bold uppercase tracking-wider"
+                >
+                  {activeIncident.status === 'RESOLVED' ? 'Sự cố đã hoàn tất' : 'Chuyến có sự cố đã báo'}
+                </Text>
+                <StatusBadge status={activeIncident.status} showVietnameseLabel />
+              </View>
+              <Text
+                style={{ color: colors.text.primary }}
+                className="text-xs font-bold"
+                numberOfLines={1}
+              >
+                {activeIncident.description || 'Xem tiến trình xử lý & phương án cứu hộ'}
+              </Text>
+            </View>
+          </View>
+          <View className="flex-row items-center gap-1">
+            <Text
+              style={{
+                color:
+                  activeIncident.status === 'RESOLVED'
+                    ? colors.status.success.main
+                    : colors.brand.primary,
+              }}
+              className="text-xs font-bold"
+            >
+              Xem lại
+            </Text>
+            <Ionicons
+              name="chevron-forward"
+              size={16}
+              color={
+                activeIncident.status === 'RESOLVED'
+                  ? colors.status.success.main
+                  : colors.brand.primary
+              }
+            />
+          </View>
+        </Pressable>
+      ) : null}
 
       <Section title="Bản đồ tuyến đường" icon="map-outline">
         {errors.route ? <ErrorMessage message={errors.route} onRetry={loadRoute} /> : null}
