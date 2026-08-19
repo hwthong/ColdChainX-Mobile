@@ -57,7 +57,7 @@ export const LOW_STEPS: StepItem[] = [
 export function getStepsForSeverity(severity?: string, isExternalReefer?: boolean): StepItem[] {
   const s = severity?.toUpperCase();
   if (s === 'LOW') return LOW_STEPS;
-  if (s === 'MEDIUM' || s === 'HIGH') return WARNING_STEPS; // MEDIUM | HIGH → WARNING path
+  if (s === 'MEDIUM' || s === 'HIGH') return WARNING_STEPS;
   return isExternalReefer ? EXTERNAL_REEFER_STEPS : INTERNAL_FLEET_STEPS;
 }
 
@@ -73,7 +73,6 @@ export function getIncidentCurrentStepNumber(
     if (step.statuses.includes(upper)) return step.id;
   }
 
-  // Fallback nếu có escalation
   if (
     severity?.toUpperCase() === 'LOW' ||
     severity?.toUpperCase() === 'MEDIUM' ||
@@ -94,13 +93,11 @@ export function IncidentWorkflowStepper({
   selectedStep,
   onSelectStep,
 }: IncidentWorkflowStepperProps) {
-  // Normalize status lên uppercase để tránh lỗi so sánh case
   const normalizedStatus = status?.toUpperCase() ?? '';
   const allCriticalStatuses = (isExternalReefer ? EXTERNAL_REEFER_STEPS : INTERNAL_FLEET_STEPS).flatMap((s) => s.statuses);
   const allLowStatuses = LOW_STEPS.flatMap((s) => s.statuses);
   const allWarningStatuses = WARNING_STEPS.flatMap((s) => s.statuses);
 
-  // Nếu WARNING (MEDIUM|HIGH)/LOW escalate lên RESCUE_PLANNING trở đi → hiển thị CRITICAL stepper
   const isEscalated =
     (severity?.toUpperCase() === 'LOW' ||
       severity?.toUpperCase() === 'MEDIUM' ||
@@ -115,42 +112,74 @@ export function IncidentWorkflowStepper({
     : getStepsForSeverity(severity, isExternalReefer);
   const effectiveSeverity = isEscalated ? 'CRITICAL' : severity;
   const currentStep = getIncidentCurrentStepNumber(status, effectiveSeverity, isExternalReefer);
-
-  // Bước đang active hiển thị (nếu user chọn tua thì là selectedStep, mặc định là currentStep)
   const activeViewingStep = selectedStep ?? currentStep;
 
-  // Màu accent theo severity
+  // Accent and theme palette
   const accentColor =
     effectiveSeverity?.toUpperCase() === 'LOW'
-      ? '#16A34A'        // xanh lá
-      : effectiveSeverity?.toUpperCase() === 'MEDIUM' || effectiveSeverity?.toUpperCase() === 'HIGH' || effectiveSeverity?.toUpperCase() === 'WARNING'
-      ? '#D97706'        // cam/vàng
-      : colors.brand.primary; // CRITICAL → đỏ
+      ? '#16a34a'
+      : effectiveSeverity?.toUpperCase() === 'MEDIUM' ||
+        effectiveSeverity?.toUpperCase() === 'HIGH' ||
+        effectiveSeverity?.toUpperCase() === 'WARNING'
+      ? '#d97706'
+      : colors.brand.primary;
+
+  const badgeBg =
+    effectiveSeverity?.toUpperCase() === 'LOW'
+      ? '#f0fdf4'
+      : effectiveSeverity?.toUpperCase() === 'MEDIUM' ||
+        effectiveSeverity?.toUpperCase() === 'HIGH' ||
+        effectiveSeverity?.toUpperCase() === 'WARNING'
+      ? '#fffbeb'
+      : colors.brand.primarySoft;
+
+  const badgeBorder =
+    effectiveSeverity?.toUpperCase() === 'LOW'
+      ? '#bbf7d0'
+      : effectiveSeverity?.toUpperCase() === 'MEDIUM' ||
+        effectiveSeverity?.toUpperCase() === 'HIGH' ||
+        effectiveSeverity?.toUpperCase() === 'WARNING'
+      ? '#fde68a'
+      : colors.border.default;
 
   return (
     <View style={styles.container}>
       {/* Header Bar của Stepper: Badge nhánh + Gợi ý bấm tua */}
-      <View className="flex-row items-center justify-between">
-        <View style={[styles.branchBadge, { backgroundColor: accentColor + '20' }]}>
+      <View className="flex-row items-center justify-between pb-1">
+        <View
+          style={[
+            styles.branchBadge,
+            { backgroundColor: badgeBg, borderColor: badgeBorder },
+          ]}
+        >
+          <View
+            style={[
+              styles.statusDot,
+              { backgroundColor: accentColor },
+            ]}
+          />
           <Text style={[styles.branchText, { color: accentColor }]}>
-            {effectiveSeverity?.toUpperCase() === 'LOW' && '🟢 Sự cố nhẹ — Tự xử lý'}
+            {effectiveSeverity?.toUpperCase() === 'LOW' && 'Sự cố nhẹ — Tự xử lý'}
             {(effectiveSeverity?.toUpperCase() === 'MEDIUM' ||
               effectiveSeverity?.toUpperCase() === 'HIGH' ||
               effectiveSeverity?.toUpperCase() === 'WARNING') &&
-              '🟡 Cần theo dõi — WARNING'}
+              'Cần theo dõi nhiệt — Warning'}
             {(effectiveSeverity?.toUpperCase() === 'CRITICAL' || !effectiveSeverity) &&
               (isExternalReefer
-                ? '🔴 Cứu hộ — Xe ngoài về kho'
-                : '🔴 Cứu hộ — Xe nội bộ đổi sang hàng')}
+                ? 'Cứu hộ — Xe ngoài về kho'
+                : 'Cứu hộ — Xe nội bộ đổi sang hàng')}
           </Text>
         </View>
 
-        <Text className="text-[10px] font-medium text-slate-400">
-          Chạm bước để xem lại
-        </Text>
+        <View className="flex-row items-center gap-1">
+          <Ionicons name="hand-left-outline" size={11} color={colors.text.muted} />
+          <Text style={{ color: colors.text.muted }} className="text-[10px] font-medium">
+            Chạm để xem lại
+          </Text>
+        </View>
       </View>
 
-      {/* Steps row */}
+      {/* Steps Row with balanced spacing */}
       <View style={styles.stepsRow}>
         {steps.map((step, index) => {
           const isCurrent = step.id === currentStep;
@@ -160,7 +189,7 @@ export function IncidentWorkflowStepper({
 
           return (
             <React.Fragment key={step.id}>
-              {/* Step indicator node wrapped in Pressable for reviewing previous/next steps */}
+              {/* Step Node */}
               <Pressable
                 onPress={() => onSelectStep?.(step.id)}
                 hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
@@ -169,8 +198,14 @@ export function IncidentWorkflowStepper({
                 <View
                   style={[
                     styles.circle,
-                    isCurrent && [styles.circleCurrent, { borderColor: accentColor, backgroundColor: accentColor + '15' }],
-                    isCompleted && [styles.circleCompleted, { backgroundColor: accentColor }],
+                    isCurrent && [
+                      styles.circleCurrent,
+                      { borderColor: accentColor, backgroundColor: badgeBg },
+                    ],
+                    isCompleted && [
+                      styles.circleCompleted,
+                      { backgroundColor: accentColor },
+                    ],
                     !isCurrent && !isCompleted && styles.circleUpcoming,
                     isSelected && styles.circleSelectedRing,
                   ]}
@@ -186,14 +221,15 @@ export function IncidentWorkflowStepper({
                     {isCompleted ? '✓' : step.id}
                   </Text>
                 </View>
+
                 <Text
                   numberOfLines={1}
                   style={[
                     styles.label,
                     isCurrent && [styles.labelCurrent, { color: accentColor }],
-                    isCompleted && [styles.labelCompleted, { color: accentColor }],
+                    isCompleted && [styles.labelCompleted, { color: colors.text.primary }],
                     !isCurrent && !isCompleted && styles.labelUpcoming,
-                    isSelected && { fontWeight: '800', textDecorationLine: 'underline' },
+                    isSelected && { color: accentColor, fontWeight: '800' },
                   ]}
                 >
                   {step.label}
@@ -205,7 +241,9 @@ export function IncidentWorkflowStepper({
                 <View
                   style={[
                     styles.line,
-                    isCompleted ? [styles.lineCompleted, { backgroundColor: accentColor }] : styles.lineUpcoming,
+                    isCompleted
+                      ? [styles.lineCompleted, { backgroundColor: accentColor }]
+                      : styles.lineUpcoming,
                   ]}
                 />
               )}
@@ -216,19 +254,25 @@ export function IncidentWorkflowStepper({
 
       {/* Banner nhắc nhở khi đang tua lại xem bước cũ */}
       {selectedStep !== null && selectedStep !== undefined && selectedStep !== currentStep && (
-        <View className="flex-row items-center justify-between rounded-xl bg-slate-100 px-3 py-2 mt-1">
+        <View
+          style={{
+            backgroundColor: colors.surface.page,
+            borderColor: colors.border.default,
+          }}
+          className="flex-row items-center justify-between rounded-xl border px-3 py-2 mt-1"
+        >
           <View className="flex-row items-center gap-1.5 flex-1 pr-2">
-            <Ionicons name="time-outline" size={14} color="#475569" />
-            <Text numberOfLines={1} className="text-xs text-slate-700">
-              Đang xem: <Text className="font-bold">Bước {activeViewingStep} - {steps.find(s => s.id === activeViewingStep)?.label}</Text>
+            <Ionicons name="eye-outline" size={14} color={colors.brand.primary} />
+            <Text numberOfLines={1} style={{ color: colors.text.primary }} className="text-xs">
+              Đang xem: <Text className="font-bold">Bước {activeViewingStep} - {steps.find((s) => s.id === activeViewingStep)?.label}</Text>
             </Text>
           </View>
           <Pressable
             onPress={() => onSelectStep?.(currentStep)}
-            style={{ backgroundColor: accentColor }}
-            className="rounded-lg px-2.5 py-1"
+            style={{ backgroundColor: colors.brand.primary }}
+            className="rounded-lg px-2.5 py-1 shadow-sm"
           >
-            <Text className="text-[10px] font-bold text-white">
+            <Text style={{ color: colors.text.onPrimary }} className="text-[10px] font-bold">
               Về bước hiện tại (B{currentStep})
             </Text>
           </Pressable>
@@ -240,34 +284,44 @@ export function IncidentWorkflowStepper({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#ffffff',
-    paddingTop: 8,
-    gap: 6,
+    backgroundColor: colors.surface.card,
+    paddingTop: 4,
+    gap: 8,
   },
   branchBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
     alignSelf: 'flex-start',
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    marginBottom: 2,
+    borderRadius: 9999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 3.5,
+    gap: 6,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   branchText: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '700',
+    letterSpacing: 0.2,
   },
   stepsRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 4,
   },
   stepNode: {
     alignItems: 'center',
-    width: 54,
-    gap: 4,
+    width: 56,
+    gap: 5,
   },
   circle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -275,19 +329,27 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
   circleSelectedRing: {
-    shadowColor: '#000',
+    shadowColor: colors.brand.primary,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3,
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
     elevation: 4,
-    transform: [{ scale: 1.15 }],
+    transform: [{ scale: 1.12 }],
   },
-  circleCompleted: {},
+  circleCompleted: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   circleUpcoming: {
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#f1f5f9',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
   circleText: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '700',
   },
   circleTextCurrent: {
@@ -297,11 +359,12 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
   circleTextUpcoming: {
-    color: '#94A3B8',
+    color: '#94a3b8',
   },
   label: {
-    fontSize: 9,
+    fontSize: 10,
     textAlign: 'center',
+    letterSpacing: -0.2,
   },
   labelCurrent: {
     fontWeight: '700',
@@ -310,17 +373,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   labelUpcoming: {
-    color: '#94A3B8',
+    color: '#94a3b8',
     fontWeight: '400',
   },
   line: {
     flex: 1,
     height: 2,
-    marginBottom: 16,
+    marginBottom: 17,
     borderRadius: 1,
   },
   lineCompleted: {},
   lineUpcoming: {
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#e2e8f0',
   },
 });

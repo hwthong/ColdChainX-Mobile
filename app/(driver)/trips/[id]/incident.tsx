@@ -3,11 +3,29 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Pressable,
+  ScrollView,
+  Switch,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 import { colors } from '../../../../constants/colors';
-import { createIncident, getIncidentSubmitErrorMessage, IncidentSeverity, IncidentType } from '../../../../services/incidentApi';
-import { getTrackingByTripId, TrackingDataResponse } from '../../../../services/trackingApi';
+import {
+  createIncident,
+  getIncidentSubmitErrorMessage,
+  IncidentSeverity,
+  IncidentType,
+} from '../../../../services/incidentApi';
+import {
+  getTrackingByTripId,
+  TrackingDataResponse,
+} from '../../../../services/trackingApi';
 import { useAuthStore } from '../../../../store/useAuthStore';
 
 const DEVICE_LOCATION_TIMEOUT_MS = 10_000;
@@ -20,20 +38,29 @@ type IncidentLocation = {
   source: 'DEVICE' | 'IOT';
 };
 
-const INCIDENT_TYPES: { label: string; value: IncidentType; description: string }[] = [
-  { label: 'Xe hư', value: 'VEHICLE_BREAKDOWN', description: 'Động cơ, lốp xe, tai nạn kỹ thuật xe' },
-  { label: 'Thùng/máy lạnh hư', value: 'REEFER_BREAKDOWN', description: 'Hỏng máy lạnh, mất nhiệt, hở thùng' },
-  { label: 'Biến động nhiệt độ', value: 'TEMP_EXCURSION', description: 'Nhiệt độ vượt ngưỡng an toàn' },
-  { label: 'Hỏng hàng hóa', value: 'DAMAGE_CARGO', description: 'Bao bì rách, đổ vỡ kiện hàng' },
-  { label: 'Tai nạn', value: 'ACCIDENT', description: 'Va chạm giao thông trên đường' },
-  { label: 'Chậm trễ', value: 'DELAY', description: 'Ùn tắc hoặc sự cố thời gian' },
+const INCIDENT_TYPES: {
+  label: string;
+  value: IncidentType;
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+  description: string;
+}[] = [
+  { label: 'Xe hư hỏng', value: 'VEHICLE_BREAKDOWN', icon: 'car-sport-outline', description: 'Động cơ, lốp xe, kỹ thuật' },
+  { label: 'Thùng/máy lạnh', value: 'REEFER_BREAKDOWN', icon: 'snow-outline', description: 'Hỏng máy lạnh, mất nhiệt' },
+  { label: 'Biến động nhiệt', value: 'TEMP_EXCURSION', icon: 'thermometer-outline', description: 'Nhiệt vượt ngưỡng an toàn' },
+  { label: 'Hỏng hàng hóa', value: 'DAMAGE_CARGO', icon: 'cube-outline', description: 'Bao bì rách, đổ vỡ kiện' },
+  { label: 'Tai nạn', value: 'ACCIDENT', icon: 'warning-outline', description: 'Va chạm giao thông trên đường' },
+  { label: 'Chậm trễ', value: 'DELAY', icon: 'time-outline', description: 'Ùn tắc hoặc sự cố thời gian' },
 ];
 
-const SEVERITIES: { label: string; value: IncidentSeverity }[] = [
-  { label: 'Thấp', value: 'LOW' },
-  { label: 'Trung bình', value: 'MEDIUM' },
-  { label: 'Cao', value: 'HIGH' },
-  { label: 'Nghiêm trọng (CRITICAL)', value: 'CRITICAL' },
+const SEVERITIES: {
+  label: string;
+  value: IncidentSeverity;
+  color: string;
+}[] = [
+  { label: 'Thấp', value: 'LOW', color: '#16a34a' },
+  { label: 'Trung bình', value: 'MEDIUM', color: '#d97706' },
+  { label: 'Cao', value: 'HIGH', color: '#ea580c' },
+  { label: 'Nghiêm trọng (CRITICAL)', value: 'CRITICAL', color: '#dc2626' },
 ];
 
 export default function DriverTripIncidentScreen() {
@@ -46,7 +73,7 @@ export default function DriverTripIncidentScreen() {
   const [severity, setSeverity] = useState<IncidentSeverity>('CRITICAL');
   const [requiresRescue, setRequiresRescue] = useState(true);
   const [description, setDescription] = useState('');
-  const [amount, setAmount] = useState('0');
+  const [amount, setAmount] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [receiptUri, setReceiptUri] = useState<string | null>(null);
 
@@ -64,7 +91,7 @@ export default function DriverTripIncidentScreen() {
   const pickImage = async (setUri: (uri: string | null) => void) => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      quality: 0.5,
+      quality: 0.6,
     });
     if (!result.canceled && result.assets?.[0]?.uri) {
       setUri(result.assets[0].uri);
@@ -97,11 +124,11 @@ export default function DriverTripIncidentScreen() {
           );
           if (deviceLocation) return deviceLocation;
         } catch {
-          // Vehicle IoT is the business-safe fallback for an assigned trip.
+          // Fallback to vehicle IoT
         }
       }
     } catch {
-      // Permission/provider failures still allow a fresh vehicle IoT fallback.
+      // Fallback
     }
 
     try {
@@ -109,7 +136,7 @@ export default function DriverTripIncidentScreen() {
       const iotLocation = getFreshIotLocation(trackingResponse.data);
       if (trackingResponse.success && iotLocation) return iotLocation;
     } catch {
-      // The final message below reflects that neither source was available.
+      // Error
     } finally {
       setLocationLoading(false);
     }
@@ -134,7 +161,7 @@ export default function DriverTripIncidentScreen() {
   const handleSubmit = async () => {
     if (!token || !tripId) return;
     if (!description.trim()) {
-      Alert.alert('Lỗi', 'Vui lòng nhập mô tả sự cố.');
+      Alert.alert('Yêu cầu thông tin', 'Vui lòng nhập mô tả chi tiết sự cố.');
       return;
     }
 
@@ -154,7 +181,7 @@ export default function DriverTripIncidentScreen() {
       formData.append('RequiresRescue', String(requiresRescue));
       formData.append('CurrentLatitude', String(coords.latitude));
       formData.append('CurrentLongitude', String(coords.longitude));
-      if (amount) formData.append('DriverPaidAmount', amount);
+      if (amount.trim()) formData.append('DriverPaidAmount', amount.trim());
 
       if (photoUri) {
         const filename = photoUri.split('/').pop() || 'photo.jpg';
@@ -177,9 +204,9 @@ export default function DriverTripIncidentScreen() {
       if (res.success) {
         Alert.alert(
           'Thành công',
-          hasEvidence ? 'Đã gửi báo cáo sự cố kèm hình ảnh.' : 'Đã gửi báo cáo sự cố.'
+          hasEvidence ? 'Đã gửi báo cáo sự cố kèm hình ảnh minh chứng.' : 'Đã gửi báo cáo sự cố thành công.'
         );
-        router.replace(`/(driver)/trips/${tripId}/incident-detail?incidentId=${res.data?.incidentId}` as any);
+        router.replace(`/(driver)/trips/${tripId}/incident-detail?incidentId=${res.data?.incidentId}` as never);
       } else {
         Alert.alert('Lỗi', res.message || 'Không thể gửi báo cáo sự cố.');
       }
@@ -192,103 +219,300 @@ export default function DriverTripIncidentScreen() {
   };
 
   return (
-    <ScrollView style={{ backgroundColor: colors.surface.page }} className="flex-1" contentContainerStyle={{ padding: 20, gap: 16 }}>
-      <Text style={{ color: colors.text.secondary }} className="text-xs font-bold uppercase tracking-wider">Tạo Báo Cáo Sự Cố</Text>
-
-      <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-4 rounded-2xl border p-4 shadow-sm">
-        <Text style={{ color: colors.text.primary }} className="font-bold">Loại sự cố</Text>
-        <View className="flex-row flex-wrap gap-2">
-          {INCIDENT_TYPES.map((t) => (
-            <Pressable
-              key={t.value}
-              onPress={() => handleTypeChange(t.value)}
-              style={{
-                backgroundColor: type === t.value ? colors.surface.selected : colors.surface.card,
-                borderColor: type === t.value ? colors.border.selected : colors.border.default,
-              }}
-              className="rounded-xl border px-3 py-2"
-            >
-              <Text style={{ color: type === t.value ? colors.text.brand : colors.text.secondary }} className={type === t.value ? 'font-bold' : 'font-medium'}>{t.label}</Text>
-            </Pressable>
-          ))}
-        </View>
-
-        <Text style={{ color: colors.text.primary }} className="mt-2 font-bold">Mức độ</Text>
-        <View className="flex-row flex-wrap gap-2">
-          {SEVERITIES.map((s) => (
-            <Pressable
-              key={s.value}
-              onPress={() => setSeverity(s.value)}
-              style={{
-                backgroundColor: severity === s.value ? colors.surface.selected : colors.surface.card,
-                borderColor: severity === s.value ? colors.border.selected : colors.border.default,
-              }}
-              className="rounded-xl border px-3 py-2"
-            >
-              <Text style={{ color: severity === s.value ? colors.text.brand : colors.text.secondary }} className={severity === s.value ? 'font-bold' : 'font-medium'}>{s.label}</Text>
-            </Pressable>
-          ))}
-        </View>
-
-        <View style={{ backgroundColor: colors.surface.muted }} className="mt-2 flex-row items-center justify-between rounded-xl p-4">
-          <View className="flex-1 pr-4">
-            <Text style={{ color: colors.text.primary }} className="font-bold">Yêu cầu xe thay thế (Cứu hộ)</Text>
-            <Text style={{ color: colors.text.secondary }} className="text-xs">Bật nếu xe không thể tiếp tục chạy</Text>
+    <View style={{ backgroundColor: colors.surface.page }} className="flex-1">
+      {/* AppBar Header */}
+      <View
+        style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }}
+        className="border-b px-4 pt-12 pb-3 shadow-sm"
+      >
+        <View className="flex-row items-center justify-between">
+          <Pressable
+            onPress={() => router.back()}
+            style={{ backgroundColor: colors.brand.primarySoft }}
+            className="rounded-full p-2.5"
+          >
+            <Ionicons name="arrow-back" size={18} color={colors.brand.primary} />
+          </Pressable>
+          <View className="flex-1 px-3">
+            <Text style={{ color: colors.text.secondary }} className="text-[10px] font-bold uppercase tracking-wider">
+              Báo Cáo Sự Cố
+            </Text>
+            <Text numberOfLines={1} style={{ color: colors.text.primary }} className="text-base font-bold">
+              Chuyến {tripId?.slice(0, 8).toUpperCase() || '--'}
+            </Text>
           </View>
-          <Switch value={requiresRescue} onValueChange={setRequiresRescue} trackColor={{ true: colors.brand.primary }} />
-        </View>
-
-        <Text style={{ color: colors.text.primary }} className="mt-2 font-bold">Mô tả chi tiết *</Text>
-        <TextInput
-          style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default, color: colors.text.primary }}
-          className="h-24 rounded-xl border p-3 font-medium"
-          placeholder="Ví dụ: Xe hỏng lốp, tắc đường nghiêm trọng..."
-          placeholderTextColor={colors.text.muted}
-          multiline
-          value={description}
-          onChangeText={setDescription}
-          editable={!submitting}
-        />
-
-        <Text style={{ color: colors.text.primary }} className="mt-2 font-bold">Chi phí đã ứng (nếu có)</Text>
-        <TextInput
-          style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default, color: colors.text.primary }}
-          className="rounded-xl border p-3 font-medium"
-          placeholder="Nhập số tiền VNĐ"
-          placeholderTextColor={colors.text.muted}
-          keyboardType="numeric"
-          value={amount}
-          onChangeText={setAmount}
-          editable={!submitting}
-        />
-
-        <View className="mt-2 flex-row gap-3">
-          <Pressable onPress={() => pickImage(setPhotoUri)} style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="flex-1 items-center justify-center rounded-xl border border-dashed py-4">
-            <Ionicons name="camera-outline" size={24} color={colors.brand.primary} />
-            <Text style={{ color: colors.text.secondary }} className="mt-1 text-xs">{photoUri ? 'Đã chọn ảnh sự cố' : 'Thêm ảnh sự cố'}</Text>
-          </Pressable>
-          <Pressable onPress={() => pickImage(setReceiptUri)} style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="flex-1 items-center justify-center rounded-xl border border-dashed py-4">
-            <Ionicons name="receipt-outline" size={24} color={colors.brand.primary} />
-            <Text style={{ color: colors.text.secondary }} className="mt-1 text-xs">{receiptUri ? 'Đã chọn hóa đơn' : 'Thêm hóa đơn'}</Text>
-          </Pressable>
+          <View style={{ backgroundColor: colors.status.danger.bg }} className="rounded-full px-3 py-1">
+            <Text style={{ color: colors.status.danger.main }} className="text-xs font-bold">Báo Cáo</Text>
+          </View>
         </View>
       </View>
 
-      <Pressable
-        onPress={handleSubmit}
-        disabled={submitting || locationLoading}
-        style={{
-          backgroundColor: submitting || locationLoading ? colors.surface.muted : colors.brand.primary,
-        }}
-        className="items-center justify-center rounded-xl p-4"
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{ padding: 16, paddingBottom: 100, gap: 14 }}
       >
-        {submitting || locationLoading ? <ActivityIndicator color={colors.text.onPrimary} /> : <Text style={{ color: colors.text.onPrimary }} className="font-bold">Gửi Báo Cáo</Text>}
-      </Pressable>
+        {/* 1. LOẠI SỰ CỐ */}
+        <View
+          style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }}
+          className="gap-3 rounded-3xl border p-5 shadow-sm"
+        >
+          <View className="flex-row items-center gap-2 border-b border-slate-100 pb-2.5">
+            <Ionicons name="alert-circle" size={18} color={colors.brand.primary} />
+            <Text style={{ color: colors.text.primary }} className="text-sm font-bold">
+              1. Phân loại sự cố *
+            </Text>
+          </View>
 
-      <Pressable onPress={() => router.back()} disabled={submitting} className="items-center rounded-xl p-4">
-        <Text style={{ color: colors.brand.primary }} className="font-bold">Quay lại</Text>
-      </Pressable>
-    </ScrollView>
+          <View className="flex-row flex-wrap gap-2">
+            {INCIDENT_TYPES.map((t) => {
+              const isSelected = type === t.value;
+              return (
+                <Pressable
+                  key={t.value}
+                  onPress={() => handleTypeChange(t.value)}
+                  style={{
+                    backgroundColor: isSelected ? colors.brand.primarySoft : colors.surface.page,
+                    borderColor: isSelected ? colors.brand.primary : colors.border.default,
+                  }}
+                  className="flex-row items-center gap-1.5 rounded-2xl border px-3.5 py-2.5"
+                >
+                  <Ionicons
+                    name={t.icon}
+                    size={16}
+                    color={isSelected ? colors.brand.primary : colors.text.secondary}
+                  />
+                  <Text
+                    style={{
+                      color: isSelected ? colors.brand.primary : colors.text.primary,
+                      fontWeight: isSelected ? '700' : '500',
+                    }}
+                    className="text-xs"
+                  >
+                    {t.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* 2. MỨC ĐỘ & YÊU CẦU CỨU HỘ */}
+        <View
+          style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }}
+          className="gap-3 rounded-3xl border p-5 shadow-sm"
+        >
+          <View className="flex-row items-center gap-2 border-b border-slate-100 pb-2.5">
+            <Ionicons name="speedometer-outline" size={18} color={colors.brand.primary} />
+            <Text style={{ color: colors.text.primary }} className="text-sm font-bold">
+              2. Mức độ nghiêm trọng *
+            </Text>
+          </View>
+
+          <View className="flex-row flex-wrap gap-2">
+            {SEVERITIES.map((s) => {
+              const isSelected = severity === s.value;
+              return (
+                <Pressable
+                  key={s.value}
+                  onPress={() => setSeverity(s.value)}
+                  style={{
+                    backgroundColor: isSelected ? colors.brand.primarySoft : colors.surface.page,
+                    borderColor: isSelected ? colors.brand.primary : colors.border.default,
+                  }}
+                  className="flex-row items-center gap-1.5 rounded-2xl border px-3.5 py-2.5"
+                >
+                  <View
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: 4,
+                      backgroundColor: s.color,
+                    }}
+                  />
+                  <Text
+                    style={{
+                      color: isSelected ? colors.brand.primary : colors.text.primary,
+                      fontWeight: isSelected ? '700' : '500',
+                    }}
+                    className="text-xs"
+                  >
+                    {s.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {/* Switch Cứu hộ */}
+          <View
+            style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default }}
+            className="mt-1 flex-row items-center justify-between rounded-2xl border p-3.5"
+          >
+            <View className="flex-1 pr-3">
+              <Text style={{ color: colors.text.primary }} className="text-xs font-bold">
+                Yêu cầu xe thay thế (Cứu hộ bắt buộc)
+              </Text>
+              <Text style={{ color: colors.text.secondary }} className="text-[11px] mt-0.5">
+                Bật nếu phương tiện không thể tiếp tục vận chuyển
+              </Text>
+            </View>
+            <Switch
+              value={requiresRescue}
+              onValueChange={setRequiresRescue}
+              trackColor={{ false: '#e2e8f0', true: colors.brand.primary }}
+              thumbColor="#ffffff"
+            />
+          </View>
+        </View>
+
+        {/* 3. MÔ TẢ & CHI PHÍ */}
+        <View
+          style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }}
+          className="gap-3 rounded-3xl border p-5 shadow-sm"
+        >
+          <View className="flex-row items-center gap-2 border-b border-slate-100 pb-2.5">
+            <Ionicons name="document-text-outline" size={18} color={colors.brand.primary} />
+            <Text style={{ color: colors.text.primary }} className="text-sm font-bold">
+              3. Mô tả sự cố & Chi phí
+            </Text>
+          </View>
+
+          <View>
+            <Text style={{ color: colors.text.secondary }} className="text-xs font-semibold mb-1.5">
+              Mô tả chi tiết *
+            </Text>
+            <TextInput
+              style={{
+                backgroundColor: colors.surface.page,
+                borderColor: colors.border.default,
+                color: colors.text.primary,
+              }}
+              className="h-24 rounded-2xl border p-3.5 text-xs font-medium"
+              placeholder="Ví dụ: Xe hỏng lốp trên QL1A, mất nhiệt độ thùng xe..."
+              placeholderTextColor={colors.text.muted}
+              multiline
+              value={description}
+              onChangeText={setDescription}
+              editable={!submitting}
+            />
+          </View>
+
+          <View>
+            <Text style={{ color: colors.text.secondary }} className="text-xs font-semibold mb-1.5">
+              Số tiền đã ứng trước (VNĐ, nếu có)
+            </Text>
+            <TextInput
+              style={{
+                backgroundColor: colors.surface.page,
+                borderColor: colors.border.default,
+                color: colors.text.primary,
+              }}
+              className="rounded-2xl border p-3 text-xs font-medium"
+              placeholder="Nhập số tiền VNĐ (ví dụ: 500000)"
+              placeholderTextColor={colors.text.muted}
+              keyboardType="numeric"
+              value={amount}
+              onChangeText={setAmount}
+              editable={!submitting}
+            />
+          </View>
+        </View>
+
+        {/* 4. HÌNH ẢNH MINH CHỨNG */}
+        <View
+          style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }}
+          className="gap-3 rounded-3xl border p-5 shadow-sm"
+        >
+          <View className="flex-row items-center gap-2 border-b border-slate-100 pb-2.5">
+            <Ionicons name="camera-outline" size={18} color={colors.brand.primary} />
+            <Text style={{ color: colors.text.primary }} className="text-sm font-bold">
+              4. Hình ảnh & Hóa đơn chứng từ
+            </Text>
+          </View>
+
+          <View className="flex-row gap-3">
+            {/* Ảnh sự cố */}
+            <Pressable
+              onPress={() => pickImage(setPhotoUri)}
+              style={{
+                backgroundColor: photoUri ? '#ffffff' : colors.surface.page,
+                borderColor: photoUri ? colors.brand.primary : colors.border.default,
+              }}
+              className="flex-1 items-center justify-center rounded-2xl border border-dashed p-3.5 min-h-[90px]"
+            >
+              {photoUri ? (
+                <View className="items-center gap-1">
+                  <Image source={{ uri: photoUri }} className="h-12 w-12 rounded-xl" />
+                  <Text style={{ color: colors.brand.primary }} className="text-[10px] font-bold">
+                    Đổi ảnh sự cố
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  <Ionicons name="camera" size={24} color={colors.brand.primary} />
+                  <Text style={{ color: colors.text.secondary }} className="mt-1 text-xs font-medium">
+                    Ảnh sự cố
+                  </Text>
+                </>
+              )}
+            </Pressable>
+
+            {/* Ảnh hóa đơn */}
+            <Pressable
+              onPress={() => pickImage(setReceiptUri)}
+              style={{
+                backgroundColor: receiptUri ? '#ffffff' : colors.surface.page,
+                borderColor: receiptUri ? colors.brand.primary : colors.border.default,
+              }}
+              className="flex-1 items-center justify-center rounded-2xl border border-dashed p-3.5 min-h-[90px]"
+            >
+              {receiptUri ? (
+                <View className="items-center gap-1">
+                  <Image source={{ uri: receiptUri }} className="h-12 w-12 rounded-xl" />
+                  <Text style={{ color: colors.brand.primary }} className="text-[10px] font-bold">
+                    Đổi hóa đơn
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  <Ionicons name="receipt" size={24} color={colors.brand.primary} />
+                  <Text style={{ color: colors.text.secondary }} className="mt-1 text-xs font-medium">
+                    Hóa đơn/Biên lai
+                  </Text>
+                </>
+              )}
+            </Pressable>
+          </View>
+        </View>
+      </ScrollView>
+
+      {/* Fixed Bottom CTA */}
+      <View
+        style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }}
+        className="border-t p-4 shadow-lg"
+      >
+        <Pressable
+          onPress={handleSubmit}
+          disabled={submitting || locationLoading}
+          style={{
+            backgroundColor: submitting || locationLoading ? colors.surface.muted : colors.brand.primary,
+            minHeight: 50,
+          }}
+          className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm"
+        >
+          {submitting || locationLoading ? (
+            <ActivityIndicator color={colors.text.onPrimary} />
+          ) : (
+            <>
+              <Ionicons name="paper-plane" size={18} color={colors.text.onPrimary} />
+              <Text style={{ color: colors.text.onPrimary }} className="text-base font-bold">
+                Gửi Báo Cáo Sự Cố
+              </Text>
+            </>
+          )}
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
