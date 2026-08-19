@@ -93,6 +93,24 @@ export const STATUS_STYLES: Record<string, StatusStyle> = {
     border: '#BBF7D0',
     label: 'Đang giao khách',
   },
+  TRANSLOAD_COMPLETED: {
+    bg: '#F0FDF4',
+    text: '#166534',
+    border: '#BBF7D0',
+    label: 'Đã sang xe mới',
+  },
+  TRIAGED: {
+    bg: '#F0FDF4',
+    text: '#166534',
+    border: '#BBF7D0',
+    label: 'Tự xử lý',
+  },
+  MONITORING: {
+    bg: '#FFFBEB',
+    text: '#B45309',
+    border: '#FDE68A',
+    label: 'Đang theo dõi',
+  },
   RESOLVED: {
     bg: '#F0FDF4',
     text: '#166534',

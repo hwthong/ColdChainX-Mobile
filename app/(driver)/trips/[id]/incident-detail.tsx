@@ -52,6 +52,7 @@ const BREAKDOWN_TYPES = ['VEHICLE_BREAKDOWN', 'REEFER_BREAKDOWN'];
 export default function DriverIncidentDetailScreen() {
   const params = useLocalSearchParams<{ id?: string | string[]; incidentId?: string | string[] }>();
   const incidentId = Array.isArray(params.incidentId) ? params.incidentId[0] : params.incidentId;
+  const currentTripId = Array.isArray(params.id) ? params.id[0] : params.id;
   const router = useRouter();
   const token = useAuthStore((state) => state.token);
 
@@ -460,7 +461,39 @@ export default function DriverIncidentDetailScreen() {
           </View>
         )}
 
-        {/* Bước 5 CRITICAL: Chuyến mới đang giao */}
+        {/* Bước 5 CRITICAL: Đã đổi xe / Sang hàng cứu hộ xong — TRANSLOAD_COMPLETED */}
+        {incident.status === 'TRANSLOAD_COMPLETED' && (
+          <View style={{ backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }} className="gap-3 rounded-3xl border p-5 shadow-sm">
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row items-center gap-2">
+                <Ionicons name="checkmark-circle-outline" size={22} color="#166534" />
+                <Text className="text-base font-bold text-green-950">Đã Đổi Xe & Tiếp Tục Giao Hàng</Text>
+              </View>
+              <View className="rounded-lg bg-green-200 px-2 py-1">
+                <Text className="text-[10px] font-bold text-green-900">Đang giao khách</Text>
+              </View>
+            </View>
+            <Text className="text-xs leading-5 text-green-900">
+              Hàng hóa đã được sang xe thay thế an toàn. Tài xế tiếp tục hành trình giao hàng cho khách theo lộ trình.
+            </Text>
+            {incident.brokenVehicleId ? (
+              <InfoRow label="Xe cũ gặp sự cố" value={incident.brokenVehicleId} />
+            ) : null}
+            {incident.replacementVehicleId ? (
+              <InfoRow label="Xe thay thế hiện tại" value={incident.replacementVehicleId} />
+            ) : null}
+            {incident.tripCode || incident.tripId || currentTripId ? (
+              <InfoRow label="Mã chuyến đang chạy" value={incident.tripCode || incident.tripId || currentTripId || '--'} />
+            ) : null}
+            <View className="mt-1 rounded-xl bg-green-100 p-3">
+              <Text className="text-xs text-green-900">
+                ℹ <Text className="font-bold">Hướng dẫn:</Text> Mở chuyến xe để thực hiện giao hàng từng điểm dừng (Check-in & POD), hoặc đóng sự cố sau khi đã giao hàng hoàn tất.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Bước 5 CRITICAL: Chuyến mới đang giao — REDISPATCHED_TO_CUSTOMER */}
         {incident.status === 'REDISPATCHED_TO_CUSTOMER' && (
           <View style={{ backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }} className="gap-3 rounded-3xl border p-5 shadow-sm">
             <View className="flex-row items-center gap-2">
@@ -740,17 +773,47 @@ export default function DriverIncidentDetailScreen() {
           </View>
         )}
 
-        {/* CTA: CRITICAL — Resolve (chỉ khi REDISPATCHED_TO_CUSTOMER) */}
-        {incident.status === 'REDISPATCHED_TO_CUSTOMER' && (
-          <Pressable
-            onPress={() => setIsResolveModalVisible(true)}
-            style={{ backgroundColor: '#166534', minHeight: 48 }}
-            className="items-center justify-center rounded-2xl shadow-sm"
-          >
-            <Text style={{ color: colors.text.onPrimary }} className="text-base font-bold">
-              Đóng sự cố (Resolve)
-            </Text>
-          </Pressable>
+        {/* CTA: Bước 5 Giao khách — TRANSLOAD_COMPLETED hoặc REDISPATCHED_TO_CUSTOMER */}
+        {(incident.status === 'TRANSLOAD_COMPLETED' || incident.status === 'REDISPATCHED_TO_CUSTOMER') && (
+          <View className="gap-2.5">
+            {/* Nút mở chuyến xe để giao hàng từng điểm dừng (Check-in / POD) */}
+            {(incident.tripId || currentTripId) ? (
+              <Pressable
+                onPress={() => router.push(`/trips/${incident.tripId || currentTripId}` as never)}
+                style={{ backgroundColor: colors.brand.primary, minHeight: 48 }}
+                className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm px-4"
+              >
+                <Ionicons name="navigate" size={18} color={colors.text.onPrimary} />
+                <Text style={{ color: colors.text.onPrimary }} className="text-base font-bold">
+                  Mở chuyến xe để giao khách
+                </Text>
+              </Pressable>
+            ) : null}
+
+            {/* Nút đóng sự cố sau khi đã xử lý / giao hàng xong */}
+            <Pressable
+              onPress={() => setIsResolveModalVisible(true)}
+              style={{
+                backgroundColor: (incident.tripId || currentTripId) ? colors.surface.card : '#166534',
+                borderColor: '#166534',
+                borderWidth: (incident.tripId || currentTripId) ? 1.5 : 0,
+                minHeight: 48,
+              }}
+              className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm px-4"
+            >
+              <Ionicons
+                name="checkmark-done-circle"
+                size={20}
+                color={(incident.tripId || currentTripId) ? '#166534' : colors.text.onPrimary}
+              />
+              <Text
+                style={{ color: (incident.tripId || currentTripId) ? '#166534' : colors.text.onPrimary }}
+                className="text-base font-bold"
+              >
+                Hoàn tất & Đóng sự cố (Resolve)
+              </Text>
+            </Pressable>
+          </View>
         )}
 
         {/* CONTINUED / RESOLVED — Read-only */}
