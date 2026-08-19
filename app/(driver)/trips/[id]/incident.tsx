@@ -52,15 +52,18 @@ const INCIDENT_TYPES: {
   { label: 'Chậm trễ', value: 'DELAY', icon: 'time-outline', description: 'Ùn tắc hoặc sự cố thời gian' },
 ];
 
+export type IncidentUiRiskLevel = 'LOW' | 'WARNING' | 'CRITICAL';
+
 const SEVERITIES: {
   label: string;
-  value: IncidentSeverity;
+  value: IncidentUiRiskLevel;
+  backendSeverity: IncidentSeverity;
   color: string;
+  desc: string;
 }[] = [
-  { label: 'Thấp', value: 'LOW', color: '#16a34a' },
-  { label: 'Trung bình', value: 'MEDIUM', color: '#d97706' },
-  { label: 'Cao', value: 'HIGH', color: '#ea580c' },
-  { label: 'Nghiêm trọng (CRITICAL)', value: 'CRITICAL', color: '#dc2626' },
+  { label: 'Thấp (LOW)', value: 'LOW', backendSeverity: 'LOW', color: '#16a34a', desc: 'Sự cố nhẹ, tự xử lý tại chỗ' },
+  { label: 'Cảnh báo (WARNING)', value: 'WARNING', backendSeverity: 'MEDIUM', color: '#d97706', desc: 'Có nguy cơ, cần hỗ trợ' },
+  { label: 'Nghiêm trọng (CRITICAL)', value: 'CRITICAL', backendSeverity: 'CRITICAL', color: '#dc2626', desc: 'Cứu hộ bắt buộc / Đổi xe' },
 ];
 
 export default function DriverTripIncidentScreen() {
@@ -70,7 +73,7 @@ export default function DriverTripIncidentScreen() {
   const token = useAuthStore((state) => state.token);
 
   const [type, setType] = useState<IncidentType>('VEHICLE_BREAKDOWN');
-  const [severity, setSeverity] = useState<IncidentSeverity>('CRITICAL');
+  const [riskLevel, setRiskLevel] = useState<IncidentUiRiskLevel>('CRITICAL');
   const [requiresRescue, setRequiresRescue] = useState(true);
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
@@ -80,8 +83,17 @@ export default function DriverTripIncidentScreen() {
   const handleTypeChange = (selectedType: IncidentType) => {
     setType(selectedType);
     if (selectedType === 'VEHICLE_BREAKDOWN' || selectedType === 'REEFER_BREAKDOWN') {
-      setSeverity('CRITICAL');
+      setRiskLevel('CRITICAL');
       setRequiresRescue(true);
+    }
+  };
+
+  const handleRiskLevelChange = (selectedRisk: IncidentUiRiskLevel) => {
+    setRiskLevel(selectedRisk);
+    if (selectedRisk === 'CRITICAL') {
+      setRequiresRescue(true);
+    } else {
+      setRequiresRescue(false);
     }
   };
 
@@ -173,10 +185,12 @@ export default function DriverTripIncidentScreen() {
     }
 
     try {
+      const selectedSeverityConfig = SEVERITIES.find((s) => s.value === riskLevel) || SEVERITIES[2];
       const formData = new FormData();
       formData.append('TripId', tripId);
       formData.append('IncidentType', type);
-      formData.append('Severity', severity);
+      formData.append('Severity', selectedSeverityConfig.backendSeverity);
+      formData.append('RiskLevel', riskLevel);
       formData.append('Description', description.trim());
       formData.append('RequiresRescue', String(requiresRescue));
       formData.append('CurrentLatitude', String(coords.latitude));
@@ -310,16 +324,16 @@ export default function DriverTripIncidentScreen() {
 
           <View className="flex-row flex-wrap gap-2">
             {SEVERITIES.map((s) => {
-              const isSelected = severity === s.value;
+              const isSelected = riskLevel === s.value;
               return (
                 <Pressable
                   key={s.value}
-                  onPress={() => setSeverity(s.value)}
+                  onPress={() => handleRiskLevelChange(s.value)}
                   style={{
                     backgroundColor: isSelected ? colors.brand.primarySoft : colors.surface.page,
                     borderColor: isSelected ? colors.brand.primary : colors.border.default,
                   }}
-                  className="flex-row items-center gap-1.5 rounded-2xl border px-3.5 py-2.5"
+                  className="flex-row items-center gap-2 rounded-2xl border px-3.5 py-2.5"
                 >
                   <View
                     style={{
