@@ -280,7 +280,7 @@ export function TripOrdersSection({
 
                       {customerPhone ? (
                         <Pressable
-                          onPress={() => Linking.openURL(`tel:${customerPhone.replace(/\s+/g, '')}`)}
+                          onPress={() => Linking.openURL(`tel:${customerPhone.replace(/\s+/g, '')}`).catch(() => {})}
                           style={{
                             backgroundColor: colors.brand.primarySoft,
                           }}
