@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, AppState, RefreshControl, ScrollView, Text, View } from 'react-native';
 
 import { AppPressable as Pressable } from '../../../components/AppPressable';
@@ -247,6 +247,35 @@ export default function DriverTripDetailScreen() {
   const status = trip?.status || tracking?.status || 'UNKNOWN';
   const isCompleted = TERMINAL.has(status.toUpperCase());
 
+  const displayStops = useMemo<DriverTripStopDto[]>(() => {
+    if (trip?.stops && trip.stops.length > 0) {
+      return trip.stops;
+    }
+    if (route?.optimizedStops && route.optimizedStops.length > 0) {
+      return route.optimizedStops.map((s, idx) => ({
+        stopId: s.stopId || `route-stop-${idx}`,
+        stopSequence: s.optimizedSequence ?? s.originalStopSequence ?? idx + 1,
+        address: s.address || 'Điểm giao hàng',
+        plannedArrivalTime: (s as { plannedArrivalTime?: string }).plannedArrivalTime ?? null,
+        plannedDepartureTime: (s as { plannedDepartureTime?: string }).plannedDepartureTime ?? null,
+        status: (s as { status?: string }).status || 'PLANNED',
+        stopType: s.stopType || 'DELIVERY',
+      }));
+    }
+    if (tracking?.orders && tracking.orders.length > 0) {
+      return tracking.orders.map((o, idx) => ({
+        stopId: o.orderId,
+        stopSequence: idx + 1,
+        address: `Điểm giao hàng: ${o.itemName} (${o.trackingCode})`,
+        plannedArrivalTime: null,
+        plannedDepartureTime: null,
+        status: 'PLANNED',
+        stopType: 'DELIVERY',
+      }));
+    }
+    return [];
+  }, [trip?.stops, route?.optimizedStops, tracking?.orders]);
+
   return (
     <ScrollView style={{ backgroundColor: colors.surface.page }} className="flex-1" contentContainerStyle={{ padding: 20, paddingBottom: 100, gap: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.brand.primary} />}>
       <View className="flex-row items-start justify-between gap-3">
@@ -294,11 +323,11 @@ export default function DriverTripDetailScreen() {
         error={errors.alerts}
         onRetry={loadAlerts}
       />
-      <Section title={`Điểm dừng (${trip?.stopCount ?? 0})`} icon="trail-sign-outline">
-        {errors.trip ? <ErrorMessage message={errors.trip} onRetry={loadTrip} /> : null}
-        {trip?.stops?.map((stop, index) => (
+      <Section title={`Điểm dừng (${displayStops.length})`} icon="trail-sign-outline">
+        {errors.trip && !displayStops.length ? <ErrorMessage message={errors.trip} onRetry={loadTrip} /> : null}
+        {displayStops.map((stop, index) => (
           <StopRow 
-            key={stop.stopId}
+            key={stop.stopId || index}
             stop={stop}
             index={index} 
             onPress={() => router.push({
@@ -307,7 +336,7 @@ export default function DriverTripDetailScreen() {
             } as never)}
           />
         ))}
-        {!trip?.stops?.length ? <Empty message="Chưa có điểm dừng." /> : null}
+        {!displayStops.length ? <Empty message="Chưa có điểm dừng." /> : null}
       </Section>
     </ScrollView>
   );

@@ -209,26 +209,53 @@ export default function StopDetailScreen() {
         throw new Error('Không thể tải tuyến đường của chuyến.');
       }
 
-      const currentStop = tripDetail.stops.find((stop) => stop.stopId === stopId);
-      if (!currentStop) {
+      const route = routeResponse.data;
+      setServerSealNumber(trackingResponse.data?.sealNumber ?? null);
+
+      const routeStop = route.optimizedStops?.find((stop) => stop.stopId === stopId)
+        || route.optimizedStops?.find((_, idx) => `route-stop-${idx}` === stopId)
+        || (trackingResponse.data?.orders?.some((o) => o.orderId === stopId)
+          ? {
+              stopId,
+              address: trackingResponse.data.orders.find((o) => o.orderId === stopId)?.itemName || 'Điểm giao hàng',
+              orders: trackingResponse.data.orders.filter((o) => o.orderId === stopId).map((o) => ({
+                orderId: o.orderId,
+                trackingCode: o.trackingCode,
+                itemName: o.itemName,
+                tempCondition: o.tempCondition,
+              })),
+              lpns: [],
+            }
+          : undefined);
+
+      const currentStop: DriverTripStopDto | null =
+        tripDetail.stops?.find((stop) => stop.stopId === stopId) ??
+        (routeStop
+          ? ({
+              stopId: routeStop.stopId || stopId,
+              stopSequence: (routeStop as { optimizedSequence?: number; originalStopSequence?: number }).optimizedSequence ?? (routeStop as { originalStopSequence?: number }).originalStopSequence ?? 1,
+              address: (routeStop as { address?: string }).address || 'Điểm giao hàng',
+              status: (routeStop as { status?: string }).status || 'PLANNED',
+              stopType: (routeStop as { stopType?: string }).stopType || 'DELIVERY',
+            } as DriverTripStopDto)
+          : null);
+
+      if (!currentStop && !routeStop) {
         throw new ApiClientError('Stop không thuộc chuyến được giao.', 404);
       }
 
-      const route = routeResponse.data;
-      setServerSealNumber(trackingResponse.data?.sealNumber ?? null);
-      const routeStop = route.optimizedStops.find((stop) => stop.stopId === stopId);
       let routeOrders: TripRouteOrderDto[];
       let stopLocationId: string | null | undefined;
       let routeLpns: TripRouteLpnDto[];
 
       if (routeStop) {
         routeOrders = routeStop.orders;
-        stopLocationId = routeStop.locationId;
+        stopLocationId = (routeStop as { locationId?: string }).locationId;
         routeLpns = routeStop.lpns;
       } else {
         const boundaryPoint = resolveBoundaryPoint(
-          currentStop,
-          tripDetail.stops,
+          currentStop!,
+          tripDetail.stops ?? [],
           route.origin,
           route.destination
         );
