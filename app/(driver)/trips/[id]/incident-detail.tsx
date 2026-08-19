@@ -627,7 +627,7 @@ export default function DriverIncidentDetailScreen() {
 
                   {incident.externalReeferPlan.driverPhone ? (
                     <Pressable
-                      onPress={() => Linking.openURL(`tel:${incident.externalReeferPlan?.driverPhone}`)}
+                      onPress={() => handleMakePhoneCall(incident.externalReeferPlan?.driverPhone || '')}
                       style={{ backgroundColor: '#DCFCE7', borderColor: '#86EFAC' }}
                       className="mt-2 flex-row items-center justify-center gap-2 rounded-xl border py-2.5 shadow-xs"
                     >
@@ -646,7 +646,7 @@ export default function DriverIncidentDetailScreen() {
 
               {/* Nút gọi Dispatcher hỗ trợ */}
               <Pressable
-                onPress={() => Linking.openURL('tel:19006868')}
+                onPress={() => handleMakePhoneCall('19006868')}
                 style={{ backgroundColor: colors.brand.primarySoft }}
                 className="flex-row items-center justify-center gap-2 rounded-xl py-2.5"
               >
@@ -741,7 +741,7 @@ export default function DriverIncidentDetailScreen() {
 
               {/* Nút gọi Dispatcher hỗ trợ */}
               <Pressable
-                onPress={() => Linking.openURL('tel:19006868')}
+                onPress={() => handleMakePhoneCall('19006868')}
                 style={{ backgroundColor: colors.brand.primarySoft }}
                 className="flex-row items-center justify-center gap-2 rounded-xl py-2.5"
               >
