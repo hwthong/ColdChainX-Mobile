@@ -602,14 +602,14 @@ export default function DriverIncidentDetailScreen() {
 
               {/* KHỐI THÔNG TIN CHI TIẾT XE THAY THẾ */}
               <View style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default }} className="gap-3 rounded-2xl border p-4">
-                <View className="flex-row items-center justify-between border-b border-slate-200/60 pb-2">
-                  <View className="flex-row items-center gap-1.5">
+                <View className="flex-row items-center justify-between gap-2 border-b border-slate-200/60 pb-2">
+                  <View className="flex-row items-center gap-1.5 flex-1 mr-1">
                     <Ionicons name="shield-checkmark" size={16} color={colors.brand.primary} />
-                    <Text style={{ color: colors.text.primary }} className="text-xs font-bold uppercase tracking-wider">
+                    <Text style={{ color: colors.text.primary }} className="text-xs font-bold uppercase tracking-wider" numberOfLines={1}>
                       Xe thay thế được gán
                     </Text>
                   </View>
-                  <View style={{ backgroundColor: colors.status.success.bg, borderColor: colors.status.success.border }} className="rounded-full border px-2 py-0.5">
+                  <View style={{ backgroundColor: colors.status.success.bg, borderColor: colors.status.success.border }} className="rounded-full border px-2 py-0.5 shrink-0">
                     <Text style={{ color: colors.status.success.main }} className="text-[10px] font-bold">Xe nội bộ</Text>
                   </View>
                 </View>
@@ -757,11 +757,11 @@ export default function DriverIncidentDetailScreen() {
 
               {/* KHỐI HIỂN THỊ DANH SÁCH ĐƠN HÀNG, MÃ HÀNG, NGƯỜI NHẬN, ĐỊA CHỈ */}
               <View className="mt-2 gap-2.5">
-                <View className="flex-row items-center justify-between">
-                  <Text style={{ color: colors.text.primary }} className="text-xs font-bold uppercase tracking-wider">
-                    📦 Danh sách đơn hàng sang xe ({tripOrders.length || (tripLpns.length ? tripLpns.length : 0)} đơn):
+                <View className="flex-row items-center justify-between gap-2">
+                  <Text style={{ color: colors.text.primary }} className="text-xs font-bold uppercase tracking-wider flex-1 mr-1" numberOfLines={1}>
+                    📦 Đơn hàng sang xe ({tripOrders.length || (tripLpns.length ? tripLpns.length : 0)} đơn):
                   </Text>
-                  <View style={{ backgroundColor: colors.status.success.bg, borderColor: colors.status.success.border }} className="rounded-full border px-2 py-0.5">
+                  <View style={{ backgroundColor: colors.status.success.bg, borderColor: colors.status.success.border }} className="rounded-full border px-2 py-0.5 shrink-0">
                     <Text style={{ color: colors.status.success.main }} className="text-[10px] font-bold">Giữ nguyên giao tiếp</Text>
                   </View>
                 </View>
