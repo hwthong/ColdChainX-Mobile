@@ -3,6 +3,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   AppState,
   Linking,
   Modal,
@@ -302,7 +303,41 @@ export default function DriverTripDetailScreen() {
 
   const vehiclePosition = useMemo(() => getVehiclePosition(tracking), [tracking]);
 
-  const openGoogleMaps = useCallback(() => {
+  const safeOpenURL = useCallback(async (primaryUrl: string, fallbackUrl?: string) => {
+    try {
+      const supported = await Linking.canOpenURL(primaryUrl);
+      if (supported) {
+        await Linking.openURL(primaryUrl);
+        return;
+      }
+    } catch {
+      // ignore and try fallback
+    }
+
+    if (fallbackUrl) {
+      try {
+        const fallbackSupported = await Linking.canOpenURL(fallbackUrl);
+        if (fallbackSupported) {
+          await Linking.openURL(fallbackUrl);
+          return;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    // Final attempt to open
+    try {
+      await Linking.openURL(fallbackUrl || primaryUrl);
+    } catch {
+      Alert.alert(
+        'Thông báo',
+        'Không thể mở ứng dụng bản đồ trên thiết bị. Vui lòng kiểm tra ứng dụng bản đồ hoặc kết nối mạng.'
+      );
+    }
+  }, []);
+
+  const openGoogleMaps = useCallback(async () => {
     if (!route) return;
     const dest =
       route.destination?.lat && route.destination?.lon
@@ -313,13 +348,18 @@ export default function DriverTripDetailScreen() {
       : route.origin?.lat && route.origin?.lon
       ? `${route.origin.lat},${route.origin.lon}`
       : '';
-    const url = origin
+
+    const appUrl = origin
+      ? `comgooglemaps://?saddr=${origin}&daddr=${dest}&directionsmode=driving`
+      : `comgooglemaps://?daddr=${dest}&directionsmode=driving`;
+    const webUrl = origin
       ? `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}`
       : `https://www.google.com/maps/dir/?api=1&destination=${dest}`;
-    Linking.openURL(url);
-  }, [route, vehiclePosition]);
 
-  const openAppleMaps = useCallback(() => {
+    await safeOpenURL(appUrl, webUrl);
+  }, [route, vehiclePosition, safeOpenURL]);
+
+  const openAppleMaps = useCallback(async () => {
     if (!route) return;
     const dest =
       route.destination?.lat && route.destination?.lon
@@ -330,13 +370,18 @@ export default function DriverTripDetailScreen() {
       : route.origin?.lat && route.origin?.lon
       ? `${route.origin.lat},${route.origin.lon}`
       : '';
-    const url = origin
+
+    const appUrl = origin
+      ? `maps://?saddr=${origin}&daddr=${dest}&dirflg=d`
+      : `maps://?daddr=${dest}&dirflg=d`;
+    const webUrl = origin
       ? `https://maps.apple.com/?saddr=${origin}&daddr=${dest}`
       : `https://maps.apple.com/?daddr=${dest}`;
-    Linking.openURL(url);
-  }, [route, vehiclePosition]);
 
-  const openGoongMap = useCallback(() => {
+    await safeOpenURL(appUrl, webUrl);
+  }, [route, vehiclePosition, safeOpenURL]);
+
+  const openGoongMap = useCallback(async () => {
     if (!route) return;
     const destLat = route.destination?.lat;
     const destLon = route.destination?.lon;
@@ -349,8 +394,8 @@ export default function DriverTripDetailScreen() {
           ? `https://maps.goong.io/?origin=${originLat},${originLon}&destination=${destLat},${destLon}`
           : `https://maps.goong.io/?destination=${destLat},${destLon}`;
     }
-    Linking.openURL(url);
-  }, [route, vehiclePosition]);
+    await safeOpenURL(url);
+  }, [route, vehiclePosition, safeOpenURL]);
 
   if (loading) {
     return (
