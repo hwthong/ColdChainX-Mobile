@@ -1,12 +1,11 @@
 import React from 'react';
-import { Tabs, usePathname, useRouter } from 'expo-router';
+import { Tabs, usePathname } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { DriverHeader } from '../../components/DriverHeader';
 import { colors } from '../../constants/colors';
 
 export default function DriverLayout() {
   const pathname = usePathname();
-  const router = useRouter();
 
   // Detect if we are on a full-screen subroute (nested trip pages, incident details, notifications)
   const isNestedTrip =
@@ -53,37 +52,25 @@ export default function DriverLayout() {
           title: 'Tổng quan',
           tabBarIcon: ({ color }) => <Ionicons name="home-outline" size={24} color={color} />,
         }}
-        listeners={{
-          tabPress: (e) => {
-            e.preventDefault();
-            router.navigate('/(driver)/home');
-          },
-        }}
       />
       <Tabs.Screen
         name="trips"
         options={{
           title: 'Chuyến xe',
           tabBarIcon: ({ color }) => <Ionicons name="map-outline" size={24} color={color} />,
+          popToTopOnBlur: true,
         }}
-        listeners={{
-          tabPress: (e) => {
-            e.preventDefault();
-            router.navigate('/(driver)/trips');
+        listeners={({ navigation }) => ({
+          tabPress: () => {
+            navigation.navigate('trips', { screen: 'index' });
           },
-        }}
+        })}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Cá nhân',
           tabBarIcon: ({ color }) => <Ionicons name="person-outline" size={24} color={color} />,
-        }}
-        listeners={{
-          tabPress: (e) => {
-            e.preventDefault();
-            router.navigate('/(driver)/profile');
-          },
         }}
       />
       <Tabs.Screen
