@@ -468,7 +468,17 @@ export default function DriverIncidentDetailScreen() {
         className="border-b px-4 pb-3 shadow-sm"
       >
         <View className="flex-row items-center justify-between mb-2">
-          <Pressable onPress={() => router.back()} style={{ backgroundColor: colors.brand.primarySoft }} className="rounded-full p-2.5">
+          <Pressable
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace('/(driver)/trips');
+              }
+            }}
+            style={{ backgroundColor: colors.brand.primarySoft }}
+            className="rounded-full p-2.5"
+          >
             <Ionicons name="arrow-back" size={18} color={colors.brand.primary} />
           </Pressable>
           <View className="flex-1 px-3">
