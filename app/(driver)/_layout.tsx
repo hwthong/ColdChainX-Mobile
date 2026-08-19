@@ -58,7 +58,13 @@ export default function DriverLayout() {
         options={{
           title: 'Chuyến xe',
           tabBarIcon: ({ color }) => <Ionicons name="map-outline" size={24} color={color} />,
+          popToTopOnBlur: true,
         }}
+        listeners={({ navigation }) => ({
+          tabPress: () => {
+            navigation.navigate('trips', { screen: 'index' });
+          },
+        })}
       />
       <Tabs.Screen
         name="profile"
