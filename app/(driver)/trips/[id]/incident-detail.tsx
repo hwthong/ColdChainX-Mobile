@@ -624,12 +624,37 @@ export default function DriverIncidentDetailScreen() {
                   <InfoRow label="Nhiệt độ cam kết" value={`${incident.externalReeferPlan.agreedTemperature}°C`} />
                   <InfoRow label="Số seal niêm phong" value={incident.externalReeferPlan.sealNumber} />
                   <InfoRow label="Kho nhận bắt buộc" value={`${incident.externalReeferPlan.destinationWarehouseName || destinationWarehouseName} 🔒`} />
+
+                  {incident.externalReeferPlan.driverPhone ? (
+                    <Pressable
+                      onPress={() => Linking.openURL(`tel:${incident.externalReeferPlan?.driverPhone}`)}
+                      style={{ backgroundColor: '#DCFCE7', borderColor: '#86EFAC' }}
+                      className="mt-2 flex-row items-center justify-center gap-2 rounded-xl border py-2.5 shadow-xs"
+                    >
+                      <Ionicons name="call" size={16} color="#16A34A" />
+                      <Text style={{ color: '#15803D' }} className="text-xs font-bold">
+                        Gọi tài xế xe cứu hộ ({incident.externalReeferPlan.driverPhone})
+                      </Text>
+                    </Pressable>
+                  ) : null}
                 </View>
               ) : (
                 <Text style={{ color: colors.text.secondary }} className="text-xs leading-5">
                   Dispatcher đang liên hệ đối tác xe lạnh chuyên dụng để điều xe cứu hộ đến vị trí sự cố.
                 </Text>
               )}
+
+              {/* Nút gọi Dispatcher hỗ trợ */}
+              <Pressable
+                onPress={() => Linking.openURL('tel:19006868')}
+                style={{ backgroundColor: colors.brand.primarySoft }}
+                className="flex-row items-center justify-center gap-2 rounded-xl py-2.5"
+              >
+                <Ionicons name="headset" size={16} color={colors.brand.primary} />
+                <Text style={{ color: colors.brand.primary }} className="text-xs font-bold">
+                  Gọi Hotline Dispatcher hỗ trợ (1900 6868)
+                </Text>
+              </Pressable>
 
               <View style={{ backgroundColor: colors.brand.primarySoft }} className="rounded-2xl p-3">
                 <Text style={{ color: colors.text.primary }} className="text-xs leading-4">
@@ -713,6 +738,18 @@ export default function DriverIncidentDetailScreen() {
                   ) : null}
                 </View>
               </View>
+
+              {/* Nút gọi Dispatcher hỗ trợ */}
+              <Pressable
+                onPress={() => Linking.openURL('tel:19006868')}
+                style={{ backgroundColor: colors.brand.primarySoft }}
+                className="flex-row items-center justify-center gap-2 rounded-xl py-2.5"
+              >
+                <Ionicons name="headset" size={16} color={colors.brand.primary} />
+                <Text style={{ color: colors.brand.primary }} className="text-xs font-bold">
+                  Gọi Hotline Dispatcher hỗ trợ (1900 6868)
+                </Text>
+              </Pressable>
 
               <View style={{ backgroundColor: colors.brand.primarySoft }} className="rounded-2xl p-3">
                 <Text style={{ color: colors.text.primary }} className="text-xs leading-4">

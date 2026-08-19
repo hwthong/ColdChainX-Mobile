@@ -267,6 +267,12 @@ export default function DriverTripDetailScreen() {
     return [];
   }, [trip?.stops, route?.optimizedStops, tracking?.orders]);
 
+  const nextStopIndex = useMemo(() => {
+    return displayStops.findIndex(
+      (stop) => (stop.status?.toUpperCase() || '') !== 'DEPARTED'
+    );
+  }, [displayStops]);
+
   if (loading) {
     return (
       <View style={{ backgroundColor: colors.surface.page }} className="flex-1 items-center justify-center">
@@ -467,6 +473,7 @@ export default function DriverTripDetailScreen() {
             key={stop.stopId || index}
             stop={stop}
             index={index} 
+            isNextStop={index === nextStopIndex}
             onPress={() => router.push({
               pathname: '/(driver)/trips/stop/[stopId]',
               params: { stopId: stop.stopId, tripId },
@@ -526,24 +533,95 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function StopRow({ stop, index, onPress }: { stop: DriverTripStopDto; index: number; onPress: () => void }) {
+function StopRow({
+  stop,
+  index,
+  isNextStop = false,
+  onPress,
+}: {
+  stop: DriverTripStopDto;
+  index: number;
+  isNextStop?: boolean;
+  onPress: () => void;
+}) {
   const status = stop.status?.toUpperCase() || 'UNKNOWN';
-  const disabled = !stop.stopId || status === 'DEPARTED';
+  const isDeparted = status === 'DEPARTED';
+  const disabled = !stop.stopId || isDeparted;
+
+  if (isNextStop) {
+    return (
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => ({
+          backgroundColor: pressed ? '#EFF6FF' : '#F0FDF4',
+          borderColor: '#86EFAC',
+          opacity: pressed ? 0.8 : 1,
+        })}
+        className="rounded-2xl border-2 p-4 shadow-xs"
+      >
+        <View className="mb-2 flex-row items-center justify-between">
+          <View className="flex-row items-center gap-2">
+            <View style={{ backgroundColor: '#16A34A' }} className="h-6 w-6 items-center justify-center rounded-full">
+              <Text style={{ color: '#ffffff' }} className="text-xs font-bold">{stop.stopSequence ?? index + 1}</Text>
+            </View>
+            <View style={{ backgroundColor: '#DCFCE7' }} className="rounded-full px-2.5 py-0.5">
+              <Text style={{ color: '#15803D' }} className="text-[10px] font-bold uppercase tracking-wider">
+                🎯 Điểm tiếp theo
+              </Text>
+            </View>
+          </View>
+          <Text style={{ color: '#16A34A' }} className="text-xs font-bold">
+            {STOP_STATUS[status] || status}
+          </Text>
+        </View>
+
+        <Text style={{ color: colors.text.primary }} className="text-sm font-bold leading-5">
+          {stop.address || 'Chưa có địa chỉ'}
+        </Text>
+
+        <View className="mt-3 flex-row items-center justify-between border-t border-emerald-100 pt-2.5">
+          <Text style={{ color: colors.text.secondary }} className="text-[11px]">
+            Chạm để mở Check-in & Giao hàng
+          </Text>
+          <View style={{ backgroundColor: '#16A34A' }} className="flex-row items-center gap-1 rounded-lg px-3 py-1.5 shadow-xs">
+            <Text className="text-xs font-bold text-white">Giao hàng</Text>
+            <Ionicons name="arrow-forward" size={12} color="#ffffff" />
+          </View>
+        </View>
+      </Pressable>
+    );
+  }
+
   return (
     <Pressable
       disabled={disabled}
       onPress={onPress}
-      className="flex-row items-center gap-3"
+      className={`flex-row items-center gap-3 rounded-xl p-2.5 ${isDeparted ? 'bg-slate-50' : 'bg-transparent'}`}
       style={({ pressed }) => ({ opacity: disabled ? 0.5 : pressed ? 0.7 : 1 })}
     >
-      <View style={{ backgroundColor: colors.brand.primary }} className="h-7 w-7 items-center justify-center rounded-full">
-        <Text style={{ color: colors.text.onPrimary }} className="text-xs font-bold">{stop.stopSequence ?? index + 1}</Text>
+      <View
+        style={{ backgroundColor: isDeparted ? colors.text.muted : colors.brand.primary }}
+        className="h-7 w-7 items-center justify-center rounded-full"
+      >
+        <Text style={{ color: colors.text.onPrimary }} className="text-xs font-bold">
+          {isDeparted ? '✓' : stop.stopSequence ?? index + 1}
+        </Text>
       </View>
       <View className="flex-1">
-        <Text style={{ color: colors.text.primary }} className="font-semibold">{stop.address || 'Chưa có địa chỉ'}</Text>
-        <Text style={{ color: colors.brand.primary }} className="mt-1 text-xs font-semibold">{STOP_STATUS[status] || 'Chưa xác định'}</Text>
+        <Text
+          style={{
+            color: isDeparted ? colors.text.muted : colors.text.primary,
+            textDecorationLine: isDeparted ? 'line-through' : 'none',
+          }}
+          className="text-xs font-semibold"
+        >
+          {stop.address || 'Chưa có địa chỉ'}
+        </Text>
+        <Text style={{ color: isDeparted ? colors.text.muted : colors.brand.primary }} className="mt-0.5 text-[11px] font-medium">
+          {STOP_STATUS[status] || 'Chưa xác định'}
+        </Text>
       </View>
-      {!disabled ? <Ionicons name="chevron-forward" size={20} color={colors.brand.primary} /> : null}
+      {!disabled ? <Ionicons name="chevron-forward" size={18} color={colors.brand.primary} /> : null}
     </Pressable>
   );
 }
