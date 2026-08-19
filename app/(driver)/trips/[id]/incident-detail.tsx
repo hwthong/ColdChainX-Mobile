@@ -15,7 +15,10 @@ import {
   View,
 } from 'react-native';
 
-import { IncidentWorkflowStepper } from '../../../../components/driver/IncidentWorkflowStepper';
+import {
+  getIncidentCurrentStepNumber,
+  IncidentWorkflowStepper,
+} from '../../../../components/driver/IncidentWorkflowStepper';
 import { StatusBadge } from '../../../../components/StatusBadge';
 import { colors } from '../../../../constants/colors';
 import { getApiErrorMessage } from '../../../../services/apiClient';
@@ -62,6 +65,9 @@ export default function DriverIncidentDetailScreen() {
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
+  // ── Tua xem lại các bước trên Stepper ──────────────────────────────────────
+  const [selectedStep, setSelectedStep] = useState<number | null>(null);
+
   // ── Nhánh CRITICAL: Containment checkbox ──────────────────────────────────
   const [containmentConfirmed, setContainmentConfirmed] = useState(false);
 
@@ -70,7 +76,7 @@ export default function DriverIncidentDetailScreen() {
   const [continueTripNote, setContinueTripNote] = useState('');
   const [isContinueTripSubmitting, setIsContinueTripSubmitting] = useState(false);
 
-  // ── Resolve Modal (chỉ khi REDISPATCHED_TO_CUSTOMER) ──────────────────────
+  // ── Resolve Modal ─────────────────────────────────────────────────────────
   const [isResolveModalVisible, setIsResolveModalVisible] = useState(false);
   const [resolveNote, setResolveNote] = useState('');
   const [isSubmittingResolve, setIsSubmittingResolve] = useState(false);
@@ -147,8 +153,6 @@ export default function DriverIncidentDetailScreen() {
   };
 
   // ── CRITICAL: Xác nhận Containment ────────────────────────────────────────
-  // FE hard-code riskLevel=CRITICAL — không cho Driver chọn mức thấp hơn
-  // cho VEHICLE_BREAKDOWN / REEFER_BREAKDOWN.
   const handleAssessContainment = async () => {
     if (!containmentConfirmed) {
       Alert.alert('Yêu cầu xác nhận', 'Vui lòng đánh dấu vào ô xác nhận đã đóng kín và bảo toàn hàng.');
@@ -202,8 +206,6 @@ export default function DriverIncidentDetailScreen() {
   };
 
   // ── Resolve sự cố ─────────────────────────────────────────────────────────
-  // Chỉ cho phép khi REDISPATCHED_TO_CUSTOMER (CRITICAL path).
-  // Spec: "Không cho resolve ở READY_FOR_REDISPATCH hoặc REDISPATCH_PLANNED"
   const handleConfirmResolve = async () => {
     if (!token || !incidentId) return;
     setIsSubmittingResolve(true);
@@ -228,7 +230,6 @@ export default function DriverIncidentDetailScreen() {
   };
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Render guards
   if (loading) {
     return (
       <View style={{ backgroundColor: colors.surface.page }} className="flex-1 items-center justify-center">
@@ -268,26 +269,26 @@ export default function DriverIncidentDetailScreen() {
 
   // ─────────────────────────────────────────────────────────────────────────
   const isBreakdown = BREAKDOWN_TYPES.includes(incident.incidentType);
-  // Backend severity: LOW | MEDIUM | HIGH | CRITICAL
-  // MEDIUM và HIGH → WARNING path (theo dõi, có thể escalate lên CRITICAL)
-  // Chỉ CRITICAL mới bắt buộc cứu hộ toàn diện
   const isCritical = incident.severity === 'CRITICAL';
-  const isWarning = incident.severity === 'MEDIUM' || incident.severity === 'HIGH'; // MEDIUM|HIGH → WARNING
+  const isWarning = incident.severity === 'MEDIUM' || incident.severity === 'HIGH';
   const isLow = incident.severity === 'LOW';
-  // Non-breakdown REPORTED chờ hệ thống phân loại
-  const isNonBreakdownReported =
-    !isBreakdown && incident.status === 'REPORTED';
+  const isNonBreakdownReported = !isBreakdown && incident.status === 'REPORTED';
 
   const destinationWarehouseName =
     incident.externalReeferPlan?.destinationWarehouseName ||
     incident.externalReeferPlan?.routeDestinationCity ||
     'Kho đích tuyến';
 
+  // Bước hiện tại thực tế trên hệ thống
+  const currentStep = getIncidentCurrentStepNumber(incident.status, incident.severity);
+  // Bước đang xem (tua lại hoặc hiện tại)
+  const activeStep = selectedStep ?? currentStep;
+
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <View style={{ backgroundColor: colors.surface.page }} className="flex-1">
 
-      {/* 3.0 APPBAR CỐ ĐỊNH: mã Incident, badge trạng thái, stepper */}
+      {/* 3.0 APPBAR CỐ ĐỊNH: mã Incident, badge trạng thái, stepper có thể bấm tua */}
       <View
         style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }}
         className="border-b px-4 pt-12 pb-3 shadow-sm"
@@ -307,8 +308,13 @@ export default function DriverIncidentDetailScreen() {
           <StatusBadge status={incident.status} showVietnameseLabel />
         </View>
 
-        {/* Stepper — truyền severity để chọn đúng template */}
-        <IncidentWorkflowStepper status={incident.status} severity={incident.severity} />
+        {/* Stepper tương tác: cho phép chạm vào từng bước để tua xem thông tin */}
+        <IncidentWorkflowStepper
+          status={incident.status}
+          severity={incident.severity}
+          selectedStep={selectedStep}
+          onSelectStep={(step) => setSelectedStep(step)}
+        />
       </View>
 
       {/* ── SCROLL CONTENT ─────────────────────────────────────────────────── */}
@@ -318,8 +324,8 @@ export default function DriverIncidentDetailScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.brand.primary} />}
       >
 
-        {/* Kho đích (chỉ hiển thị khi đang ở CRITICAL rescue flow) */}
-        {isCritical && incident.externalReeferPlan && (
+        {/* Kho đích bắt buộc (chỉ hiển thị trong nhánh CRITICAL) */}
+        {isCritical && (
           <View
             style={{ backgroundColor: '#F8FAFC', borderColor: '#CBD5E1' }}
             className="flex-row items-center justify-between rounded-2xl border p-4 shadow-sm"
@@ -344,289 +350,241 @@ export default function DriverIncidentDetailScreen() {
         )}
 
         {/* ════════════════════════════════════════════════════════════════════
-            NHÁNH CRITICAL — VEHICLE_BREAKDOWN / REEFER_BREAKDOWN
-            (Backend luôn ép CRITICAL cho 2 loại này)
+            HIỂN THỊ CHI TIẾT THEO BƯỚC ĐANG CHỌN (activeStep)
             ════════════════════════════════════════════════════════════════════ */}
 
-        {/* Bước 1 CRITICAL: Containment checklist */}
-        {isBreakdown && (incident.status === 'REPORTED' || incident.status === 'CONTAINMENT_REQUIRED') && (
+        {/* ─── BƯỚC 1: BÁO SỰ CỐ & BẢO TOÀN HÀNG ─── */}
+        {activeStep === 1 && (
           <View style={{ backgroundColor: '#FEF2F2', borderColor: '#FECACA' }} className="gap-3 rounded-3xl border p-5 shadow-sm">
-            <View className="flex-row items-center gap-2">
-              <Ionicons name="shield-checkmark" size={22} color="#991B1B" />
-              <Text className="text-base font-bold text-red-900">Checklist Bảo Toàn Hàng Hóa</Text>
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row items-center gap-2">
+                <Ionicons name="shield-checkmark" size={22} color="#991B1B" />
+                <Text className="text-base font-bold text-red-900">Bước 1: Báo Cáo & Bảo Toàn Hàng</Text>
+              </View>
+              <View className="rounded-lg bg-red-200 px-2 py-1">
+                <Text className="text-[10px] font-bold text-red-950">
+                  {currentStep > 1 ? '✓ Đã hoàn tất' : 'Bước hiện tại'}
+                </Text>
+              </View>
             </View>
+
             <Text className="text-xs leading-5 text-red-800">
-              Sự cố xe / máy lạnh hư luôn được xác định là{' '}
-              <Text className="font-bold">CRITICAL</Text>. Đóng kín cửa thùng ngay để giữ nhiệt cho toàn bộ hàng.
+              Sự cố xe / máy lạnh hư luôn được xác định là <Text className="font-bold">CRITICAL</Text>. Đóng kín cửa thùng xe ngay lập tức để bảo vệ cold chain.
             </Text>
-            <Pressable
-              onPress={() => setContainmentConfirmed(!containmentConfirmed)}
-              style={{
-                backgroundColor: colors.surface.card,
-                borderColor: containmentConfirmed ? colors.brand.primary : colors.border.default,
-              }}
-              className="flex-row items-center gap-3 rounded-2xl border p-4"
-            >
-              <Ionicons
-                name={containmentConfirmed ? 'checkbox' : 'square-outline'}
-                size={26}
-                color={containmentConfirmed ? colors.brand.primary : colors.text.secondary}
-              />
-              <Text style={{ color: colors.text.primary }} className="flex-1 text-sm font-semibold">
-                Tôi xác nhận hàng đã được đóng kín và bảo toàn
-              </Text>
-            </Pressable>
+
+            {/* Checkbox: chỉ tương tác nếu đang ở Bước 1 và chưa xác nhận */}
+            {currentStep === 1 && (incident.status === 'REPORTED' || incident.status === 'CONTAINMENT_REQUIRED') ? (
+              <Pressable
+                onPress={() => setContainmentConfirmed(!containmentConfirmed)}
+                style={{
+                  backgroundColor: colors.surface.card,
+                  borderColor: containmentConfirmed ? colors.brand.primary : colors.border.default,
+                }}
+                className="flex-row items-center gap-3 rounded-2xl border p-4"
+              >
+                <Ionicons
+                  name={containmentConfirmed ? 'checkbox' : 'square-outline'}
+                  size={26}
+                  color={containmentConfirmed ? colors.brand.primary : colors.text.secondary}
+                />
+                <Text style={{ color: colors.text.primary }} className="flex-1 text-sm font-semibold">
+                  Tôi xác nhận hàng đã được đóng kín và bảo toàn
+                </Text>
+              </Pressable>
+            ) : (
+              <View className="rounded-2xl bg-white/80 p-3.5 border border-red-200">
+                <View className="flex-row items-center gap-2">
+                  <Ionicons name="checkmark-circle" size={18} color="#166534" />
+                  <Text className="text-xs font-bold text-green-900">
+                    Đã hoàn thành xác nhận bảo toàn hàng hóa
+                  </Text>
+                </View>
+                {incident.containmentConfirmedAt ? (
+                  <Text className="text-[11px] text-slate-600 mt-1">
+                    Thời gian: {new Date(incident.containmentConfirmedAt).toLocaleString('vi-VN')}
+                  </Text>
+                ) : null}
+              </View>
+            )}
           </View>
         )}
 
-        {/* Bước 2 CRITICAL: Đang lập phương án — Dispatcher thuê xe (web) */}
-        {isCritical && incident.status === 'RESCUE_PLANNING' && (
-          <View style={{ backgroundColor: '#FFF7ED', borderColor: '#FED7AA' }} className="gap-3 rounded-3xl border p-5 shadow-sm">
-            <View className="flex-row items-center gap-2">
-              <Ionicons name="construct-outline" size={22} color="#C2410C" />
-              <Text className="text-base font-bold text-amber-900">Đang Lập Phương Án Cứu Hộ</Text>
-            </View>
-            <Text className="text-xs leading-5 text-amber-800">
-              Dispatcher đang thuê xe lạnh ngoài để cứu hộ. Hàng sẽ được vận chuyển về{' '}
-              <Text className="font-bold">{destinationWarehouseName}</Text>. Vui lòng giữ nguyên vị trí và bảo toàn hàng.
-            </Text>
-            <View className="rounded-xl bg-amber-100 p-3">
-              <Text className="text-xs text-amber-900">
-                ℹ <Text className="font-bold">Lưu ý:</Text> Không tự tiếp tục giao hàng. Chờ xe cứu hộ đến.
-              </Text>
-            </View>
-          </View>
-        )}
-
-        {/* Bước 2/3 CRITICAL: Theo dõi xe lạnh ngoài — Driver chỉ xem */}
-        {incident.status === 'EXTERNAL_REEFER_IN_TRANSIT' && incident.externalReeferPlan && (
+        {/* ─── BƯỚC 2: XE LẠNH THUÊ NGOÀI / LẬP PHƯƠNG ÁN CỨU HỘ ─── */}
+        {activeStep === 2 && (
           <View style={{ backgroundColor: '#FFF7ED', borderColor: '#FED7AA' }} className="gap-3 rounded-3xl border p-5 shadow-sm">
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-2">
                 <Ionicons name="car-outline" size={22} color="#C2410C" />
-                <Text className="text-base font-bold text-amber-900">Theo Dõi Xe Lạnh Thuê Ngoài</Text>
+                <Text className="text-base font-bold text-amber-900">Bước 2: Xe Lạnh Thuê Ngoài Cứu Hộ</Text>
               </View>
               <View className="rounded-lg bg-orange-200 px-2 py-1">
-                <Text className="text-[10px] font-bold text-orange-900">Đang di chuyển</Text>
+                <Text className="text-[10px] font-bold text-orange-950">
+                  {currentStep > 2 ? '✓ Đã điều xe' : currentStep === 2 ? 'Đang di chuyển' : 'Sắp tới'}
+                </Text>
               </View>
             </View>
-            <InfoRow label="Nhà cung cấp" value={incident.externalReeferPlan.rentalProvider} />
-            <InfoRow label="Biển số xe ngoài" value={incident.externalReeferPlan.vehiclePlate} />
-            <InfoRow
-              label="Tài xế xe ngoài"
-              value={`${incident.externalReeferPlan.driverName}${
-                incident.externalReeferPlan.driverPhone ? ` (${incident.externalReeferPlan.driverPhone})` : ''
-              }`}
-            />
-            <InfoRow label="Nhiệt độ cam kết" value={`${incident.externalReeferPlan.agreedTemperature}°C`} />
-            <InfoRow label="Số seal niêm phong" value={incident.externalReeferPlan.sealNumber} />
-            <InfoRow label="Kho nhận" value={`${incident.externalReeferPlan.destinationWarehouseName || destinationWarehouseName} 🔒`} />
-            <View className="mt-2 rounded-xl bg-orange-100 p-3">
+
+            {incident.externalReeferPlan ? (
+              <View className="gap-2 pt-1">
+                <InfoRow label="Nhà cung cấp" value={incident.externalReeferPlan.rentalProvider} />
+                <InfoRow label="Biển số xe ngoài" value={incident.externalReeferPlan.vehiclePlate} />
+                <InfoRow
+                  label="Tài xế xe ngoài"
+                  value={`${incident.externalReeferPlan.driverName}${
+                    incident.externalReeferPlan.driverPhone ? ` (${incident.externalReeferPlan.driverPhone})` : ''
+                  }`}
+                />
+                <InfoRow label="Nhiệt độ cam kết" value={`${incident.externalReeferPlan.agreedTemperature}°C`} />
+                <InfoRow label="Số seal niêm phong" value={incident.externalReeferPlan.sealNumber} />
+                <InfoRow label="Kho nhận bắt buộc" value={`${incident.externalReeferPlan.destinationWarehouseName || destinationWarehouseName} 🔒`} />
+              </View>
+            ) : (
+              <View className="py-2">
+                <Text className="text-xs leading-5 text-amber-800">
+                  Dispatcher đang lập phương án và liên hệ đối tác xe lạnh chuyên dụng để điều xe cứu hộ đến vị trí sự cố.
+                </Text>
+              </View>
+            )}
+
+            <View className="rounded-xl bg-orange-100 p-3">
               <Text className="text-xs text-orange-900">
-                ℹ <Text className="font-bold">Lưu ý:</Text> Nhân viên kho sẽ Inbound hàng khi xe đến kho đích. Tài xế không cần thao tác thêm.
+                ℹ <Text className="font-bold">Lưu ý:</Text> Tài xế giữ nguyên vị trí, bàn giao seal và toàn bộ LPN cho xe cứu hộ khi xe đến nơi.
               </Text>
             </View>
           </View>
         )}
 
-        {/* Bước 3/4 CRITICAL: Hàng đã IN_STOCK, chờ Dispatcher ghép chuyến */}
-        {incident.status === 'READY_FOR_REDISPATCH' && (
+        {/* ─── BƯỚC 3: INBOUND KHO TUYẾN ─── */}
+        {activeStep === 3 && (
           <View style={{ backgroundColor: '#F3E8FF', borderColor: '#E9D5FF' }} className="gap-3 rounded-3xl border p-5 shadow-sm">
-            <View className="flex-row items-center gap-2">
-              <Ionicons name="cube-outline" size={22} color="#6B21A8" />
-              <Text className="text-base font-bold text-purple-950">Hàng Đã Nhập Kho (IN_STOCK)</Text>
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row items-center gap-2">
+                <Ionicons name="cube-outline" size={22} color="#6B21A8" />
+                <Text className="text-base font-bold text-purple-950">Bước 3: Inbound Kho Đích Tuyến</Text>
+              </View>
+              <View className="rounded-lg bg-purple-200 px-2 py-1">
+                <Text className="text-[10px] font-bold text-purple-950">
+                  {currentStep > 3 ? '✓ Đã nhập kho' : currentStep === 3 ? 'Đang Inbound' : 'Chờ xe đến'}
+                </Text>
+              </View>
             </View>
+
             <Text className="text-xs leading-5 text-purple-900">
-              Toàn bộ LPN đã được Inbound an toàn về kho{' '}
-              <Text className="font-bold">{destinationWarehouseName}</Text>. Dispatcher đang ghép chuyến mới để giao hàng.
+              Xe cứu hộ chở hàng về <Text className="font-bold">{destinationWarehouseName} 🔒</Text>. Nhân viên kho quét/nhập số seal để Inbound tự động toàn bộ LPN sang trạng thái <Text className="font-bold">IN_STOCK</Text>.
             </Text>
+
+            <View className="gap-2 rounded-2xl bg-white/80 p-3.5 border border-purple-200">
+              <InfoRow label="Kho nhận" value={`${destinationWarehouseName} 🔒`} />
+              <InfoRow label="Số seal Inbound" value={incident.externalReeferPlan?.sealNumber || 'Theo xe ngoài'} />
+              <InfoRow label="Quy chuẩn Inbound" value="Tự động toàn bộ LPN (Không QC)" />
+            </View>
           </View>
         )}
 
-        {/* Bước 4/5 CRITICAL: Chuyến mới lên lịch, kho đang picking/loading */}
-        {incident.status === 'REDISPATCH_PLANNED' && (
+        {/* ─── BƯỚC 4: GHÉP CHUYẾN MỚI (REDISPATCH) ─── */}
+        {activeStep === 4 && (
           <View style={{ backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }} className="gap-3 rounded-3xl border p-5 shadow-sm">
-            <View className="flex-row items-center gap-2">
-              <Ionicons name="navigate-circle-outline" size={22} color="#1D4ED8" />
-              <Text className="text-base font-bold text-blue-950">Chuyến Mới Đã Được Lên Lịch</Text>
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row items-center gap-2">
+                <Ionicons name="navigate-circle-outline" size={22} color="#1D4ED8" />
+                <Text className="text-base font-bold text-blue-950">Bước 4: Ghép Chuyến Lại (Redispatch)</Text>
+              </View>
+              <View className="rounded-lg bg-blue-200 px-2 py-1">
+                <Text className="text-[10px] font-bold text-blue-950">
+                  {currentStep > 4 ? '✓ Đã tạo chuyến' : currentStep === 4 ? 'Đang xử lý' : 'Sắp tới'}
+                </Text>
+              </View>
             </View>
+
             <Text className="text-xs leading-5 text-blue-900">
-              Chuyến xe thay thế đã được tạo. Nhân viên kho đang Picking, Loading và kẹp chì (Seal) để xuất kho.
+              Dispatcher tạo chuyến xe thay thế tại kho tuyến. Giữ nguyên toàn bộ LPN của sự cố để tiếp tục hành trình giao khách.
             </Text>
+
             {incident.redispatchPlan ? (
               <View className="rounded-xl bg-blue-100 p-3">
                 <Text className="text-xs font-semibold text-blue-900">{incident.redispatchPlan}</Text>
               </View>
             ) : null}
+
+            <View className="gap-2 rounded-2xl bg-white/80 p-3.5 border border-blue-200">
+              <InfoRow label="Kho xuất phát" value={`${destinationWarehouseName} 🔒`} />
+              <InfoRow label="LPN ghép chuyến" value="Toàn bộ LPN sự cố (Khóa cố định)" />
+              {incident.replacementVehicleId ? (
+                <InfoRow label="Xe phân công mới" value={incident.replacementVehicleId} />
+              ) : null}
+            </View>
           </View>
         )}
 
-        {/* Bước 5 CRITICAL: Đã đổi xe / Sang hàng cứu hộ xong — TRANSLOAD_COMPLETED */}
-        {incident.status === 'TRANSLOAD_COMPLETED' && (
+        {/* ─── BƯỚC 5: GIAO HÀNG CHO KHÁCH & ĐÓNG SỰ CỐ ─── */}
+        {activeStep === 5 && (
           <View style={{ backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }} className="gap-3 rounded-3xl border p-5 shadow-sm">
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-2">
                 <Ionicons name="checkmark-circle-outline" size={22} color="#166534" />
-                <Text className="text-base font-bold text-green-950">Đã Đổi Xe & Tiếp Tục Giao Hàng</Text>
+                <Text className="text-base font-bold text-green-950">
+                  {incident.status === 'TRANSLOAD_COMPLETED' ? 'Bước 5: Đã Đổi Xe & Tiếp Tục Giao Hàng' : 'Bước 5: Giao Hàng Cho Khách'}
+                </Text>
               </View>
               <View className="rounded-lg bg-green-200 px-2 py-1">
-                <Text className="text-[10px] font-bold text-green-900">Đang giao khách</Text>
+                <Text className="text-[10px] font-bold text-green-950">
+                  {incident.status === 'RESOLVED' ? '✓ Đã đóng sự cố' : 'Đang giao khách'}
+                </Text>
               </View>
             </View>
+
             <Text className="text-xs leading-5 text-green-900">
-              Hàng hóa đã được sang xe thay thế an toàn. Tài xế tiếp tục hành trình giao hàng cho khách theo lộ trình.
+              {incident.status === 'TRANSLOAD_COMPLETED'
+                ? 'Hàng hóa đã được sang xe thay thế an toàn. Tài xế tiếp tục hành trình giao hàng cho khách theo lộ trình.'
+                : 'Chuyến xe mới đã rời kho tuyến và đang trong quá trình giao hàng đến tay khách hàng.'}
             </Text>
-            {incident.brokenVehicleId ? (
-              <InfoRow label="Xe cũ gặp sự cố" value={incident.brokenVehicleId} />
-            ) : null}
-            {incident.replacementVehicleId ? (
-              <InfoRow label="Xe thay thế hiện tại" value={incident.replacementVehicleId} />
-            ) : null}
-            {incident.tripCode || incident.tripId || currentTripId ? (
-              <InfoRow label="Mã chuyến đang chạy" value={incident.tripCode || incident.tripId || currentTripId || '--'} />
-            ) : null}
-            <View className="mt-1 rounded-xl bg-green-100 p-3">
-              <Text className="text-xs text-green-900">
-                ℹ <Text className="font-bold">Hướng dẫn:</Text> Mở chuyến xe để thực hiện giao hàng từng điểm dừng (Check-in & POD), hoặc đóng sự cố sau khi đã giao hàng hoàn tất.
-              </Text>
+
+            <View className="gap-2 rounded-2xl bg-white/80 p-3.5 border border-green-200">
+              {incident.brokenVehicleId ? (
+                <InfoRow label="Xe cũ gặp sự cố" value={incident.brokenVehicleId} />
+              ) : null}
+              {incident.replacementVehicleId ? (
+                <InfoRow label="Xe thay thế hiện tại" value={incident.replacementVehicleId} />
+              ) : null}
+              {incident.tripCode || incident.tripId || currentTripId ? (
+                <InfoRow label="Mã chuyến đang chạy" value={incident.tripCode || incident.tripId || currentTripId || '--'} />
+              ) : null}
+              {incident.resolvedAt ? (
+                <InfoRow label="Thời gian đóng" value={new Date(incident.resolvedAt).toLocaleString('vi-VN')} />
+              ) : null}
             </View>
           </View>
         )}
 
-        {/* Bước 5 CRITICAL: Chuyến mới đang giao — REDISPATCHED_TO_CUSTOMER */}
-        {incident.status === 'REDISPATCHED_TO_CUSTOMER' && (
-          <View style={{ backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }} className="gap-3 rounded-3xl border p-5 shadow-sm">
-            <View className="flex-row items-center gap-2">
-              <Ionicons name="checkmark-circle-outline" size={22} color="#166534" />
-              <Text className="text-base font-bold text-green-950">Đang Vận Chuyển Giao Khách</Text>
-            </View>
-            <Text className="text-xs leading-5 text-green-900">
-              Chuyến xe mới đã xuất phát từ kho tuyến và đang giao hàng đến tay khách hàng.
-            </Text>
-          </View>
-        )}
-
-        {/* ════════════════════════════════════════════════════════════════════
-            NHÁNH LOW — Sự cố nhẹ, Driver tự xử lý
-            States: REPORTED → TRIAGED → CONTINUED → RESOLVED
-            ════════════════════════════════════════════════════════════════════ */}
-
-        {/* Bước 1 LOW: Đã gửi báo cáo, chờ phân loại */}
-        {isLow && incident.status === 'REPORTED' && (
-          <View style={{ backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }} className="gap-3 rounded-3xl border p-5 shadow-sm">
-            <View className="flex-row items-center gap-2">
-              <Ionicons name="checkmark-circle-outline" size={22} color="#166534" />
-              <Text className="text-base font-bold text-green-950">Báo Cáo Đã Gửi</Text>
-            </View>
-            <Text className="text-xs leading-5 text-green-900">
-              Sự cố mức <Text className="font-bold">LOW</Text> đã được ghi nhận. Hệ thống đang phân loại. Bạn có thể tự xử lý tại chỗ nếu an toàn.
-            </Text>
-          </View>
-        )}
-
-        {/* Bước 2 LOW: TRIAGED — Driver tự xử lý và xác nhận tiếp tục chuyến */}
-        {incident.status === 'TRIAGED' && (
+        {/* ─── NHÁNH LOW / WARNING BỔ SUNG ─── */}
+        {isLow && activeStep === 2 && (
           <View style={{ backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }} className="gap-3 rounded-3xl border p-5 shadow-sm">
             <View className="flex-row items-center gap-2">
               <Ionicons name="build-outline" size={22} color="#166534" />
-              <Text className="text-base font-bold text-green-950">Sự Cố Mức Thấp — Tự Xử Lý</Text>
+              <Text className="text-base font-bold text-green-950">Tự Xử Lý Sự Cố Tại Chỗ (LOW)</Text>
             </View>
             <Text className="text-xs leading-5 text-green-900">
-              Sự cố này được đánh giá ở mức <Text className="font-bold">LOW</Text>. Bạn có thể tự xử lý tại chỗ rồi xác nhận tiếp tục hành trình.
-            </Text>
-            <View className="rounded-xl bg-green-100 p-3">
-              <Text className="text-xs text-green-900">
-                ℹ <Text className="font-bold">Không cần:</Text> Xe cứu hộ · Nhập lại kho · QC · Tạo trip mới.
-              </Text>
-            </View>
-          </View>
-        )}
-
-        {/* ════════════════════════════════════════════════════════════════════
-            NHÁNH WARNING — Theo dõi nhiệt độ
-            States: REPORTED → MONITORING → CONTINUED / escalate to CRITICAL
-            ════════════════════════════════════════════════════════════════════ */}
-
-        {/* Bước 1 WARNING: Đã gửi báo cáo (severity=MEDIUM hoặc HIGH) */}
-        {isWarning && incident.status === 'REPORTED' && (
-          <View style={{ backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }} className="gap-3 rounded-3xl border p-5 shadow-sm">
-            <View className="flex-row items-center gap-2">
-              <Ionicons name="warning-outline" size={22} color="#B45309" />
-              <Text className="text-base font-bold text-amber-900">Báo Cáo Đã Gửi — Cần Theo Dõi (WARNING)</Text>
-            </View>
-            <Text className="text-xs leading-5 text-amber-800">
-              Sự cố mức <Text className="font-bold">WARNING ({incident.severity})</Text>. Theo dõi nhiệt độ và tình trạng hàng liên tục. Hệ thống đang đánh giá.
+              Sự cố mức thấp. Bạn có thể tự xử lý tại chỗ rồi xác nhận tiếp tục hành trình.
             </Text>
           </View>
         )}
 
-        {/* Fallback: Non-breakdown, REPORTED, severity chưa xác định hoặc không khớp LOW/WARNING */}
-        {isNonBreakdownReported && !isLow && !isWarning && (
-          <View style={{ backgroundColor: '#F8FAFC', borderColor: '#CBD5E1' }} className="gap-3 rounded-3xl border p-5 shadow-sm">
-            <View className="flex-row items-center gap-2">
-              <Ionicons name="hourglass-outline" size={22} color="#475569" />
-              <Text className="text-base font-bold text-slate-800">Đã Gửi Báo Cáo — Đang Phân Loại</Text>
-            </View>
-            <Text className="text-xs leading-5 text-slate-700">
-              Sự cố đã được ghi nhận. Hệ thống đang phân loại mức độ để xác định hướng xử lý phù hợp. Vui lòng chờ thông báo cập nhật.
-            </Text>
-          </View>
-        )}
-
-        {/* Bước 2 WARNING: MONITORING — Theo dõi nhiệt độ */}
-        {incident.status === 'MONITORING' && (
+        {isWarning && activeStep === 2 && (
           <View style={{ backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }} className="gap-3 rounded-3xl border p-5 shadow-sm">
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-2">
                 <Ionicons name="thermometer-outline" size={22} color="#B45309" />
-                <Text className="text-base font-bold text-amber-900">Đang Theo Dõi Nhiệt Độ</Text>
+                <Text className="text-base font-bold text-amber-900">Theo Dõi Nhiệt Độ (WARNING)</Text>
               </View>
               <View className="rounded-lg bg-yellow-200 px-2 py-1">
                 <Text className="text-[10px] font-bold text-yellow-900">WARNING</Text>
               </View>
             </View>
-
             {incident.latestTemperature !== undefined && incident.latestTemperature !== null ? (
               <InfoRow label="Nhiệt độ hiện tại" value={`${incident.latestTemperature}°C`} />
             ) : null}
             {incident.remainingSafeTimeMinutes !== undefined && incident.remainingSafeTimeMinutes !== null ? (
               <InfoRow label="Thời gian an toàn còn lại" value={`${incident.remainingSafeTimeMinutes} phút`} />
-            ) : null}
-
-            <View className="rounded-xl bg-yellow-100 p-3">
-              <Text className="text-xs text-yellow-900">
-                ⚠ <Text className="font-bold">Chú ý:</Text> Nếu nhiệt độ tiếp tục xấu đi, Dispatcher sẽ escalate lên CRITICAL và điều xe cứu hộ. Hãy giữ liên lạc và tiếp tục bảo vệ hàng.
-              </Text>
-            </View>
-          </View>
-        )}
-
-        {/* ════════════════════════════════════════════════════════════════════
-            TRẠNG THÁI CHUNG
-            ════════════════════════════════════════════════════════════════════ */}
-
-        {/* CONTINUED — Đã tiếp tục chuyến (LOW path hoặc WARNING ổn định) */}
-        {incident.status === 'CONTINUED' && (
-          <View style={{ backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }} className="gap-3 rounded-3xl border p-5 shadow-sm">
-            <View className="flex-row items-center gap-2">
-              <Ionicons name="checkmark-done-circle" size={24} color="#166534" />
-              <Text className="text-base font-bold text-green-950">Đã Tiếp Tục Chuyến Bình Thường</Text>
-            </View>
-            <Text className="text-xs leading-5 text-green-900">
-              Sự cố đã được xử lý tại chỗ. Hành trình đang tiếp tục bình thường.
-            </Text>
-          </View>
-        )}
-
-        {/* RESOLVED — Read-only hoàn toàn */}
-        {incident.status === 'RESOLVED' && (
-          <View style={{ backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }} className="gap-3 rounded-3xl border p-5 shadow-sm">
-            <View className="flex-row items-center gap-2">
-              <Ionicons name="checkmark-done-circle" size={24} color="#166534" />
-              <Text className="text-base font-bold text-green-950">Sự Cố Đã Được Xử Lý Hoàn Tất</Text>
-            </View>
-            {incident.resolutionNote ? (
-              <Text className="text-xs text-green-800">Ghi chú: {incident.resolutionNote}</Text>
             ) : null}
           </View>
         )}
@@ -638,7 +596,7 @@ export default function DriverIncidentDetailScreen() {
         >
           <View className="flex-row items-center gap-2">
             <Ionicons name="information-circle-outline" size={20} color={colors.brand.primary} />
-            <Text style={{ color: colors.text.primary }} className="text-base font-bold">Chi tiết sự cố</Text>
+            <Text style={{ color: colors.text.primary }} className="text-base font-bold">Chi tiết sự cố ban đầu</Text>
           </View>
           <InfoRow label="Loại sự cố" value={INCIDENT_TYPE_LABEL[incident.incidentType] || incident.incidentType} />
           <InfoRow label="Mức độ" value={SEVERITY_LABEL[incident.severity] || incident.severity} />
@@ -707,122 +665,139 @@ export default function DriverIncidentDetailScreen() {
         style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }}
         className="border-t p-4 shadow-lg"
       >
-        {/* CTA: Non-breakdown REPORTED — read-only label chờ phân loại */}
-        {isNonBreakdownReported && (
-          <View style={{ minHeight: 48, backgroundColor: colors.surface.muted }} className="items-center justify-center rounded-2xl">
-            <Text style={{ color: colors.text.secondary }} className="text-sm font-semibold">
-              ⏳ Đang chờ hệ thống phân loại mức độ sự cố...
-            </Text>
-          </View>
-        )}
-
-        {/* CTA: CRITICAL breakdown — Xác nhận bảo toàn hàng */}
-        {isBreakdown && (incident.status === 'REPORTED' || incident.status === 'CONTAINMENT_REQUIRED') && (
+        {/* Trường hợp 1: Người dùng đang tua xem bước cũ khác với bước hiện tại */}
+        {selectedStep !== null && selectedStep !== currentStep ? (
           <Pressable
-            onPress={handleAssessContainment}
-            disabled={actionLoading || !containmentConfirmed}
-            style={{
-              backgroundColor: !containmentConfirmed || actionLoading ? colors.surface.muted : colors.brand.primary,
-              minHeight: 48,
-            }}
-            className="items-center justify-center rounded-2xl shadow-sm"
+            onPress={() => setSelectedStep(null)}
+            style={{ backgroundColor: colors.brand.primary, minHeight: 48 }}
+            className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm px-4"
           >
-            {actionLoading ? (
-              <ActivityIndicator color={colors.text.onPrimary} />
-            ) : (
-              <Text
-                style={{ color: !containmentConfirmed ? colors.text.secondary : colors.text.onPrimary }}
-                className="text-base font-bold"
-              >
-                Xác nhận bảo toàn hàng
-              </Text>
+            <Ionicons name="arrow-undo" size={18} color={colors.text.onPrimary} />
+            <Text style={{ color: colors.text.onPrimary }} className="text-base font-bold">
+              Quay về bước hiện tại (Bước {currentStep})
+            </Text>
+          </Pressable>
+        ) : (
+          /* Trường hợp 2: Đang ở bước hiện tại, hiển thị các nút thao tác tương ứng */
+          <>
+            {/* CTA: Non-breakdown REPORTED */}
+            {isNonBreakdownReported && (
+              <View style={{ minHeight: 48, backgroundColor: colors.surface.muted }} className="items-center justify-center rounded-2xl">
+                <Text style={{ color: colors.text.secondary }} className="text-sm font-semibold">
+                  ⏳ Đang chờ hệ thống phân loại mức độ sự cố...
+                </Text>
+              </View>
             )}
-          </Pressable>
-        )}
 
-        {/* CTA: LOW — Xác nhận tiếp tục chuyến (từ TRIAGED) */}
-        {incident.status === 'TRIAGED' && (
-          <Pressable
-            onPress={() => setIsContinueTripModalVisible(true)}
-            style={{ backgroundColor: '#16A34A', minHeight: 48 }}
-            className="items-center justify-center rounded-2xl shadow-sm"
-          >
-            <Text style={{ color: '#ffffff' }} className="text-base font-bold">
-              Xác nhận tiếp tục chuyến
-            </Text>
-          </Pressable>
-        )}
-
-        {/* Read-only labels cho các trạng thái chờ */}
-        {(incident.status === 'MONITORING' ||
-          incident.status === 'RESCUE_PLANNING' ||
-          incident.status === 'EXTERNAL_REEFER_IN_TRANSIT' ||
-          incident.status === 'READY_FOR_REDISPATCH' ||
-          incident.status === 'REDISPATCH_PLANNED') && (
-          <View
-            style={{ minHeight: 48, backgroundColor: colors.surface.muted }}
-            className="items-center justify-center rounded-2xl"
-          >
-            <Text style={{ color: colors.text.secondary }} className="text-sm font-semibold">
-              {incident.status === 'MONITORING' && '🌡️ Đang theo dõi — Chờ Dispatcher quyết định...'}
-              {incident.status === 'RESCUE_PLANNING' && '⏳ Đang chờ Dispatcher thuê xe cứu hộ...'}
-              {incident.status === 'EXTERNAL_REEFER_IN_TRANSIT' && '🚚 Xe lạnh đang trên đường đến kho...'}
-              {incident.status === 'READY_FOR_REDISPATCH' && '⏳ Đang chờ Dispatcher ghép chuyến mới...'}
-              {incident.status === 'REDISPATCH_PLANNED' && '📦 Kho đang picking & loading hàng...'}
-            </Text>
-          </View>
-        )}
-
-        {/* CTA: Bước 5 Giao khách — TRANSLOAD_COMPLETED hoặc REDISPATCHED_TO_CUSTOMER */}
-        {(incident.status === 'TRANSLOAD_COMPLETED' || incident.status === 'REDISPATCHED_TO_CUSTOMER') && (
-          <View className="gap-2.5">
-            {/* Nút mở chuyến xe để giao hàng từng điểm dừng (Check-in / POD) */}
-            {(incident.tripId || currentTripId) ? (
+            {/* CTA: CRITICAL breakdown — Xác nhận bảo toàn hàng */}
+            {isBreakdown && (incident.status === 'REPORTED' || incident.status === 'CONTAINMENT_REQUIRED') && (
               <Pressable
-                onPress={() => router.push(`/trips/${incident.tripId || currentTripId}` as never)}
-                style={{ backgroundColor: colors.brand.primary, minHeight: 48 }}
-                className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm px-4"
+                onPress={handleAssessContainment}
+                disabled={actionLoading || !containmentConfirmed}
+                style={{
+                  backgroundColor: !containmentConfirmed || actionLoading ? colors.surface.muted : colors.brand.primary,
+                  minHeight: 48,
+                }}
+                className="items-center justify-center rounded-2xl shadow-sm"
               >
-                <Ionicons name="navigate" size={18} color={colors.text.onPrimary} />
-                <Text style={{ color: colors.text.onPrimary }} className="text-base font-bold">
-                  Mở chuyến xe để giao khách
+                {actionLoading ? (
+                  <ActivityIndicator color={colors.text.onPrimary} />
+                ) : (
+                  <Text
+                    style={{ color: !containmentConfirmed ? colors.text.secondary : colors.text.onPrimary }}
+                    className="text-base font-bold"
+                  >
+                    Xác nhận bảo toàn hàng
+                  </Text>
+                )}
+              </Pressable>
+            )}
+
+            {/* CTA: LOW — Xác nhận tiếp tục chuyến (từ TRIAGED) */}
+            {incident.status === 'TRIAGED' && (
+              <Pressable
+                onPress={() => setIsContinueTripModalVisible(true)}
+                style={{ backgroundColor: '#16A34A', minHeight: 48 }}
+                className="items-center justify-center rounded-2xl shadow-sm"
+              >
+                <Text style={{ color: '#ffffff' }} className="text-base font-bold">
+                  Xác nhận tiếp tục chuyến
                 </Text>
               </Pressable>
-            ) : null}
+            )}
 
-            {/* Nút đóng sự cố sau khi đã xử lý / giao hàng xong */}
-            <Pressable
-              onPress={() => setIsResolveModalVisible(true)}
-              style={{
-                backgroundColor: (incident.tripId || currentTripId) ? colors.surface.card : '#166534',
-                borderColor: '#166534',
-                borderWidth: (incident.tripId || currentTripId) ? 1.5 : 0,
-                minHeight: 48,
-              }}
-              className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm px-4"
-            >
-              <Ionicons
-                name="checkmark-done-circle"
-                size={20}
-                color={(incident.tripId || currentTripId) ? '#166534' : colors.text.onPrimary}
-              />
-              <Text
-                style={{ color: (incident.tripId || currentTripId) ? '#166534' : colors.text.onPrimary }}
-                className="text-base font-bold"
+            {/* Read-only labels cho các trạng thái chờ */}
+            {(incident.status === 'MONITORING' ||
+              incident.status === 'RESCUE_PLANNING' ||
+              incident.status === 'EXTERNAL_REEFER_IN_TRANSIT' ||
+              incident.status === 'READY_FOR_REDISPATCH' ||
+              incident.status === 'REDISPATCH_PLANNED') && (
+              <View
+                style={{ minHeight: 48, backgroundColor: colors.surface.muted }}
+                className="items-center justify-center rounded-2xl"
               >
-                Hoàn tất & Đóng sự cố (Resolve)
-              </Text>
-            </Pressable>
-          </View>
-        )}
+                <Text style={{ color: colors.text.secondary }} className="text-sm font-semibold">
+                  {incident.status === 'MONITORING' && '🌡️ Đang theo dõi — Chờ Dispatcher quyết định...'}
+                  {incident.status === 'RESCUE_PLANNING' && '⏳ Đang chờ Dispatcher thuê xe cứu hộ...'}
+                  {incident.status === 'EXTERNAL_REEFER_IN_TRANSIT' && '🚚 Xe lạnh đang trên đường đến kho...'}
+                  {incident.status === 'READY_FOR_REDISPATCH' && '⏳ Đang chờ Dispatcher ghép chuyến mới...'}
+                  {incident.status === 'REDISPATCH_PLANNED' && '📦 Kho đang picking & loading hàng...'}
+                </Text>
+              </View>
+            )}
 
-        {/* CONTINUED / RESOLVED — Read-only */}
-        {(incident.status === 'CONTINUED' || incident.status === 'RESOLVED') && (
-          <View style={{ minHeight: 48 }} className="items-center justify-center">
-            <Text style={{ color: colors.text.secondary }} className="font-semibold">
-              {incident.status === 'CONTINUED' ? '✅ Đã tiếp tục chuyến bình thường' : 'Sự cố đã được hoàn tất · Read-only'}
-            </Text>
-          </View>
+            {/* CTA: Bước 5 Giao khách — TRANSLOAD_COMPLETED hoặc REDISPATCHED_TO_CUSTOMER */}
+            {(incident.status === 'TRANSLOAD_COMPLETED' || incident.status === 'REDISPATCHED_TO_CUSTOMER') && (
+              <View className="gap-2.5">
+                {/* Nút mở chuyến xe để giao hàng từng điểm dừng (Check-in / POD) */}
+                {(incident.tripId || currentTripId) ? (
+                  <Pressable
+                    onPress={() => router.push(`/trips/${incident.tripId || currentTripId}` as never)}
+                    style={{ backgroundColor: colors.brand.primary, minHeight: 48 }}
+                    className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm px-4"
+                  >
+                    <Ionicons name="navigate" size={18} color={colors.text.onPrimary} />
+                    <Text style={{ color: colors.text.onPrimary }} className="text-base font-bold">
+                      Mở chuyến xe để giao khách
+                    </Text>
+                  </Pressable>
+                ) : null}
+
+                {/* Nút đóng sự cố sau khi đã xử lý / giao hàng xong */}
+                <Pressable
+                  onPress={() => setIsResolveModalVisible(true)}
+                  style={{
+                    backgroundColor: (incident.tripId || currentTripId) ? colors.surface.card : '#166534',
+                    borderColor: '#166534',
+                    borderWidth: (incident.tripId || currentTripId) ? 1.5 : 0,
+                    minHeight: 48,
+                  }}
+                  className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm px-4"
+                >
+                  <Ionicons
+                    name="checkmark-done-circle"
+                    size={20}
+                    color={(incident.tripId || currentTripId) ? '#166534' : colors.text.onPrimary}
+                  />
+                  <Text
+                    style={{ color: (incident.tripId || currentTripId) ? '#166534' : colors.text.onPrimary }}
+                    className="text-base font-bold"
+                  >
+                    Hoàn tất & Đóng sự cố (Resolve)
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+
+            {/* CONTINUED / RESOLVED — Read-only */}
+            {(incident.status === 'CONTINUED' || incident.status === 'RESOLVED') && (
+              <View style={{ minHeight: 48 }} className="items-center justify-center">
+                <Text style={{ color: colors.text.secondary }} className="font-semibold">
+                  {incident.status === 'CONTINUED' ? '✅ Đã tiếp tục chuyến bình thường' : 'Sự cố đã được hoàn tất · Read-only'}
+                </Text>
+              </View>
+            )}
+          </>
         )}
       </View>
 
@@ -886,7 +861,7 @@ export default function DriverIncidentDetailScreen() {
       </Modal>
 
       {/* ════════════════════════════════════════════════════════════════════
-          MODAL: ĐÓNG SỰ CỐ (CRITICAL path - REDISPATCHED_TO_CUSTOMER)
+          MODAL: ĐÓNG SỰ CỐ (CRITICAL path)
           ════════════════════════════════════════════════════════════════════ */}
       <Modal
         visible={isResolveModalVisible}
