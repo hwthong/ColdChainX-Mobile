@@ -428,17 +428,17 @@ export default function DriverIncidentDetailScreen() {
         {/* ─── BƯỚC 1: BÁO SỰ CỐ & BẢO TOÀN HÀNG ─── */}
         {activeStep === 1 && (
           <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-3 rounded-3xl border p-5 shadow-sm">
-            <View className="flex-row items-center justify-between border-b border-slate-100 pb-3">
-              <View className="flex-row items-center gap-3">
-                <View style={{ backgroundColor: colors.status.danger.bg }} className="h-10 w-10 items-center justify-center rounded-2xl">
+            <View className="flex-row items-center justify-between border-b border-slate-100 pb-3 gap-2">
+              <View className="flex-row items-center gap-3 flex-1 min-w-0 pr-1">
+                <View style={{ backgroundColor: colors.status.danger.bg }} className="h-10 w-10 shrink-0 items-center justify-center rounded-2xl">
                   <Ionicons name="shield-checkmark" size={20} color={colors.status.danger.main} />
                 </View>
-                <View>
-                  <Text style={{ color: colors.text.primary }} className="text-base font-bold">Bước 1: Báo Cáo & Bảo Toàn Hàng</Text>
-                  <Text style={{ color: colors.text.secondary }} className="text-[11px]">Đóng kín thùng lạnh bảo vệ nhiệt</Text>
+                <View className="flex-1 min-w-0">
+                  <Text numberOfLines={1} style={{ color: colors.text.primary }} className="text-sm font-bold">Bước 1: Báo Cáo & Bảo Toàn Hàng</Text>
+                  <Text numberOfLines={1} style={{ color: colors.text.secondary }} className="text-[11px]">Đóng kín thùng lạnh bảo vệ nhiệt</Text>
                 </View>
               </View>
-              <View style={{ backgroundColor: currentStep > 1 ? colors.status.success.bg : colors.brand.primarySoft }} className="rounded-full px-2.5 py-1">
+              <View style={{ backgroundColor: currentStep > 1 ? colors.status.success.bg : colors.brand.primarySoft }} className="rounded-full px-2.5 py-1 shrink-0">
                 <Text style={{ color: currentStep > 1 ? colors.status.success.main : colors.brand.primary }} className="text-[10px] font-bold">
                   {currentStep > 1 ? '✓ Đã hoàn tất' : 'Bước hiện tại'}
                 </Text>
@@ -491,17 +491,17 @@ export default function DriverIncidentDetailScreen() {
           isExternalReefer ? (
             /* Xe ngoài chở về kho tuyến */
             <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-3 rounded-3xl border p-5 shadow-sm">
-              <View className="flex-row items-center justify-between border-b border-slate-100 pb-3">
-                <View className="flex-row items-center gap-3">
-                  <View style={{ backgroundColor: colors.status.warning.bg }} className="h-10 w-10 items-center justify-center rounded-2xl">
+              <View className="flex-row items-center justify-between border-b border-slate-100 pb-3 gap-2">
+                <View className="flex-row items-center gap-3 flex-1 min-w-0 pr-1">
+                  <View style={{ backgroundColor: colors.status.warning.bg }} className="h-10 w-10 shrink-0 items-center justify-center rounded-2xl">
                     <Ionicons name="car-outline" size={20} color={colors.status.warning.main} />
                   </View>
-                  <View>
-                    <Text style={{ color: colors.text.primary }} className="text-base font-bold">Bước 2: Xe Thuê Ngoài Cứu Hộ</Text>
-                    <Text style={{ color: colors.text.secondary }} className="text-[11px]">Chở về kho đích tuyến nhập kho</Text>
+                  <View className="flex-1 min-w-0">
+                    <Text numberOfLines={1} style={{ color: colors.text.primary }} className="text-sm font-bold">Bước 2: Xe Thuê Ngoài Cứu Hộ</Text>
+                    <Text numberOfLines={1} style={{ color: colors.text.secondary }} className="text-[11px]">Chở về kho đích tuyến nhập kho</Text>
                   </View>
                 </View>
-                <View style={{ backgroundColor: colors.status.warning.bg }} className="rounded-full px-2.5 py-1">
+                <View style={{ backgroundColor: colors.status.warning.bg }} className="rounded-full px-2.5 py-1 shrink-0">
                   <Text style={{ color: colors.status.warning.main }} className="text-[10px] font-bold">
                     {currentStep > 2 ? '✓ Đã điều xe' : 'Đang di chuyển'}
                   </Text>
@@ -537,17 +537,17 @@ export default function DriverIncidentDetailScreen() {
           ) : (
             /* Xe thay thế nội bộ trong hệ thống */
             <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-3 rounded-3xl border p-5 shadow-sm">
-              <View className="flex-row items-center justify-between border-b border-slate-100 pb-3">
-                <View className="flex-row items-center gap-3">
-                  <View style={{ backgroundColor: colors.brand.primarySoft }} className="h-10 w-10 items-center justify-center rounded-2xl">
+              <View className="flex-row items-center justify-between border-b border-slate-100 pb-3 gap-2">
+                <View className="flex-row items-center gap-3 flex-1 min-w-0 pr-1">
+                  <View style={{ backgroundColor: colors.brand.primarySoft }} className="h-10 w-10 shrink-0 items-center justify-center rounded-2xl">
                     <Ionicons name="car-sport-outline" size={20} color={colors.brand.primary} />
                   </View>
-                  <View>
-                    <Text style={{ color: colors.text.primary }} className="text-base font-bold">Bước 2: Điều Xe Thay Thế Nội Bộ</Text>
-                    <Text style={{ color: colors.text.secondary }} className="text-[11px]">Sang hàng trực tiếp trên đường</Text>
+                  <View className="flex-1 min-w-0">
+                    <Text numberOfLines={1} style={{ color: colors.text.primary }} className="text-sm font-bold">Bước 2: Điều Xe Thay Thế</Text>
+                    <Text numberOfLines={1} style={{ color: colors.text.secondary }} className="text-[11px]">Sang hàng trực tiếp trên đường</Text>
                   </View>
                 </View>
-                <View style={{ backgroundColor: colors.brand.primarySoft }} className="rounded-full px-2.5 py-1">
+                <View style={{ backgroundColor: colors.brand.primarySoft }} className="rounded-full px-2.5 py-1 shrink-0">
                   <Text style={{ color: colors.brand.primary }} className="text-[10px] font-bold">
                     {currentStep > 2 ? '✓ Đã điều xe' : 'Đang đến vị trí'}
                   </Text>
@@ -625,17 +625,17 @@ export default function DriverIncidentDetailScreen() {
           isExternalReefer ? (
             /* Inbound kho tuyến */
             <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-3 rounded-3xl border p-5 shadow-sm">
-              <View className="flex-row items-center justify-between border-b border-slate-100 pb-3">
-                <View className="flex-row items-center gap-3">
-                  <View style={{ backgroundColor: '#f3e8ff' }} className="h-10 w-10 items-center justify-center rounded-2xl">
+              <View className="flex-row items-center justify-between border-b border-slate-100 pb-3 gap-2">
+                <View className="flex-row items-center gap-3 flex-1 min-w-0 pr-1">
+                  <View style={{ backgroundColor: '#f3e8ff' }} className="h-10 w-10 shrink-0 items-center justify-center rounded-2xl">
                     <Ionicons name="cube-outline" size={20} color="#7e22ce" />
                   </View>
-                  <View>
-                    <Text style={{ color: colors.text.primary }} className="text-base font-bold">Bước 3: Inbound Kho Tuyến</Text>
-                    <Text style={{ color: colors.text.secondary }} className="text-[11px]">Nhập kho tự động toàn bộ LPN</Text>
+                  <View className="flex-1 min-w-0">
+                    <Text numberOfLines={1} style={{ color: colors.text.primary }} className="text-sm font-bold">Bước 3: Inbound Kho Tuyến</Text>
+                    <Text numberOfLines={1} style={{ color: colors.text.secondary }} className="text-[11px]">Nhập kho tự động toàn bộ LPN</Text>
                   </View>
                 </View>
-                <View style={{ backgroundColor: '#f3e8ff' }} className="rounded-full px-2.5 py-1">
+                <View style={{ backgroundColor: '#f3e8ff' }} className="rounded-full px-2.5 py-1 shrink-0">
                   <Text className="text-[10px] font-bold text-purple-800">
                     {currentStep > 3 ? '✓ Đã nhập kho' : currentStep === 3 ? 'Đang Inbound' : 'Chờ xe đến'}
                   </Text>
@@ -671,17 +671,17 @@ export default function DriverIncidentDetailScreen() {
           ) : (
             /* Sang hàng xe nội bộ */
             <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-3 rounded-3xl border p-5 shadow-sm">
-              <View className="flex-row items-center justify-between border-b border-slate-100 pb-3">
-                <View className="flex-row items-center gap-3">
-                  <View style={{ backgroundColor: colors.status.success.bg }} className="h-10 w-10 items-center justify-center rounded-2xl">
+              <View className="flex-row items-center justify-between border-b border-slate-100 pb-3 gap-2">
+                <View className="flex-row items-center gap-3 flex-1 min-w-0 pr-1">
+                  <View style={{ backgroundColor: colors.status.success.bg }} className="h-10 w-10 shrink-0 items-center justify-center rounded-2xl">
                     <Ionicons name="swap-horizontal-outline" size={20} color={colors.status.success.main} />
                   </View>
-                  <View>
-                    <Text style={{ color: colors.text.primary }} className="text-base font-bold">Bước 3: Sang Hàng Tại Chỗ</Text>
-                    <Text style={{ color: colors.text.secondary }} className="text-[11px]">Chuyển LPN sang xe mới tiếp tục giao</Text>
+                  <View className="flex-1 min-w-0">
+                    <Text numberOfLines={1} style={{ color: colors.text.primary }} className="text-sm font-bold">Bước 3: Sang Hàng Tại Chỗ</Text>
+                    <Text numberOfLines={1} style={{ color: colors.text.secondary }} className="text-[11px]">Chuyển LPN sang xe mới tiếp tục giao</Text>
                   </View>
                 </View>
-                <View style={{ backgroundColor: colors.status.success.bg }} className="rounded-full px-2.5 py-1">
+                <View style={{ backgroundColor: colors.status.success.bg }} className="rounded-full px-2.5 py-1 shrink-0">
                   <Text style={{ color: colors.status.success.main }} className="text-[10px] font-bold">
                     {incident.status === 'TRANSLOAD_COMPLETED' || currentStep > 3 ? '✓ Đã sang hàng' : 'Đang sang hàng'}
                   </Text>
@@ -757,17 +757,17 @@ export default function DriverIncidentDetailScreen() {
           isExternalReefer ? (
             /* Ghép chuyến mới tại kho */
             <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-3 rounded-3xl border p-5 shadow-sm">
-              <View className="flex-row items-center justify-between border-b border-slate-100 pb-3">
-                <View className="flex-row items-center gap-3">
-                  <View style={{ backgroundColor: colors.brand.primarySoft }} className="h-10 w-10 items-center justify-center rounded-2xl">
+              <View className="flex-row items-center justify-between border-b border-slate-100 pb-3 gap-2">
+                <View className="flex-row items-center gap-3 flex-1 min-w-0 pr-1">
+                  <View style={{ backgroundColor: colors.brand.primarySoft }} className="h-10 w-10 shrink-0 items-center justify-center rounded-2xl">
                     <Ionicons name="navigate-circle-outline" size={20} color={colors.brand.primary} />
                   </View>
-                  <View>
-                    <Text style={{ color: colors.text.primary }} className="text-base font-bold">Bước 4: Ghép Chuyến Mới</Text>
-                    <Text style={{ color: colors.text.secondary }} className="text-[11px]">Tạo trip mới tại kho tuyến</Text>
+                  <View className="flex-1 min-w-0">
+                    <Text numberOfLines={1} style={{ color: colors.text.primary }} className="text-sm font-bold">Bước 4: Ghép Chuyến Mới</Text>
+                    <Text numberOfLines={1} style={{ color: colors.text.secondary }} className="text-[11px]">Tạo trip mới tại kho tuyến</Text>
                   </View>
                 </View>
-                <View style={{ backgroundColor: colors.brand.primarySoft }} className="rounded-full px-2.5 py-1">
+                <View style={{ backgroundColor: colors.brand.primarySoft }} className="rounded-full px-2.5 py-1 shrink-0">
                   <Text style={{ color: colors.brand.primary }} className="text-[10px] font-bold">
                     {currentStep > 4 ? '✓ Đã tạo chuyến' : currentStep === 4 ? 'Đang xử lý' : 'Sắp tới'}
                   </Text>
@@ -792,17 +792,17 @@ export default function DriverIncidentDetailScreen() {
           ) : (
             /* Tiếp tục chuyến với xe mới */
             <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-3 rounded-3xl border p-5 shadow-sm">
-              <View className="flex-row items-center justify-between border-b border-slate-100 pb-3">
-                <View className="flex-row items-center gap-3">
-                  <View style={{ backgroundColor: colors.brand.primarySoft }} className="h-10 w-10 items-center justify-center rounded-2xl">
+              <View className="flex-row items-center justify-between border-b border-slate-100 pb-3 gap-2">
+                <View className="flex-row items-center gap-3 flex-1 min-w-0 pr-1">
+                  <View style={{ backgroundColor: colors.brand.primarySoft }} className="h-10 w-10 shrink-0 items-center justify-center rounded-2xl">
                     <Ionicons name="navigate-outline" size={20} color={colors.brand.primary} />
                   </View>
-                  <View>
-                    <Text style={{ color: colors.text.primary }} className="text-base font-bold">Bước 4: Tiếp Tục Vận Chuyển</Text>
-                    <Text style={{ color: colors.text.secondary }} className="text-[11px]">Xe mới đang trên đường giao hàng</Text>
+                  <View className="flex-1 min-w-0">
+                    <Text numberOfLines={1} style={{ color: colors.text.primary }} className="text-sm font-bold">Bước 4: Tiếp Tục Vận Chuyển</Text>
+                    <Text numberOfLines={1} style={{ color: colors.text.secondary }} className="text-[11px]">Xe mới đang trên đường giao hàng</Text>
                   </View>
                 </View>
-                <View style={{ backgroundColor: colors.brand.primarySoft }} className="rounded-full px-2.5 py-1">
+                <View style={{ backgroundColor: colors.brand.primarySoft }} className="rounded-full px-2.5 py-1 shrink-0">
                   <Text style={{ color: colors.brand.primary }} className="text-[10px] font-bold">
                     {currentStep >= 4 ? '✓ Đang chạy' : 'Sắp tới'}
                   </Text>
@@ -839,21 +839,21 @@ export default function DriverIncidentDetailScreen() {
         {/* ─── BƯỚC 5: GIAO HÀNG CHO KHÁCH & ĐÓNG SỰ CỐ ─── */}
         {activeStep === 5 && (
           <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-3 rounded-3xl border p-5 shadow-sm">
-            <View className="flex-row items-center justify-between border-b border-slate-100 pb-3">
-              <View className="flex-row items-center gap-3">
-                <View style={{ backgroundColor: colors.status.success.bg }} className="h-10 w-10 items-center justify-center rounded-2xl">
+            <View className="flex-row items-center justify-between border-b border-slate-100 pb-3 gap-2">
+              <View className="flex-row items-center gap-3 flex-1 min-w-0 pr-1">
+                <View style={{ backgroundColor: colors.status.success.bg }} className="h-10 w-10 shrink-0 items-center justify-center rounded-2xl">
                   <Ionicons name="checkmark-circle-outline" size={20} color={colors.status.success.main} />
                 </View>
-                <View>
-                  <Text style={{ color: colors.text.primary }} className="text-base font-bold">
+                <View className="flex-1 min-w-0">
+                  <Text numberOfLines={1} style={{ color: colors.text.primary }} className="text-sm font-bold">
                     {incident.status === 'TRANSLOAD_COMPLETED'
-                      ? 'Bước 5: Đã Đổi Xe & Tiếp Tục Giao Hàng'
+                      ? 'Bước 5: Tiếp Tục Giao Hàng'
                       : 'Bước 5: Giao Khách & Đóng Sự Cố'}
                   </Text>
-                  <Text style={{ color: colors.text.secondary }} className="text-[11px]">Hoàn tất các điểm dừng giao hàng</Text>
+                  <Text numberOfLines={1} style={{ color: colors.text.secondary }} className="text-[11px]">Hoàn tất các điểm dừng giao hàng</Text>
                 </View>
               </View>
-              <View style={{ backgroundColor: colors.status.success.bg }} className="rounded-full px-2.5 py-1">
+              <View style={{ backgroundColor: colors.status.success.bg }} className="rounded-full px-2.5 py-1 shrink-0">
                 <Text style={{ color: colors.status.success.main }} className="text-[10px] font-bold">
                   {incident.status === 'RESOLVED' ? '✓ Đã đóng sự cố' : 'Đang giao khách'}
                 </Text>
