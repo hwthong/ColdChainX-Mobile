@@ -1,7 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, AppState, RefreshControl, ScrollView, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  AppState,
+  Dimensions,
+  Linking,
+  Modal,
+  RefreshControl,
+  ScrollView,
+  Text,
+  View,
+} from 'react-native';
 
 import { AppPressable as Pressable } from '../../../components/AppPressable';
 import { GoongRouteMap } from '../../../components/customer/GoongRouteMap';
@@ -47,6 +57,7 @@ export default function DriverTripDetailScreen() {
   const [tracking, setTracking] = useState<TripTracking | null>(null);
   const [trip, setTrip] = useState<DriverTripDetailResponseDto | null>(null);
   const [route, setRoute] = useState<TripRouteResponse | null>(null);
+  const [isMapFullscreen, setIsMapFullscreen] = useState(false);
   const [chart, setChart] = useState<TemperatureChartData | null>(null);
   const [alerts, setAlerts] = useState<SmartAlert[]>([]);
   const [alertsLoaded, setAlertsLoaded] = useState(false);
@@ -290,6 +301,58 @@ export default function DriverTripDetailScreen() {
     );
   }, [displayStops]);
 
+  const vehiclePosition = useMemo(() => getVehiclePosition(tracking), [tracking]);
+
+  const openGoogleMaps = useCallback(() => {
+    if (!route) return;
+    const dest =
+      route.destination?.lat && route.destination?.lon
+        ? `${route.destination.lat},${route.destination.lon}`
+        : encodeURIComponent(route.destination?.address || '');
+    const origin = vehiclePosition
+      ? `${vehiclePosition.latitude},${vehiclePosition.longitude}`
+      : route.origin?.lat && route.origin?.lon
+      ? `${route.origin.lat},${route.origin.lon}`
+      : '';
+    const url = origin
+      ? `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}`
+      : `https://www.google.com/maps/dir/?api=1&destination=${dest}`;
+    Linking.openURL(url);
+  }, [route, vehiclePosition]);
+
+  const openAppleMaps = useCallback(() => {
+    if (!route) return;
+    const dest =
+      route.destination?.lat && route.destination?.lon
+        ? `${route.destination.lat},${route.destination.lon}`
+        : encodeURIComponent(route.destination?.address || '');
+    const origin = vehiclePosition
+      ? `${vehiclePosition.latitude},${vehiclePosition.longitude}`
+      : route.origin?.lat && route.origin?.lon
+      ? `${route.origin.lat},${route.origin.lon}`
+      : '';
+    const url = origin
+      ? `https://maps.apple.com/?saddr=${origin}&daddr=${dest}`
+      : `https://maps.apple.com/?daddr=${dest}`;
+    Linking.openURL(url);
+  }, [route, vehiclePosition]);
+
+  const openGoongMap = useCallback(() => {
+    if (!route) return;
+    const destLat = route.destination?.lat;
+    const destLon = route.destination?.lon;
+    const originLat = vehiclePosition?.latitude || route.origin?.lat;
+    const originLon = vehiclePosition?.longitude || route.origin?.lon;
+    let url = 'https://maps.goong.io';
+    if (destLat && destLon) {
+      url =
+        originLat && originLon
+          ? `https://maps.goong.io/?origin=${originLat},${originLon}&destination=${destLat},${destLon}`
+          : `https://maps.goong.io/?destination=${destLat},${destLon}`;
+    }
+    Linking.openURL(url);
+  }, [route, vehiclePosition]);
+
   if (loading) {
     return (
       <View style={{ backgroundColor: colors.surface.page }} className="flex-1 items-center justify-center">
@@ -298,7 +361,6 @@ export default function DriverTripDetailScreen() {
       </View>
     );
   }
-  const vehiclePosition = getVehiclePosition(tracking);
   const status = trip?.status || tracking?.status || 'UNKNOWN';
   const isCompleted = TERMINAL.has(status.toUpperCase());
 
@@ -448,7 +510,24 @@ export default function DriverTripDetailScreen() {
           </Pressable>
         ) : null}
 
-        <Section title="Bản đồ tuyến đường" icon="map-outline">
+        <Section
+          title="Bản đồ tuyến đường"
+          icon="map-outline"
+          rightAction={
+            route ? (
+              <Pressable
+                onPress={() => setIsMapFullscreen(true)}
+                style={{ backgroundColor: colors.brand.primarySoft }}
+                className="flex-row items-center gap-1 rounded-lg px-2.5 py-1"
+              >
+                <Ionicons name="expand-outline" size={13} color={colors.brand.primary} />
+                <Text style={{ color: colors.brand.primary }} className="text-xs font-bold">
+                  Phóng to
+                </Text>
+              </Pressable>
+            ) : null
+          }
+        >
           {errors.route ? <ErrorMessage message={errors.route} onRetry={loadRoute} /> : null}
           {route ? (
             <>
@@ -456,6 +535,37 @@ export default function DriverTripDetailScreen() {
               <InfoRow label="Thời gian dự kiến" value={formatDuration(route.totalDurationSeconds)} />
               <GoongRouteMap route={route} vehiclePosition={vehiclePosition} />
               {!vehiclePosition ? <Empty message="Chưa nhận được vị trí từ thiết bị." /> : null}
+
+              {/* Phím tắt mở nhanh bản đồ ngoài */}
+              <View className="mt-1 flex-row items-center justify-end gap-1.5 flex-wrap">
+                <Text style={{ color: colors.text.muted }} className="text-[11px]">Mở ngoài:</Text>
+                <Pressable
+                  onPress={openGoogleMaps}
+                  style={{ backgroundColor: '#EEF2FF', borderColor: '#C7D2FE' }}
+                  className="flex-row items-center gap-1 rounded-lg border px-2 py-1 shadow-xs"
+                >
+                  <Ionicons name="navigate-outline" size={12} color="#4338CA" />
+                  <Text className="text-[11px] font-bold text-indigo-800">Google Map</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={openAppleMaps}
+                  style={{ backgroundColor: '#F1F5F9', borderColor: '#CBD5E1' }}
+                  className="flex-row items-center gap-1 rounded-lg border px-2 py-1 shadow-xs"
+                >
+                  <Ionicons name="compass-outline" size={12} color="#334155" />
+                  <Text className="text-[11px] font-bold text-slate-700">Apple Map</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={openGoongMap}
+                  style={{ backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }}
+                  className="flex-row items-center gap-1 rounded-lg border px-2 py-1 shadow-xs"
+                >
+                  <Ionicons name="map-outline" size={12} color="#B45309" />
+                  <Text className="text-[11px] font-bold text-amber-800">Goong Map</Text>
+                </Pressable>
+              </View>
             </>
           ) : !errors.route ? (
             <Empty message="Chưa có dữ liệu tuyến đường." />
@@ -523,16 +633,116 @@ export default function DriverTripDetailScreen() {
         {!displayStops.length ? <Empty message="Chưa có điểm dừng." /> : null}
       </Section>
     </ScrollView>
+
+    {/* ── MODAL BẢN ĐỒ TOÀN MÀN HÌNH ── */}
+    <Modal
+      visible={isMapFullscreen}
+      animationType="slide"
+      onRequestClose={() => setIsMapFullscreen(false)}
+    >
+      <View style={{ backgroundColor: colors.surface.page }} className="flex-1">
+        {/* Header với Safe Area Insets */}
+        <View
+          style={{
+            backgroundColor: colors.surface.card,
+            borderColor: colors.border.default,
+            paddingTop: Math.max(insets.top + 6, 48),
+          }}
+          className="border-b px-4 pb-3 shadow-sm"
+        >
+          <View className="flex-row items-center justify-between">
+            <Pressable
+              onPress={() => setIsMapFullscreen(false)}
+              style={{ backgroundColor: colors.brand.primarySoft }}
+              className="rounded-full p-2.5"
+            >
+              <Ionicons name="close" size={20} color={colors.brand.primary} />
+            </Pressable>
+
+            <View className="flex-1 px-3">
+              <Text style={{ color: colors.text.secondary }} className="text-[10px] font-bold uppercase tracking-wider">
+                Bản đồ lộ trình toàn màn hình
+              </Text>
+              <Text numberOfLines={1} style={{ color: colors.text.primary }} className="text-sm font-bold">
+                {tripId ? `Chuyến #${tripId.slice(0, 8).toUpperCase()}` : '--'}
+              </Text>
+            </View>
+
+            <Pressable
+              onPress={() => setIsMapFullscreen(false)}
+              style={{ backgroundColor: colors.surface.muted }}
+              className="rounded-xl px-3 py-1.5"
+            >
+              <Text style={{ color: colors.text.primary }} className="text-xs font-semibold">Đóng</Text>
+            </Pressable>
+          </View>
+
+          {/* Thanh nút điều hướng bên ngoài (Google Map, Apple Map, Goong Map) */}
+          <View className="mt-2.5 flex-row items-center justify-between gap-1.5">
+            <Pressable
+              onPress={openGoogleMaps}
+              style={{ backgroundColor: '#EEF2FF', borderColor: '#C7D2FE' }}
+              className="flex-1 flex-row items-center justify-center gap-1 rounded-xl border py-2 shadow-xs"
+            >
+              <Ionicons name="navigate-outline" size={13} color="#4338CA" />
+              <Text className="text-[11px] font-bold text-indigo-800">Google Map</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={openAppleMaps}
+              style={{ backgroundColor: '#F1F5F9', borderColor: '#CBD5E1' }}
+              className="flex-1 flex-row items-center justify-center gap-1 rounded-xl border py-2 shadow-xs"
+            >
+              <Ionicons name="compass-outline" size={13} color="#334155" />
+              <Text className="text-[11px] font-bold text-slate-700">Apple Map</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={openGoongMap}
+              style={{ backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }}
+              className="flex-1 flex-row items-center justify-center gap-1 rounded-xl border py-2 shadow-xs"
+            >
+              <Ionicons name="map-outline" size={13} color="#B45309" />
+              <Text className="text-[11px] font-bold text-amber-800">Goong Map</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {/* Bản đồ Goong toàn màn hình */}
+        <View className="flex-1 p-2">
+          {route ? (
+            <GoongRouteMap
+              route={route}
+              vehiclePosition={vehiclePosition}
+              height={Math.max(Dimensions.get('window').height - 180, 500)}
+            />
+          ) : null}
+        </View>
+      </View>
+    </Modal>
   </View>
   );
 }
 
-function Section({ title, icon, children }: { title: string; icon: React.ComponentProps<typeof Ionicons>['name']; children: React.ReactNode }) {
+function Section({
+  title,
+  icon,
+  rightAction,
+  children,
+}: {
+  title: string;
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+  rightAction?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-4 rounded-3xl border p-5 shadow-sm">
-      <View className="flex-row items-center gap-2">
-        <Ionicons name={icon} size={20} color={colors.brand.primary} />
-        <Text style={{ color: colors.text.primary }} className="text-base font-bold">{title}</Text>
+      <View className="flex-row items-center justify-between">
+        <View className="flex-row items-center gap-2">
+          <Ionicons name={icon} size={20} color={colors.brand.primary} />
+          <Text style={{ color: colors.text.primary }} className="text-base font-bold">{title}</Text>
+        </View>
+        {rightAction}
       </View>
       {children}
     </View>
