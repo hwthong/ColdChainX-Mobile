@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -22,6 +22,7 @@ import {
 } from '../../services/notificationApi';
 import { getMyCustomerOrders, OrderResponse } from '../../services/orderApi';
 import { useAuthStore } from '../../store/useAuthStore';
+import { useNotificationStore } from '../../store/useNotificationStore';
 import {
   getNotificationPresentation,
 } from '../../utils/notificationPresenter';
@@ -30,6 +31,12 @@ export default function NotificationsScreen() {
   const router = useRouter();
   const accessToken = useAuthStore((state) => state.token);
 
+  const realtimeItems = useNotificationStore((state) => state.realtimeItems);
+  const unreadCount = useNotificationStore((state) => state.unreadCount);
+  const decrementUnreadCount = useNotificationStore((state) => state.decrementUnreadCount);
+  const setUnreadCount = useNotificationStore((state) => state.setUnreadCount);
+  const fetchUnreadCount = useNotificationStore((state) => state.fetchUnreadCount);
+
   const [notifications, setNotifications] = useState<NotificationResponse[]>([]);
   const [ordersMap, setOrdersMap] = useState<Map<string, OrderResponse>>(new Map());
   const [selectedNotification, setSelectedNotification] = useState<NotificationResponse | null>(null);
@@ -37,8 +44,6 @@ export default function NotificationsScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isMarkingAll, setIsMarkingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const unreadCount = notifications.filter((notification) => !isNotificationRead(notification)).length;
 
   const fetchNotifications = useCallback(async () => {
     if (!accessToken) {
@@ -58,6 +63,7 @@ export default function NotificationsScreen() {
           pageSize: 30,
         }),
         getMyCustomerOrders(accessToken, 1, 50).catch(() => null),
+        fetchUnreadCount(accessToken),
       ]);
 
       if (ordersResponse?.success && ordersResponse.data) {
@@ -78,7 +84,7 @@ export default function NotificationsScreen() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [accessToken]);
+  }, [accessToken, fetchUnreadCount]);
 
   useFocusEffect(
     useCallback(() => {
@@ -86,6 +92,24 @@ export default function NotificationsScreen() {
       fetchNotifications();
     }, [fetchNotifications])
   );
+
+  // Prepend real-time SignalR notifications when received
+  useEffect(() => {
+    if (!realtimeItems || realtimeItems.length === 0) return;
+
+    setNotifications((current) => {
+      const existingIds = new Set(
+        current.map((item) => getNotificationId(item)).filter(Boolean)
+      );
+
+      const newItems = realtimeItems.filter(
+        (item) => !existingIds.has(getNotificationId(item))
+      );
+
+      if (newItems.length === 0) return current;
+      return [...newItems, ...current];
+    });
+  }, [realtimeItems]);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
@@ -105,6 +129,11 @@ export default function NotificationsScreen() {
     }
 
     try {
+      const wasUnread = !isNotificationRead(notification);
+      if (wasUnread) {
+        decrementUnreadCount(1);
+      }
+
       const [detailResponse] = await Promise.all([
         getNotificationById(accessToken, notificationId),
         markNotificationRead(accessToken, notificationId),
@@ -144,6 +173,7 @@ export default function NotificationsScreen() {
         throw new Error(response.message || 'Không thể đánh dấu tất cả thông báo.');
       }
 
+      setUnreadCount(0);
       setNotifications((current) =>
         current.map((notification) => ({
           ...notification,
@@ -151,7 +181,6 @@ export default function NotificationsScreen() {
           readAt: notification.readAt ?? new Date().toISOString(),
         }))
       );
-      await fetchNotifications();
     } catch (err) {
       setError(getApiErrorMessage(err));
     } finally {
