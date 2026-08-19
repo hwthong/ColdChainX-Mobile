@@ -16,6 +16,7 @@ import {
 } from '../../../services/monitoringApi';
 import { TripRouteResponse } from '../../../services/trackingApi';
 import { getIncidents, IncidentResponse } from '../../../services/incidentApi';
+import { getVehicleDetail } from '../../../services/vehicleApi';
 import { driverApi, DriverTripDetailResponseDto, DriverTripStopDto } from '../../../services/driverApi';
 import { getOrderById, OrderResponse } from '../../../services/orderApi';
 import { colors } from '../../../constants/colors';
@@ -50,6 +51,7 @@ export default function DriverTripDetailScreen() {
   const [alerts, setAlerts] = useState<SmartAlert[]>([]);
   const [alertsLoaded, setAlertsLoaded] = useState(false);
   const [activeIncident, setActiveIncident] = useState<IncidentResponse | null>(null);
+  const [replacementPlate, setReplacementPlate] = useState<string | null>(null);
   const [orderDetailsMap, setOrderDetailsMap] = useState<Record<string, OrderResponse>>({});
   const [loadingOrderDetails, setLoadingOrderDetails] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -173,9 +175,24 @@ export default function DriverTripDetailScreen() {
       if (response.success && response.data?.data && response.data.data.length > 0) {
         const incidents = response.data.data;
         const active = incidents.find((i: IncidentResponse) => i.status !== 'RESOLVED');
-        setActiveIncident(active || incidents[0]);
+        const target = active || incidents[0];
+        setActiveIncident(target);
+
+        if (target.externalReeferPlan?.vehiclePlate) {
+          setReplacementPlate(target.externalReeferPlan.vehiclePlate);
+        } else if (target.replacementVehicleId) {
+          try {
+            const vRes = await getVehicleDetail(token, target.replacementVehicleId);
+            if (vRes.success && vRes.data?.truckPlate) {
+              setReplacementPlate(vRes.data.truckPlate);
+            }
+          } catch {
+            // ignore
+          }
+        }
       } else {
         setActiveIncident(null);
+        setReplacementPlate(null);
       }
     } catch {
       // It's okay to fail silently for this secondary info
@@ -453,8 +470,31 @@ export default function DriverTripDetailScreen() {
         />
 
       <Section title="Xe và thiết bị IoT" icon="hardware-chip-outline">
-        {errors.tracking ? <ErrorMessage message={errors.tracking} onRetry={loadTracking} /> : null}
-        {tracking ? <><View className="flex-row gap-3"><Metric label="Nhiệt độ" value={formatTemperature(tracking.telemetry?.temperatureC)} /><Metric label="Cửa xe" value={formatDoor(tracking.telemetry?.doorOpen)} /></View><InfoRow label="Biển số xe" value={tracking.vehicle?.truckPlate || '--'} /><InfoRow label="Mã thiết bị" value={tracking.device?.deviceCode || '--'} /><InfoRow label="Kết nối" value={formatOnlineState(tracking)} /><InfoRow label="Cập nhật cuối" value={formatDateTime(tracking.telemetry?.timestamp ?? tracking.device?.lastSeenAt)} /><InfoRow label="ETA" value={formatDateTime(tracking.eta?.estimatedArrival)} /></> : !errors.tracking ? <Empty message="Chưa nhận được telemetry thật từ thiết bị." /> : null}
+        {tracking ? (
+          <>
+            <View className="flex-row gap-3">
+              <Metric label="Nhiệt độ" value={formatTemperature(tracking.telemetry?.temperatureC)} />
+              <Metric label="Cửa xe" value={formatDoor(tracking.telemetry?.doorOpen)} />
+            </View>
+            <InfoRow
+              label="Biển số xe"
+              value={
+                replacementPlate
+                  ? `${replacementPlate} (Xe cứu hộ)`
+                  : tracking.vehicle?.truckPlate || '--'
+              }
+            />
+            {replacementPlate && tracking.vehicle?.truckPlate && replacementPlate !== tracking.vehicle.truckPlate ? (
+              <InfoRow label="Xe ban đầu" value={tracking.vehicle.truckPlate} />
+            ) : null}
+            <InfoRow label="Mã thiết bị" value={tracking.device?.deviceCode || '--'} />
+            <InfoRow label="Kết nối" value={formatOnlineState(tracking)} />
+            <InfoRow label="Cập nhật cuối" value={formatDateTime(tracking.telemetry?.timestamp ?? tracking.device?.lastSeenAt)} />
+            <InfoRow label="ETA" value={formatDateTime(tracking.eta?.estimatedArrival)} />
+          </>
+        ) : !errors.tracking ? (
+          <Empty message="Chưa nhận được telemetry thật từ thiết bị." />
+        ) : null}
       </Section>
 
       <Section title="Lịch sử nhiệt độ" icon="pulse-outline">{errors.chart ? <ErrorMessage message={errors.chart} onRetry={loadChart} /> : null}{chart ? <TemperatureChart points={chart.points} /> : !errors.chart ? <Empty message="Chưa có dữ liệu nhiệt độ." /> : null}</Section>

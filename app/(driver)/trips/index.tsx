@@ -13,10 +13,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { AppPressable as Pressable } from '../../../components/AppPressable';
 import { colors } from '../../../constants/colors';
 import { driverApi, TripListDto } from '../../../services/driverApi';
+import { getIncidents, IncidentResponse } from '../../../services/incidentApi';
+import { getVehicleDetail } from '../../../services/vehicleApi';
+import { useAuthStore } from '../../../store/useAuthStore';
 import { formatDateTimeVi } from '../../../constants/warehouseTheme';
 
-type FilterType = 'ALL' | 'ACTIVE' | 'COMPLETED';
+type FilterType = 'ALL' | 'ACTIVE' | 'UPCOMING' | 'COMPLETED';
 
+// Các trạng thái xe đang thực tế vận hành / làm hàng
 const ACTIVE_STATUSES = new Set([
   'IN_TRANSIT',
   'IN-TRANSIT',
@@ -26,8 +30,13 @@ const ACTIVE_STATUSES = new Set([
   'LOADING_COMPLETED',
   'PICKING',
   'DELAYED',
-  'PLANNED',
 ]);
+
+// Chuyến đã lên kế hoạch nhưng chưa bắt đầu chạy
+const UPCOMING_STATUSES = new Set(['PLANNED']);
+
+// Chuyến đã kết thúc
+const COMPLETED_STATUSES = new Set(['COMPLETED', 'CLOSED', 'CANCELLED']);
 
 const STATUS_WEIGHT: Record<string, number> = {
   IN_TRANSIT: 10,
@@ -44,16 +53,25 @@ const STATUS_WEIGHT: Record<string, number> = {
   CANCELLED: 0,
 };
 
+interface RescueInfo {
+  plate: string;
+  isRescue: boolean;
+  originalPlate?: string;
+}
+
 export default function DriverTripsScreen() {
   const router = useRouter();
+  const token = useAuthStore((state) => state.token);
+
   const [trips, setTrips] = useState<TripListDto[]>([]);
+  const [replacementMap, setReplacementMap] = useState<Record<string, RescueInfo>>({});
   const [filter, setFilter] = useState<FilterType>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
 
-  const fetchTrips = async () => {
+  const fetchTrips = useCallback(async () => {
     try {
       setError('');
       // Đồng thời tải chuyến đang chạy và lịch sử chuyến đã hoàn tất
@@ -97,18 +115,58 @@ export default function DriverTripsScreen() {
       });
 
       setTrips(allTrips);
+
+      // Tra cứu xe cứu hộ / xe thay thế cho các chuyến đang hoạt động
+      if (token) {
+        const repMap: Record<string, RescueInfo> = {};
+        await Promise.allSettled(
+          allTrips
+            .filter((t) => ACTIVE_STATUSES.has((t.status || '').toUpperCase()))
+            .map(async (t) => {
+              try {
+                const incRes = await getIncidents(token, t.tripId, 1, 10);
+                if (incRes.success && incRes.data?.data?.length) {
+                  const inc =
+                    incRes.data.data.find((i: IncidentResponse) => i.status !== 'RESOLVED') ||
+                    incRes.data.data[0];
+                  if (inc) {
+                    if (inc.externalReeferPlan?.vehiclePlate) {
+                      repMap[t.tripId] = {
+                        plate: inc.externalReeferPlan.vehiclePlate,
+                        isRescue: true,
+                        originalPlate: t.vehiclePlate || undefined,
+                      };
+                    } else if (inc.replacementVehicleId) {
+                      const vRes = await getVehicleDetail(token, inc.replacementVehicleId);
+                      if (vRes.success && vRes.data?.truckPlate) {
+                        repMap[t.tripId] = {
+                          plate: vRes.data.truckPlate,
+                          isRescue: true,
+                          originalPlate: t.vehiclePlate || undefined,
+                        };
+                      }
+                    }
+                  }
+                }
+              } catch {
+                // Fallback to original vehicle
+              }
+            })
+        );
+        setReplacementMap(repMap);
+      }
     } catch (err: any) {
       setError(err.message || 'Không thể tải danh sách chuyến đi. Vui lòng thử lại.');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [token]);
 
   useFocusEffect(
     useCallback(() => {
       fetchTrips();
-    }, [])
+    }, [fetchTrips])
   );
 
   const getStatusDisplay = (status: string) => {
@@ -136,32 +194,61 @@ export default function DriverTripsScreen() {
     );
   };
 
+  // Đếm số lượng theo từng nhóm phân loại
+  const counts = useMemo(() => {
+    let active = 0;
+    let upcoming = 0;
+    let completed = 0;
+
+    trips.forEach((t) => {
+      const s = (t.status || '').toUpperCase();
+      if (ACTIVE_STATUSES.has(s)) active++;
+      else if (UPCOMING_STATUSES.has(s)) upcoming++;
+      else if (COMPLETED_STATUSES.has(s)) completed++;
+    });
+
+    return { all: trips.length, active, upcoming, completed };
+  }, [trips]);
+
   // Filtered trips
   const filteredTrips = useMemo(() => {
     return trips.filter((t) => {
       const s = (t.status || '').toUpperCase();
       const isActive = ACTIVE_STATUSES.has(s);
+      const isUpcoming = UPCOMING_STATUSES.has(s);
+      const isCompleted = COMPLETED_STATUSES.has(s);
 
       if (filter === 'ACTIVE' && !isActive) return false;
-      if (filter === 'COMPLETED' && isActive) return false;
+      if (filter === 'UPCOMING' && !isUpcoming) return false;
+      if (filter === 'COMPLETED' && !isCompleted) return false;
 
       if (!searchQuery.trim()) return true;
 
       const q = searchQuery.toLowerCase().trim();
       const code = (t.tripCode || t.tripId || '').toLowerCase();
+      const rescuePlate = replacementMap[t.tripId]?.plate?.toLowerCase() || '';
       const plate = (t.vehiclePlate || '').toLowerCase();
       const origin = (t.origin || '').toLowerCase();
       const dest = (t.destination || '').toLowerCase();
 
-      return code.includes(q) || plate.includes(q) || origin.includes(q) || dest.includes(q);
+      return (
+        code.includes(q) ||
+        plate.includes(q) ||
+        rescuePlate.includes(q) ||
+        origin.includes(q) ||
+        dest.includes(q)
+      );
     });
-  }, [trips, filter, searchQuery]);
+  }, [trips, filter, searchQuery, replacementMap]);
 
   const renderTripCard = (item: TripListDto, isHero = false) => {
     const statusInfo = getStatusDisplay(item.status);
-    const isCompleted = ['COMPLETED', 'CLOSED', 'CANCELLED'].includes(
-      (item.status || '').toUpperCase()
-    );
+    const rescueInfo = replacementMap[item.tripId];
+    const displayPlate = rescueInfo?.plate || item.vehiclePlate || 'Chưa gán xe';
+    const isReplaced = Boolean(rescueInfo?.isRescue && rescueInfo.plate !== item.vehiclePlate);
+
+    const s = (item.status || '').toUpperCase();
+    const isRunning = ACTIVE_STATUSES.has(s);
 
     return (
       <Pressable
@@ -170,11 +257,13 @@ export default function DriverTripsScreen() {
         style={({ pressed }) => ({
           backgroundColor: isHero
             ? '#FFFFFF'
-            : isCompleted
-            ? colors.surface.card
-            : '#FFFFFF',
+            : isRunning
+            ? '#FFFFFF'
+            : colors.surface.card,
           borderColor: isHero
             ? colors.brand.primary
+            : isRunning
+            ? '#BFDBFE'
             : colors.border.default,
           borderWidth: isHero ? 2 : 1,
           opacity: pressed ? 0.75 : 1,
@@ -196,9 +285,30 @@ export default function DriverTripsScreen() {
             <Text style={{ color: colors.text.primary }} className="text-base font-bold">
               {item.tripCode || `Chuyến #${item.tripId.substring(0, 8).toUpperCase()}`}
             </Text>
-            {item.vehiclePlate ? (
-              <Text style={{ color: colors.text.secondary }} className="mt-0.5 text-xs font-medium">
-                Biển số xe: <Text className="font-semibold text-slate-800">{item.vehiclePlate}</Text>
+
+            {/* Hiển thị biển số xe đang chạy thực tế */}
+            <View className="mt-1 flex-row items-center gap-1.5 flex-wrap">
+              <Text style={{ color: colors.text.secondary }} className="text-xs font-medium">
+                Xe: <Text className="font-bold text-slate-900">{displayPlate}</Text>
+              </Text>
+              {isReplaced ? (
+                <View
+                  style={{
+                    backgroundColor: colors.status.success.bg,
+                    borderColor: colors.status.success.border,
+                  }}
+                  className="rounded-full border px-2 py-0.2"
+                >
+                  <Text style={{ color: colors.status.success.main }} className="text-[10px] font-bold">
+                    Đã đổi xe cứu hộ
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
+            {isReplaced && item.vehiclePlate ? (
+              <Text style={{ color: colors.text.muted }} className="text-[11px]">
+                Xe ban đầu: {item.vehiclePlate}
               </Text>
             ) : null}
           </View>
@@ -220,14 +330,14 @@ export default function DriverTripsScreen() {
         <View className="my-1 gap-1.5 rounded-xl bg-slate-50 p-2.5">
           <View className="flex-row items-center">
             <Ionicons name="radio-button-on" size={14} color={colors.brand.primary} />
-            <Text style={{ color: colors.text.primary }} className="ml-2 flex-1 text-xs" numberOfLines={1}>
+            <Text style={{ color: colors.text.primary }} className="ml-2 flex-1 text-xs font-medium" numberOfLines={1}>
               {item.origin || 'Điểm xuất phát'}
             </Text>
           </View>
           <View className="ml-1.5 h-2 w-0.5 bg-slate-300" />
           <View className="flex-row items-center">
             <Ionicons name="location" size={14} color="#EF4444" />
-            <Text style={{ color: colors.text.primary }} className="ml-2 flex-1 text-xs" numberOfLines={1}>
+            <Text style={{ color: colors.text.primary }} className="ml-2 flex-1 text-xs font-medium" numberOfLines={1}>
               {item.destination || 'Điểm giao hàng'}
             </Text>
           </View>
@@ -271,12 +381,12 @@ export default function DriverTripsScreen() {
 
   return (
     <View style={{ backgroundColor: colors.surface.page }} className="flex-1">
-      {/* ── BỘ LỌC NHANH VÀ TÌM KIẾM ── */}
+      {/* ── BỘ LỌC PHÂN LOẠI CHUẨN XÁC ── */}
       <View
         style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }}
-        className="border-b px-4 pt-3 pb-2.5 shadow-xs"
+        className="border-b px-3 pt-3 pb-2.5 shadow-xs"
       >
-        <View className="flex-row items-center gap-2 rounded-2xl bg-gray-100/90 p-1">
+        <View className="flex-row items-center gap-1.5 rounded-2xl bg-gray-100/90 p-1">
           <Pressable
             onPress={() => setFilter('ALL')}
             style={{
@@ -288,9 +398,9 @@ export default function DriverTripsScreen() {
               style={{
                 color: filter === 'ALL' ? colors.brand.primary : colors.text.secondary,
               }}
-              className="text-xs font-bold"
+              className="text-[11px] font-bold"
             >
-              Tất cả ({trips.length})
+              Tất cả ({counts.all})
             </Text>
           </Pressable>
 
@@ -305,9 +415,26 @@ export default function DriverTripsScreen() {
               style={{
                 color: filter === 'ACTIVE' ? colors.brand.primary : colors.text.secondary,
               }}
-              className="text-xs font-bold"
+              className="text-[11px] font-bold"
             >
-              Đang chạy
+              Đang chạy ({counts.active})
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => setFilter('UPCOMING')}
+            style={{
+              backgroundColor: filter === 'UPCOMING' ? colors.surface.card : 'transparent',
+            }}
+            className="flex-1 items-center justify-center rounded-xl py-2 shadow-xs"
+          >
+            <Text
+              style={{
+                color: filter === 'UPCOMING' ? colors.brand.primary : colors.text.secondary,
+              }}
+              className="text-[11px] font-bold"
+            >
+              Sắp tới ({counts.upcoming})
             </Text>
           </Pressable>
 
@@ -322,21 +449,21 @@ export default function DriverTripsScreen() {
               style={{
                 color: filter === 'COMPLETED' ? colors.brand.primary : colors.text.secondary,
               }}
-              className="text-xs font-bold"
+              className="text-[11px] font-bold"
             >
-              Lịch sử đã chạy
+              Lịch sử ({counts.completed})
             </Text>
           </Pressable>
         </View>
 
         {/* Thanh tìm kiếm nhanh */}
         {trips.length > 2 ? (
-          <View className="mt-2.5 flex-row items-center rounded-xl bg-gray-100/80 px-3 py-1.5">
+          <View className="mt-2 flex-row items-center rounded-xl bg-gray-100/80 px-3 py-1.5">
             <Ionicons name="search-outline" size={16} color={colors.text.muted} />
             <TextInput
               value={searchQuery}
               onChangeText={setSearchQuery}
-              placeholder="Tìm nhanh theo mã chuyến, biển số xe, địa chỉ..."
+              placeholder="Tìm theo mã chuyến, biển số xe, lộ trình..."
               placeholderTextColor={colors.text.muted}
               className="ml-2 flex-1 text-xs text-slate-800"
             />
@@ -349,11 +476,13 @@ export default function DriverTripsScreen() {
         ) : null}
       </View>
 
-      {/* ── DANH SÁCH CHUYẾN XE (MỚI NHẤT TRÊN ĐẦU, CŨ Ở DƯỚI) ── */}
+      {/* ── DANH SÁCH CHUYẾN XE (MỚI NHẤT TRÊN ĐẦU) ── */}
       <FlatList
         data={filteredTrips}
         keyExtractor={(item) => item.tripId}
-        renderItem={({ item, index }) => renderTripCard(item, index === 0 && filter !== 'COMPLETED')}
+        renderItem={({ item, index }) =>
+          renderTripCard(item, index === 0 && filter === 'ALL' && ACTIVE_STATUSES.has((item.status || '').toUpperCase()))
+        }
         contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
         refreshControl={
           <RefreshControl
@@ -387,12 +516,32 @@ export default function DriverTripsScreen() {
               style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }}
               className="mt-10 items-center justify-center rounded-3xl border p-8 shadow-sm"
             >
-              <Ionicons name="car-sport-outline" size={56} color={colors.text.muted} />
+              <Ionicons
+                name={
+                  filter === 'ACTIVE'
+                    ? 'trail-sign-outline'
+                    : filter === 'UPCOMING'
+                    ? 'calendar-outline'
+                    : 'checkmark-done-circle-outline'
+                }
+                size={56}
+                color={colors.text.muted}
+              />
               <Text style={{ color: colors.text.primary }} className="mt-4 text-base font-bold">
-                Chưa có chuyến xe nào
+                {filter === 'ACTIVE'
+                  ? 'Không có chuyến nào đang chạy'
+                  : filter === 'UPCOMING'
+                  ? 'Chưa có chuyến sắp tới'
+                  : filter === 'COMPLETED'
+                  ? 'Chưa có lịch sử chuyến xe'
+                  : 'Chưa có chuyến xe nào'}
               </Text>
               <Text style={{ color: colors.text.secondary }} className="mt-1.5 text-center text-xs leading-5">
-                Các chuyến xe bạn được điều phối hoặc đã hoàn tất sẽ hiển thị tại đây.
+                {filter === 'ACTIVE'
+                  ? 'Chỉ các chuyến đang lăn bánh vận chuyển thực tế mới hiển thị tại đây.'
+                  : filter === 'UPCOMING'
+                  ? 'Các chuyến được lên lịch trước (PLANNED) sẽ hiển thị tại tab này.'
+                  : 'Danh sách các chuyến xe đã hoàn tất hoặc đóng ca.'}
               </Text>
             </View>
           ) : null
