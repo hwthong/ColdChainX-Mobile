@@ -29,6 +29,10 @@ import {
   IncidentResponse,
   resolveIncident,
 } from '../../../../services/incidentApi';
+import {
+  getVehicleDetail,
+  VehicleDetailResponse,
+} from '../../../../services/vehicleApi';
 import { useAuthStore } from '../../../../store/useAuthStore';
 
 const POLL_MS = 10_000;
@@ -60,6 +64,9 @@ export default function DriverIncidentDetailScreen() {
   const token = useAuthStore((state) => state.token);
 
   const [incident, setIncident] = useState<IncidentResponse | null>(null);
+  const [brokenVehicle, setBrokenVehicle] = useState<VehicleDetailResponse | null>(null);
+  const [replacementVehicle, setReplacementVehicle] = useState<VehicleDetailResponse | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,9 +98,23 @@ export default function DriverIncidentDetailScreen() {
         setError(response.message || 'Không thể tải thông tin sự cố.');
         return null;
       }
-      setIncident(response.data);
+      const incData = response.data;
+      setIncident(incData);
       setError(null);
-      return response.data;
+
+      // Tải chi tiết xe gặp sự cố & xe thay thế
+      if (incData.brokenVehicleId) {
+        void getVehicleDetail(token, incData.brokenVehicleId).then((vRes) => {
+          if (vRes.success && vRes.data) setBrokenVehicle(vRes.data);
+        });
+      }
+      if (incData.replacementVehicleId) {
+        void getVehicleDetail(token, incData.replacementVehicleId).then((vRes) => {
+          if (vRes.success && vRes.data) setReplacementVehicle(vRes.data);
+        });
+      }
+
+      return incData;
     } catch (e: unknown) {
       setError(getApiErrorMessage(e));
       return null;
@@ -274,9 +295,7 @@ export default function DriverIncidentDetailScreen() {
   const isLow = incident.severity === 'LOW';
   const isNonBreakdownReported = !isBreakdown && incident.status === 'REPORTED';
 
-  // ── Phân biệt Xe ngoài vs Xe nội bộ ──────────────────────────────────────
-  // Xe ngoài (External Reefer): chở về kho tuyến -> Inbound -> Ghép chuyến mới.
-  // Xe nội bộ (Internal Fleet): điều xe thay thế -> Sang hàng (Transload) -> Tiếp tục chuyến giao thẳng cho khách.
+  // Phân biệt Xe ngoài (External Reefer) vs Xe nội bộ (Internal Fleet)
   const isExternalReefer = Boolean(
     incident.externalReeferPlan ||
     incident.rescuePlanType === 'EXTERNAL_REEFER_TO_ROUTE_WAREHOUSE'
@@ -438,7 +457,7 @@ export default function DriverIncidentDetailScreen() {
               {incident.externalReeferPlan ? (
                 <View className="gap-2 pt-1">
                   <InfoRow label="Nhà cung cấp" value={incident.externalReeferPlan.rentalProvider} />
-                  <InfoRow label="Biển số xe ngoài" value={incident.externalReeferPlan.vehiclePlate} />
+                  <InfoRow label="Biển số xe ngoài" value={incident.externalReeferPlan.vehiclePlate} highlight />
                   <InfoRow
                     label="Tài xế xe ngoài"
                     value={`${incident.externalReeferPlan.driverName}${
@@ -482,10 +501,57 @@ export default function DriverIncidentDetailScreen() {
                 Dispatcher đã điều động <Text className="font-bold">xe thay thế nội bộ</Text> trong hệ thống đến vị trí sự cố để sang hàng trực tiếp. Tài xế sẽ tiếp tục chuyến đi bằng xe thay thế này.
               </Text>
 
-              <View className="gap-2 rounded-2xl bg-white/80 p-3.5 border border-orange-200">
-                <InfoRow label="Loại phương án" value="Xe nội bộ — Sang hàng tiếp tục chuyến" />
-                <InfoRow label="Xe gặp sự cố" value={incident.brokenVehicleId || '--'} />
-                <InfoRow label="Xe thay thế được gán" value={incident.replacementVehicleId || 'Đang phân công xe'} />
+              {/* KHỐI THÔNG TIN CHI TIẾT XE THAY THẾ */}
+              <View className="gap-2.5 rounded-2xl bg-white/90 p-4 border border-orange-200 shadow-sm">
+                <View className="flex-row items-center justify-between border-b border-orange-100 pb-2">
+                  <View className="flex-row items-center gap-1.5">
+                    <Ionicons name="shield-checkmark" size={16} color="#15803D" />
+                    <Text className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                      Xe thay thế được điều động
+                    </Text>
+                  </View>
+                  <View className="rounded-md bg-emerald-100 px-2 py-0.5">
+                    <Text className="text-[10px] font-bold text-emerald-800">Xe nội bộ</Text>
+                  </View>
+                </View>
+
+                <InfoRow
+                  label="Biển số xe"
+                  value={replacementVehicle?.truckPlate || incident.replacementVehicleId || 'Đang phân công xe'}
+                  highlight
+                />
+                {replacementVehicle?.brand ? (
+                  <InfoRow label="Hãng sản xuất" value={replacementVehicle.brand} />
+                ) : null}
+                {replacementVehicle?.vehicleType ? (
+                  <InfoRow label="Loại xe" value={replacementVehicle.vehicleType} />
+                ) : null}
+                {replacementVehicle?.maxWeight ? (
+                  <InfoRow
+                    label="Tải trọng cho phép"
+                    value={`${replacementVehicle.maxWeight.toLocaleString('vi-VN')} kg${
+                      replacementVehicle.maxCbm ? ` (${replacementVehicle.maxCbm} CBM)` : ''
+                    }`}
+                  />
+                ) : null}
+
+                {/* So sánh với xe gặp sự cố */}
+                <View className="mt-2 border-t border-dashed border-orange-200 pt-2">
+                  <Text className="text-[11px] font-bold text-slate-500 mb-1.5">Xe gặp sự cố trước đó:</Text>
+                  <InfoRow
+                    label="Biển số xe cũ"
+                    value={brokenVehicle?.truckPlate || incident.brokenVehicleId || '--'}
+                  />
+                  {brokenVehicle?.brand ? (
+                    <InfoRow label="Hãng xe cũ" value={brokenVehicle.brand} />
+                  ) : null}
+                  {brokenVehicle?.maxWeight ? (
+                    <InfoRow
+                      label="Tải trọng xe cũ"
+                      value={`${brokenVehicle.maxWeight.toLocaleString('vi-VN')} kg`}
+                    />
+                  ) : null}
+                </View>
               </View>
 
               <View className="rounded-xl bg-orange-100 p-3">
@@ -544,7 +610,21 @@ export default function DriverIncidentDetailScreen() {
               </Text>
 
               <View className="gap-2 rounded-2xl bg-white/80 p-3.5 border border-green-200">
-                <InfoRow label="Xe tiếp nhận hàng" value={incident.replacementVehicleId || '--'} />
+                <InfoRow
+                  label="Xe tiếp nhận hàng"
+                  value={
+                    replacementVehicle
+                      ? `${replacementVehicle.truckPlate}${replacementVehicle.brand ? ` (${replacementVehicle.brand})` : ''}`
+                      : incident.replacementVehicleId || '--'
+                  }
+                  highlight
+                />
+                {replacementVehicle?.maxWeight ? (
+                  <InfoRow
+                    label="Tải trọng xe nhận"
+                    value={`${replacementVehicle.maxWeight.toLocaleString('vi-VN')} kg`}
+                  />
+                ) : null}
                 <InfoRow label="Hình thức" value="Sang hàng trực tiếp trên đường (Không về kho)" />
                 <InfoRow label="Trạng thái LPN" value="Giữ nguyên SHIPPING để tiếp tục giao" />
               </View>
@@ -604,7 +684,21 @@ export default function DriverIncidentDetailScreen() {
               </Text>
 
               <View className="gap-2 rounded-2xl bg-white/80 p-3.5 border border-blue-200">
-                <InfoRow label="Xe đang chạy" value={incident.replacementVehicleId || '--'} />
+                <InfoRow
+                  label="Xe đang vận chuyển"
+                  value={
+                    replacementVehicle
+                      ? `${replacementVehicle.truckPlate}${replacementVehicle.brand ? ` (${replacementVehicle.brand})` : ''}`
+                      : incident.replacementVehicleId || '--'
+                  }
+                  highlight
+                />
+                {replacementVehicle?.maxWeight ? (
+                  <InfoRow
+                    label="Tải trọng xe"
+                    value={`${replacementVehicle.maxWeight.toLocaleString('vi-VN')} kg`}
+                  />
+                ) : null}
                 <InfoRow label="Mã chuyến xe" value={incident.tripCode || incident.tripId || currentTripId || '--'} />
                 <InfoRow label="Trạng thái hành trình" value="Đang vận chuyển giao khách" />
               </View>
@@ -639,10 +733,31 @@ export default function DriverIncidentDetailScreen() {
 
             <View className="gap-2 rounded-2xl bg-white/80 p-3.5 border border-green-200">
               {incident.brokenVehicleId ? (
-                <InfoRow label="Xe cũ gặp sự cố" value={incident.brokenVehicleId} />
+                <InfoRow
+                  label="Xe cũ gặp sự cố"
+                  value={
+                    brokenVehicle
+                      ? `${brokenVehicle.truckPlate}${brokenVehicle.brand ? ` (${brokenVehicle.brand})` : ''}`
+                      : incident.brokenVehicleId
+                  }
+                />
               ) : null}
               {incident.replacementVehicleId ? (
-                <InfoRow label="Xe thay thế hiện tại" value={incident.replacementVehicleId} />
+                <InfoRow
+                  label="Xe thay thế hiện tại"
+                  value={
+                    replacementVehicle
+                      ? `${replacementVehicle.truckPlate}${replacementVehicle.brand ? ` (${replacementVehicle.brand})` : ''}`
+                      : incident.replacementVehicleId
+                  }
+                  highlight
+                />
+              ) : null}
+              {replacementVehicle?.maxWeight ? (
+                <InfoRow
+                  label="Tải trọng xe thay thế"
+                  value={`${replacementVehicle.maxWeight.toLocaleString('vi-VN')} kg`}
+                />
               ) : null}
               {incident.tripCode || incident.tripId || currentTripId ? (
                 <InfoRow label="Mã chuyến đang chạy" value={incident.tripCode || incident.tripId || currentTripId || '--'} />
@@ -707,7 +822,20 @@ export default function DriverIncidentDetailScreen() {
           <InfoRow label="Mô tả" value={incident.description} />
           <InfoRow label="Thời gian báo" value={new Date(incident.reportedAt).toLocaleString('vi-VN')} />
           <InfoRow label="Người báo cáo" value={incident.reportedByUsername || '--'} />
-          <InfoRow label="Xe gặp sự cố" value={incident.brokenVehicleId || '--'} />
+          <InfoRow
+            label="Xe gặp sự cố"
+            value={
+              brokenVehicle
+                ? `${brokenVehicle.truckPlate}${brokenVehicle.brand ? ` (${brokenVehicle.brand})` : ''}`
+                : incident.brokenVehicleId || '--'
+            }
+          />
+          {brokenVehicle?.maxWeight ? (
+            <InfoRow
+              label="Tải trọng xe gặp sự cố"
+              value={`${brokenVehicle.maxWeight.toLocaleString('vi-VN')} kg`}
+            />
+          ) : null}
           <InfoRow
             label="Tọa độ GPS"
             value={
@@ -1018,13 +1146,25 @@ export default function DriverIncidentDetailScreen() {
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function InfoRow({
+  label,
+  value,
+  highlight = false,
+}: {
+  label: string;
+  value: string;
+  highlight?: boolean;
+}) {
   return (
     <View className="flex-row items-start justify-between gap-4 border-b border-slate-100 pb-2">
       <Text style={{ color: colors.text.secondary }} className="text-xs">
         {label}
       </Text>
-      <Text numberOfLines={2} style={{ color: colors.text.primary }} className="flex-1 text-right text-xs font-semibold">
+      <Text
+        numberOfLines={2}
+        style={{ color: highlight ? colors.brand.primary : colors.text.primary }}
+        className={`flex-1 text-right text-xs ${highlight ? 'font-bold text-sm' : 'font-semibold'}`}
+      >
         {value}
       </Text>
     </View>
