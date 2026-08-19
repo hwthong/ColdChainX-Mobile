@@ -18,9 +18,9 @@ import { getVehicleDetail } from '../../../services/vehicleApi';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { formatDateTimeVi } from '../../../constants/warehouseTheme';
 
-type FilterType = 'ALL' | 'ACTIVE' | 'UPCOMING' | 'COMPLETED';
+type FilterType = 'ALL' | 'ACTIVE' | 'COMPLETED';
 
-// Các trạng thái xe đang thực tế vận hành / làm hàng
+// Các trạng thái xe đang hoạt động / chuẩn bị / làm hàng
 const ACTIVE_STATUSES = new Set([
   'IN_TRANSIT',
   'IN-TRANSIT',
@@ -30,12 +30,10 @@ const ACTIVE_STATUSES = new Set([
   'LOADING_COMPLETED',
   'PICKING',
   'DELAYED',
+  'PLANNED',
 ]);
 
-// Chuyến đã lên kế hoạch nhưng chưa bắt đầu chạy
-const UPCOMING_STATUSES = new Set(['PLANNED']);
-
-// Chuyến đã kết thúc
+// Các trạng thái xe đã kết thúc
 const COMPLETED_STATUSES = new Set(['COMPLETED', 'CLOSED', 'CANCELLED']);
 
 const STATUS_WEIGHT: Record<string, number> = {
@@ -194,20 +192,18 @@ export default function DriverTripsScreen() {
     );
   };
 
-  // Đếm số lượng theo từng nhóm phân loại
+  // Đếm số lượng theo đúng 3 nhóm
   const counts = useMemo(() => {
     let active = 0;
-    let upcoming = 0;
     let completed = 0;
 
     trips.forEach((t) => {
       const s = (t.status || '').toUpperCase();
       if (ACTIVE_STATUSES.has(s)) active++;
-      else if (UPCOMING_STATUSES.has(s)) upcoming++;
       else if (COMPLETED_STATUSES.has(s)) completed++;
     });
 
-    return { all: trips.length, active, upcoming, completed };
+    return { all: trips.length, active, completed };
   }, [trips]);
 
   // Filtered trips
@@ -215,11 +211,9 @@ export default function DriverTripsScreen() {
     return trips.filter((t) => {
       const s = (t.status || '').toUpperCase();
       const isActive = ACTIVE_STATUSES.has(s);
-      const isUpcoming = UPCOMING_STATUSES.has(s);
       const isCompleted = COMPLETED_STATUSES.has(s);
 
       if (filter === 'ACTIVE' && !isActive) return false;
-      if (filter === 'UPCOMING' && !isUpcoming) return false;
       if (filter === 'COMPLETED' && !isCompleted) return false;
 
       if (!searchQuery.trim()) return true;
@@ -381,12 +375,12 @@ export default function DriverTripsScreen() {
 
   return (
     <View style={{ backgroundColor: colors.surface.page }} className="flex-1">
-      {/* ── BỘ LỌC PHÂN LOẠI CHUẨN XÁC ── */}
+      {/* ── BỘ LỌC 3 TABS (TẤT CẢ | ĐANG CHẠY | ĐÃ HOÀN THÀNH) ── */}
       <View
         style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }}
-        className="border-b px-3 pt-3 pb-2.5 shadow-xs"
+        className="border-b px-4 pt-3 pb-2.5 shadow-xs"
       >
-        <View className="flex-row items-center gap-1.5 rounded-2xl bg-gray-100/90 p-1">
+        <View className="flex-row items-center gap-2 rounded-2xl bg-gray-100/90 p-1">
           <Pressable
             onPress={() => setFilter('ALL')}
             style={{
@@ -398,7 +392,7 @@ export default function DriverTripsScreen() {
               style={{
                 color: filter === 'ALL' ? colors.brand.primary : colors.text.secondary,
               }}
-              className="text-[11px] font-bold"
+              className="text-xs font-bold"
             >
               Tất cả ({counts.all})
             </Text>
@@ -415,26 +409,9 @@ export default function DriverTripsScreen() {
               style={{
                 color: filter === 'ACTIVE' ? colors.brand.primary : colors.text.secondary,
               }}
-              className="text-[11px] font-bold"
+              className="text-xs font-bold"
             >
               Đang chạy ({counts.active})
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => setFilter('UPCOMING')}
-            style={{
-              backgroundColor: filter === 'UPCOMING' ? colors.surface.card : 'transparent',
-            }}
-            className="flex-1 items-center justify-center rounded-xl py-2 shadow-xs"
-          >
-            <Text
-              style={{
-                color: filter === 'UPCOMING' ? colors.brand.primary : colors.text.secondary,
-              }}
-              className="text-[11px] font-bold"
-            >
-              Sắp tới ({counts.upcoming})
             </Text>
           </Pressable>
 
@@ -449,16 +426,16 @@ export default function DriverTripsScreen() {
               style={{
                 color: filter === 'COMPLETED' ? colors.brand.primary : colors.text.secondary,
               }}
-              className="text-[11px] font-bold"
+              className="text-xs font-bold"
             >
-              Lịch sử ({counts.completed})
+              Đã hoàn thành ({counts.completed})
             </Text>
           </Pressable>
         </View>
 
         {/* Thanh tìm kiếm nhanh */}
         {trips.length > 2 ? (
-          <View className="mt-2 flex-row items-center rounded-xl bg-gray-100/80 px-3 py-1.5">
+          <View className="mt-2.5 flex-row items-center rounded-xl bg-gray-100/80 px-3 py-1.5">
             <Ionicons name="search-outline" size={16} color={colors.text.muted} />
             <TextInput
               value={searchQuery}
@@ -476,12 +453,17 @@ export default function DriverTripsScreen() {
         ) : null}
       </View>
 
-      {/* ── DANH SÁCH CHUYẾN XE (MỚI NHẤT TRÊN ĐẦU) ── */}
+      {/* ── DANH SÁCH CHUYẾN XE ── */}
       <FlatList
         data={filteredTrips}
         keyExtractor={(item) => item.tripId}
         renderItem={({ item, index }) =>
-          renderTripCard(item, index === 0 && filter === 'ALL' && ACTIVE_STATUSES.has((item.status || '').toUpperCase()))
+          renderTripCard(
+            item,
+            index === 0 &&
+              filter === 'ALL' &&
+              ACTIVE_STATUSES.has((item.status || '').toUpperCase())
+          )
         }
         contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
         refreshControl={
@@ -520,9 +502,9 @@ export default function DriverTripsScreen() {
                 name={
                   filter === 'ACTIVE'
                     ? 'trail-sign-outline'
-                    : filter === 'UPCOMING'
-                    ? 'calendar-outline'
-                    : 'checkmark-done-circle-outline'
+                    : filter === 'COMPLETED'
+                    ? 'checkmark-done-circle-outline'
+                    : 'car-sport-outline'
                 }
                 size={56}
                 color={colors.text.muted}
@@ -530,18 +512,16 @@ export default function DriverTripsScreen() {
               <Text style={{ color: colors.text.primary }} className="mt-4 text-base font-bold">
                 {filter === 'ACTIVE'
                   ? 'Không có chuyến nào đang chạy'
-                  : filter === 'UPCOMING'
-                  ? 'Chưa có chuyến sắp tới'
                   : filter === 'COMPLETED'
-                  ? 'Chưa có lịch sử chuyến xe'
+                  ? 'Chưa có lịch sử chuyến đã hoàn thành'
                   : 'Chưa có chuyến xe nào'}
               </Text>
               <Text style={{ color: colors.text.secondary }} className="mt-1.5 text-center text-xs leading-5">
                 {filter === 'ACTIVE'
-                  ? 'Chỉ các chuyến đang lăn bánh vận chuyển thực tế mới hiển thị tại đây.'
-                  : filter === 'UPCOMING'
-                  ? 'Các chuyến được lên lịch trước (PLANNED) sẽ hiển thị tại tab này.'
-                  : 'Danh sách các chuyến xe đã hoàn tất hoặc đóng ca.'}
+                  ? 'Chỉ các chuyến đang vận chuyển hoặc chuẩn bị lăn bánh mới hiển thị tại đây.'
+                  : filter === 'COMPLETED'
+                  ? 'Danh sách các chuyến xe đã hoàn thành hoặc kết thúc ca.'
+                  : 'Các chuyến xe được điều phối cho bạn sẽ xuất hiện tại đây.'}
               </Text>
             </View>
           ) : null
