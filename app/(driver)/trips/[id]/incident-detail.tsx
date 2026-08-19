@@ -30,6 +30,15 @@ import {
   resolveIncident,
 } from '../../../../services/incidentApi';
 import {
+  getOrderById,
+  OrderResponse,
+} from '../../../../services/orderApi';
+import {
+  getPlannedTripRoute,
+  getTrackingByTripId,
+  TripRouteLpnDto,
+} from '../../../../services/trackingApi';
+import {
   getVehicleDetail,
   VehicleDetailResponse,
 } from '../../../../services/vehicleApi';
@@ -66,6 +75,8 @@ export default function DriverIncidentDetailScreen() {
   const [incident, setIncident] = useState<IncidentResponse | null>(null);
   const [brokenVehicle, setBrokenVehicle] = useState<VehicleDetailResponse | null>(null);
   const [replacementVehicle, setReplacementVehicle] = useState<VehicleDetailResponse | null>(null);
+  const [tripOrders, setTripOrders] = useState<OrderResponse[]>([]);
+  const [tripLpns, setTripLpns] = useState<TripRouteLpnDto[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -114,12 +125,45 @@ export default function DriverIncidentDetailScreen() {
         });
       }
 
+      // Tải danh sách đơn hàng & LPN của chuyến xe
+      const targetTripId = incData.tripId || currentTripId;
+      if (targetTripId) {
+        void Promise.all([
+          getPlannedTripRoute(token, targetTripId).catch(() => null),
+          getTrackingByTripId(token, targetTripId).catch(() => null),
+        ]).then(async ([routeRes, trackingRes]) => {
+          const rawOrders = [
+            ...(routeRes?.data?.optimizedStops?.flatMap((s) => s.orders) ?? []),
+            ...(trackingRes?.data?.orders ?? []),
+          ];
+          const rawLpns = routeRes?.data?.optimizedStops?.flatMap((s) => s.lpns) ?? [];
+          setTripLpns(rawLpns);
+
+          const uniqueOrderIds = Array.from(
+            new Set(rawOrders.map((o) => o.orderId).filter(Boolean))
+          );
+          if (uniqueOrderIds.length > 0) {
+            const details = await Promise.all(
+              uniqueOrderIds.map(async (oId) => {
+                try {
+                  const res = await getOrderById(token, oId);
+                  return res.data;
+                } catch {
+                  return null;
+                }
+              })
+            );
+            setTripOrders(details.filter((d): d is OrderResponse => Boolean(d)));
+          }
+        });
+      }
+
       return incData;
     } catch (e: unknown) {
       setError(getApiErrorMessage(e));
       return null;
     }
-  }, [token, incidentId]);
+  }, [token, incidentId, currentTripId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -589,6 +633,22 @@ export default function DriverIncidentDetailScreen() {
                 <InfoRow label="Số seal Inbound" value={incident.externalReeferPlan?.sealNumber || 'Theo xe ngoài'} />
                 <InfoRow label="Quy chuẩn Inbound" value="Tự động toàn bộ LPN (Không QC)" />
               </View>
+
+              {/* Danh sách đơn hàng chuyển về kho */}
+              {tripOrders.length > 0 && (
+                <View className="mt-2 gap-2">
+                  <Text className="text-xs font-bold text-purple-950">
+                    📦 Danh sách kiện hàng chuyển về kho ({tripOrders.length} đơn):
+                  </Text>
+                  {tripOrders.map((order, idx) => (
+                    <OrderCardItem
+                      key={order.orderId || idx}
+                      order={order}
+                      lpns={tripLpns.filter((l) => l.orderId === order.orderId)}
+                    />
+                  ))}
+                </View>
+              )}
             </View>
           ) : (
             /* Sang hàng xe nội bộ */
@@ -606,9 +666,10 @@ export default function DriverIncidentDetailScreen() {
               </View>
 
               <Text className="text-xs leading-5 text-green-900">
-                Hàng hóa và thiết bị IoT đã được chuyển sang <Text className="font-bold">xe thay thế nội bộ</Text> an toàn. Toàn bộ LPN được giữ nguyên để giao tiếp.
+                Hàng hóa và thiết bị IoT được chuyển sang <Text className="font-bold">xe thay thế nội bộ</Text> an toàn. Toàn bộ thông tin đơn hàng và người nhận được giữ nguyên để tiếp tục giao.
               </Text>
 
+              {/* Thông tin phương tiện tiếp nhận */}
               <View className="gap-2 rounded-2xl bg-white/80 p-3.5 border border-green-200">
                 <InfoRow
                   label="Xe tiếp nhận hàng"
@@ -627,6 +688,42 @@ export default function DriverIncidentDetailScreen() {
                 ) : null}
                 <InfoRow label="Hình thức" value="Sang hàng trực tiếp trên đường (Không về kho)" />
                 <InfoRow label="Trạng thái LPN" value="Giữ nguyên SHIPPING để tiếp tục giao" />
+              </View>
+
+              {/* KHỐI HIỂN THỊ DANH SÁCH ĐƠN HÀNG, MÃ HÀNG, NGƯỜI NHẬN, ĐỊA CHỈ */}
+              <View className="mt-2 gap-2.5">
+                <View className="flex-row items-center justify-between">
+                  <Text className="text-xs font-bold text-green-950 uppercase tracking-wider">
+                    📦 Danh sách đơn hàng sang xe ({tripOrders.length || (tripLpns.length ? tripLpns.length : 0)} đơn):
+                  </Text>
+                  <View className="rounded bg-green-200/80 px-2 py-0.5">
+                    <Text className="text-[10px] font-bold text-green-900">Giữ nguyên giao tiếp</Text>
+                  </View>
+                </View>
+
+                {tripOrders.length > 0 ? (
+                  tripOrders.map((order, idx) => (
+                    <OrderCardItem
+                      key={order.orderId || idx}
+                      order={order}
+                      lpns={tripLpns.filter((l) => l.orderId === order.orderId)}
+                    />
+                  ))
+                ) : tripLpns.length > 0 ? (
+                  tripLpns.map((lpn, idx) => (
+                    <View key={lpn.lpnId || idx} className="rounded-2xl bg-white p-3.5 border border-green-200 gap-1.5 shadow-sm">
+                      <View className="flex-row items-center justify-between">
+                        <Text className="text-xs font-bold text-slate-900">{lpn.itemName || 'Hàng hóa vận chuyển'}</Text>
+                        <Text className="text-[11px] font-bold text-green-800">{lpn.lpnCode}</Text>
+                      </View>
+                      <Text className="text-[11px] text-slate-500">Mã vận đơn: {lpn.orderTrackingCode || lpn.orderId}</Text>
+                    </View>
+                  ))
+                ) : (
+                  <View className="rounded-xl bg-white/70 p-3 items-center">
+                    <Text className="text-xs text-slate-500">Toàn bộ đơn hàng trong chuyến được bảo toàn sang xe mới</Text>
+                  </View>
+                )}
               </View>
             </View>
           )
@@ -715,7 +812,7 @@ export default function DriverIncidentDetailScreen() {
                 <Text className="text-base font-bold text-green-950">
                   {incident.status === 'TRANSLOAD_COMPLETED'
                     ? 'Bước 5: Đã Đổi Xe & Tiếp Tục Giao Hàng'
-                    : 'Bước 5: Giao Hàng Cho Khách & Đóng Sự Cố'}
+                    : 'Bước 5: Giao Hàng Cho Khách & Đóng Sự CỐ'}
                 </Text>
               </View>
               <View className="rounded-lg bg-green-200 px-2 py-1">
@@ -1142,6 +1239,101 @@ export default function DriverIncidentDetailScreen() {
           </View>
         </View>
       </Modal>
+    </View>
+  );
+}
+
+function OrderCardItem({ order, lpns }: { order: OrderResponse; lpns: TripRouteLpnDto[] }) {
+  const receiverPhone = order.receiverPhone || order.customerPhone;
+  const receiverName = order.receiverName || order.customerName || order.customerContactName || 'Khách hàng';
+  const destAddress = order.destination?.address || 'Địa chỉ nhận theo lộ trình';
+
+  return (
+    <View className="rounded-2xl bg-white p-4 border border-slate-200/80 gap-2.5 shadow-sm">
+      {/* Header: Tracking code & Item name */}
+      <View className="flex-row items-start justify-between gap-2 border-b border-slate-100 pb-2">
+        <View className="flex-1">
+          <View className="flex-row items-center gap-1.5">
+            <Ionicons name="cube" size={14} color={colors.brand.primary} />
+            <Text className="text-xs font-bold text-slate-900" numberOfLines={1}>
+              {order.itemName}
+            </Text>
+          </View>
+          <Text className="text-[11px] font-semibold text-slate-500 mt-0.5">
+            Mã ĐH: <Text className="font-bold text-slate-700">{order.trackingCode || order.orderId.slice(0, 8).toUpperCase()}</Text>
+          </Text>
+        </View>
+
+        {/* Temperature Badge */}
+        {order.tempCondition ? (
+          <View className="rounded-md bg-blue-50 px-2 py-0.5 border border-blue-200">
+            <Text className="text-[10px] font-bold text-blue-700">{order.tempCondition}</Text>
+          </View>
+        ) : null}
+      </View>
+
+      {/* Cargo specifications: Quantity, Weight, Packing */}
+      <View className="flex-row flex-wrap items-center gap-3 bg-slate-50 rounded-xl p-2.5">
+        <View className="flex-row items-center gap-1">
+          <Text className="text-[11px] text-slate-500">Số lượng:</Text>
+          <Text className="text-[11px] font-bold text-slate-800">{order.quantity} {order.packingType || 'kiện'}</Text>
+        </View>
+        {(order.actualWeightKg || order.expectedWeightKg) ? (
+          <View className="flex-row items-center gap-1">
+            <Text className="text-[11px] text-slate-500">Trọng lượng:</Text>
+            <Text className="text-[11px] font-bold text-slate-800">
+              {(order.actualWeightKg || order.expectedWeightKg)?.toLocaleString('vi-VN')} kg
+            </Text>
+          </View>
+        ) : null}
+        {(order.actualCbm || order.expectedCbm) ? (
+          <View className="flex-row items-center gap-1">
+            <Text className="text-[11px] text-slate-500">Thể tích:</Text>
+            <Text className="text-[11px] font-bold text-slate-800">{order.actualCbm || order.expectedCbm} CBM</Text>
+          </View>
+        ) : null}
+      </View>
+
+      {/* Recipient info: Name, Phone with call button, Delivery Address */}
+      <View className="gap-1.5 pt-0.5">
+        <View className="flex-row items-center justify-between">
+          <View className="flex-row items-center gap-1.5 flex-1 pr-2">
+            <Ionicons name="person-outline" size={13} color="#475569" />
+            <Text className="text-xs font-semibold text-slate-800" numberOfLines={1}>
+              Người nhận: <Text className="font-bold">{receiverName}</Text>
+            </Text>
+          </View>
+          {receiverPhone ? (
+            <Pressable
+              onPress={() => Linking.openURL(`tel:${receiverPhone}`)}
+              hitSlop={6}
+              className="flex-row items-center gap-1 rounded-lg bg-green-50 px-2 py-1 border border-green-200"
+            >
+              <Ionicons name="call" size={11} color="#15803D" />
+              <Text className="text-[11px] font-bold text-green-700">{receiverPhone}</Text>
+            </Pressable>
+          ) : null}
+        </View>
+
+        <View className="flex-row items-start gap-1.5">
+          <Ionicons name="location-outline" size={13} color="#475569" style={{ marginTop: 2 }} />
+          <Text className="text-[11px] text-slate-600 flex-1 leading-4" numberOfLines={2}>
+            {destAddress}
+          </Text>
+        </View>
+      </View>
+
+      {/* LPN List if any */}
+      {lpns && lpns.length > 0 ? (
+        <View className="border-t border-dashed border-slate-200 pt-2 flex-row flex-wrap items-center gap-1.5">
+          <Text className="text-[10px] font-bold text-slate-500">Mã LPN:</Text>
+          {lpns.map((lpn) => (
+            <View key={lpn.lpnId} className="rounded bg-slate-100 px-1.5 py-0.5">
+              <Text className="text-[10px] font-semibold text-slate-700">{lpn.lpnCode}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }
