@@ -112,6 +112,10 @@ export interface OrderResponse {
   trackingCode: string;
   customerId?: string | null;
   customerName?: string | null;
+  customerContactName?: string | null;
+  customerPhone?: string | null;
+  receiverPhone?: string | null;
+  receiverName?: string | null;
   itemName: string;
   category: string;
   quantity: number;

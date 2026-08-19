@@ -28,6 +28,7 @@ import { AppInput } from '../../components/AppInput';
 import { AppMessage } from '../../components/AppMessage';
 import { StatusBadge } from '../../components/StatusBadge';
 import { InboundAsnCard } from '../../components/warehouse/InboundAsnCard';
+import { ReturnInboundPanel } from '../../components/warehouse/ReturnInboundPanel';
 import {
   InboundWorkflowStepper,
   type StepKey,
@@ -67,12 +68,14 @@ const STATUS_CHIPS = [
 ];
 
 type ScheduleSource = 'LOADING' | 'PRIMARY' | 'FALLBACK' | 'ERROR';
+type InboundMode = 'ASN' | 'RETURNS';
 
 const todayInput = formatDateInput(new Date());
 
 export default function WarehouseInboundScreen() {
   const token = useAuthStore((state) => state.token);
   const storedWarehouseId = useAuthStore((state) => state.warehouseId ?? state.user?.warehouseId ?? null);
+  const [inboundMode, setInboundMode] = useState<InboundMode>('ASN');
   const [searchQuery, setSearchQuery] = useState('');
   const [scheduleDate, setScheduleDate] = useState(todayInput);
   const [statusFilter, setStatusFilter] = useState('');
@@ -660,7 +663,39 @@ export default function WarehouseInboundScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: WH_COLORS.background }}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+      <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 }}>
+        {([
+          { key: 'ASN' as const, label: 'Tiếp nhận ASN' },
+          { key: 'RETURNS' as const, label: 'Hàng trả về' },
+        ]).map((item) => {
+          const active = inboundMode === item.key;
+          return (
+            <Pressable
+              key={item.key}
+              onPress={() => setInboundMode(item.key)}
+              style={{
+                flex: 1,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: active ? colors.brand.primary : colors.border.default,
+                backgroundColor: active ? colors.brand.primary : colors.surface.card,
+                paddingVertical: 12,
+              }}
+            >
+              <Text style={{ color: active ? colors.text.onPrimary : colors.text.primary, fontWeight: '700' }}>
+                {item.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {inboundMode === 'RETURNS' ? (
+        <ReturnInboundPanel token={token} warehouseId={warehouseIdForInbound} />
+      ) : (
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <ScrollView
           style={{ flex: 1 }}
           contentContainerStyle={{ padding: 16, paddingBottom: 36 }}
@@ -1205,7 +1240,8 @@ export default function WarehouseInboundScreen() {
             ) : null}
           </Section>
         </ScrollView>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      )}
     </View>
   );
 }

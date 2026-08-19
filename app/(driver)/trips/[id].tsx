@@ -7,6 +7,7 @@ import { AppPressable as Pressable } from '../../../components/AppPressable';
 import { GoongRouteMap } from '../../../components/customer/GoongRouteMap';
 import { TemperatureChart } from '../../../components/customer/TemperatureChart';
 import { TripAlertsSection } from '../../../components/driver/TripAlertsSection';
+import { TripOrdersSection } from '../../../components/driver/TripOrdersSection';
 import { getApiErrorMessage } from '../../../services/apiClient';
 import {
   getTripAlerts, getTripRoute, getTripTemperatureChart, getTripTracking,
@@ -15,6 +16,7 @@ import {
 import { TripRouteResponse } from '../../../services/trackingApi';
 import { getIncidents, IncidentResponse } from '../../../services/incidentApi';
 import { driverApi, DriverTripDetailResponseDto, DriverTripStopDto } from '../../../services/driverApi';
+import { getOrderById, OrderResponse } from '../../../services/orderApi';
 import { colors } from '../../../constants/colors';
 import { useAuthStore } from '../../../store/useAuthStore';
 
@@ -45,6 +47,8 @@ export default function DriverTripDetailScreen() {
   const [alerts, setAlerts] = useState<SmartAlert[]>([]);
   const [alertsLoaded, setAlertsLoaded] = useState(false);
   const [activeIncident, setActiveIncident] = useState<IncidentResponse | null>(null);
+  const [orderDetailsMap, setOrderDetailsMap] = useState<Record<string, OrderResponse>>({});
+  const [loadingOrderDetails, setLoadingOrderDetails] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errors, setErrors] = useState<Record<string, string | null>>({});
@@ -52,6 +56,50 @@ export default function DriverTripDetailScreen() {
   const setError = useCallback((key: string, value: string | null) => {
     setErrors((current) => ({ ...current, [key]: value }));
   }, []);
+
+  const loadOrderDetails = useCallback(async (ordersToFetch: { orderId?: string }[]) => {
+    if (!token || !ordersToFetch?.length) return;
+    const uniqueIds = Array.from(
+      new Set(
+        ordersToFetch
+          .map((o) => (o.orderId || '').trim())
+          .filter(Boolean)
+      )
+    );
+    if (uniqueIds.length === 0) return;
+
+    setLoadingOrderDetails(true);
+    try {
+      const results = await Promise.allSettled(
+        uniqueIds.map(async (orderId) => {
+          const response = await getOrderById(token, orderId);
+          if (response.success && response.data) {
+            return response.data;
+          }
+          return null;
+        })
+      );
+
+      const mapUpdates: Record<string, OrderResponse> = {};
+      for (const result of results) {
+        if (result.status === 'fulfilled' && result.value) {
+          const item = result.value;
+          const rawId = item.orderId || '';
+          if (rawId) {
+            mapUpdates[rawId] = item;
+            mapUpdates[rawId.toLowerCase()] = item;
+            mapUpdates[rawId.toUpperCase()] = item;
+          }
+        }
+      }
+
+      setOrderDetailsMap((prev) => ({ ...prev, ...mapUpdates }));
+    } catch {
+      // Graceful non-blocking fallback
+    } finally {
+      setLoadingOrderDetails(false);
+    }
+  }, [token]);
 
   const loadTracking = useCallback(async () => {
     if (!token || !tripId) return null;
@@ -61,9 +109,14 @@ export default function DriverTripDetailScreen() {
         setError('tracking', response.message || 'Không thể tải dữ liệu giám sát chuyến.');
         return null;
       }
-      setTracking(response.data); setError('tracking', null); return response.data;
+      setTracking(response.data);
+      setError('tracking', null);
+      if (response.data.orders?.length) {
+        void loadOrderDetails(response.data.orders);
+      }
+      return response.data;
     } catch (error) { setError('tracking', getApiErrorMessage(error)); return null; }
-  }, [setError, token, tripId]);
+  }, [setError, token, tripId, loadOrderDetails]);
 
   const loadTrip = useCallback(async () => {
     if (!tripId) return null;
@@ -84,8 +137,12 @@ export default function DriverTripDetailScreen() {
       const response = await getTripRoute(token, tripId);
       if (!response.success || !response.data) { setError('route', response.message || 'Chưa có dữ liệu tuyến đường.'); return; }
       setRoute(response.data); setError('route', null);
+      const routeOrders = response.data.optimizedStops.flatMap((s) => s.orders ?? []);
+      if (routeOrders.length > 0) {
+        void loadOrderDetails(routeOrders);
+      }
     } catch (error) { setError('route', getApiErrorMessage(error)); }
-  }, [setError, token, tripId]);
+  }, [setError, token, tripId, loadOrderDetails]);
 
   const loadChart = useCallback(async () => {
     if (!token || !tripId) return;
@@ -215,6 +272,13 @@ export default function DriverTripDetailScreen() {
         {errors.route ? <ErrorMessage message={errors.route} onRetry={loadRoute} /> : null}
         {route ? <><InfoRow label="Quãng đường" value={formatDistance(route.totalDistanceMeters)} /><InfoRow label="Thời gian dự kiến" value={formatDuration(route.totalDurationSeconds)} /><GoongRouteMap route={route} vehiclePosition={vehiclePosition} />{!vehiclePosition ? <Empty message="Chưa nhận được vị trí từ thiết bị." /> : null}</> : !errors.route ? <Empty message="Chưa có dữ liệu tuyến đường." /> : null}
       </Section>
+
+      <TripOrdersSection
+        route={route}
+        fallbackOrders={tracking?.orders}
+        orderDetailsMap={orderDetailsMap}
+        loadingDetails={loadingOrderDetails}
+      />
 
       <Section title="Xe và thiết bị IoT" icon="hardware-chip-outline">
         {errors.tracking ? <ErrorMessage message={errors.tracking} onRetry={loadTracking} /> : null}

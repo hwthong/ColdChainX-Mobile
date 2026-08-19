@@ -19,6 +19,10 @@ import { AppPressable as Pressable } from '../../../../components/AppPressable';
 import { colors } from '../../../../constants/colors';
 import { AppButton } from '../../../../components/AppButton';
 import { AppInput } from '../../../../components/AppInput';
+import {
+  PartialHandoverPanel,
+  type PartialHandoverSubmission,
+} from '../../../../components/driver/PartialHandoverPanel';
 import { LocalQrCode } from '../../../../components/local-qr-code';
 import { TemperatureChart } from '../../../../components/customer/TemperatureChart';
 import { ApiClientError } from '../../../../services/apiClient';
@@ -28,6 +32,7 @@ import {
   DeliveryUploadFile,
   EpodResponse,
   PaymentQrResponse,
+  ProcessDynamicCodResponse,
   ReturnWarehouse,
   VerifyQrPaymentResponse,
   deliveryApi,
@@ -53,7 +58,7 @@ import {
 } from '../../../../services/trackingApi';
 import { useAuthStore } from '../../../../store/useAuthStore';
 
-type ScreenStep = 'ORDERS' | 'ORDER_ACTIONS' | 'SIGNATURE' | 'PAYMENT' | 'REJECT' | 'NO_SHOW';
+type ScreenStep = 'ORDERS' | 'ORDER_ACTIONS' | 'SIGNATURE' | 'PAYMENT' | 'REJECT' | 'NO_SHOW' | 'PARTIAL_HANDOVER';
 
 type StopOrder = {
   orderId: string;
@@ -61,9 +66,16 @@ type StopOrder = {
   itemName: string;
   category?: string | null;
   customerId?: string | null;
+  originalQuantity: number;
   status: string;
   lpns: TripRouteLpnDto[];
   epod: EpodResponse | null;
+};
+
+type ReturnCargoSummary = {
+  lpnCode: string;
+  quantity: number;
+  reason: string;
 };
 
 const STOP_STATUS: Record<string, string> = {
@@ -125,6 +137,9 @@ export default function StopDetailScreen() {
   const [noShowEvidenceAsset, setNoShowEvidenceAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [isReturnToWarehouse, setIsReturnToWarehouse] = useState(true);
   const [returnFlowActive, setReturnFlowActive] = useState(false);
+  const [returnCargoSummary, setReturnCargoSummary] = useState<ReturnCargoSummary | null>(null);
+  const [partialResult, setPartialResult] = useState<ProcessDynamicCodResponse | null>(null);
+  const [partialCodDue, setPartialCodDue] = useState(0);
   const [warehouses, setWarehouses] = useState<ReturnWarehouse[] | null>(null);
   const [warehouseError, setWarehouseError] = useState<string | null>(null);
   const [isLoadingWarehouses, setIsLoadingWarehouses] = useState(false);
@@ -164,7 +179,6 @@ export default function StopDetailScreen() {
     hasAppliedSeal,
     tripStatus,
   });
-  const hasNoShowOrder = orders.some((order) => order.status.toUpperCase() === 'DELIVERY_FAILED_NOSHOW');
   const isReturnFlow = returnFlowActive
     || stopStatus === 'SKIPPED_NOSHOW'
     || orders.some((order) => RETURN_ORDER_STATUSES.has(order.status.toUpperCase()));
@@ -173,7 +187,6 @@ export default function StopDetailScreen() {
   const canCloseShift = allOrdersHandedOver
     && allPaymentsReady
     && !hasRemainingStops
-    && !hasNoShowOrder
     && tripStatus.toUpperCase() !== 'COMPLETED';
 
   const loadData = useCallback(async (showSpinner = true) => {
@@ -240,14 +253,19 @@ export default function StopDetailScreen() {
 
       const nextOrders = ordersAtStop.map((order): StopOrder => {
         const routeOrder = routeOrderById.get(order.orderId);
+        const matchingLpns = routeLpns.filter((lpn) => lpn.orderId === order.orderId);
+        const firstLpnQuantity = matchingLpns[0]?.quantity;
         return {
           orderId: order.orderId,
           trackingCode: order.trackingCode || routeOrder?.trackingCode || order.orderId.slice(0, 8),
           itemName: order.itemName || routeOrder?.itemName || 'Đơn hàng',
           category: order.category || routeOrder?.category,
           customerId: order.customerId,
+          originalQuantity: firstLpnQuantity && firstLpnQuantity > 0
+            ? firstLpnQuantity
+            : order.quantity,
           status: order.status,
-          lpns: routeLpns.filter((lpn) => lpn.orderId === order.orderId),
+          lpns: matchingLpns,
           epod: null,
         };
       });
@@ -320,6 +338,18 @@ export default function StopDetailScreen() {
     setPaymentQr(null);
     setPaymentVerification(null);
     setStep('SIGNATURE');
+  };
+
+  const startPartialHandover = (order: StopOrder) => {
+    setSelectedOrderId(order.orderId);
+    setEpodId('');
+    setEpod(null);
+    setPaymentQr(null);
+    setPaymentVerification(null);
+    setPaymentProofAsset(null);
+    setPartialResult(null);
+    setPartialCodDue(0);
+    setStep('PARTIAL_HANDOVER');
   };
 
   const pickImage = async (
@@ -409,6 +439,8 @@ export default function StopDetailScreen() {
     setRejectEvidenceAsset(null);
     setNoShowEvidenceAsset(null);
     setRejectionReason('');
+    setPartialResult(null);
+    setPartialCodDue(0);
     setStep('ORDERS');
   };
 
@@ -566,6 +598,80 @@ export default function StopDetailScreen() {
     setStep('REJECT');
   };
 
+  const continueWithFullReject = (
+    submission: Omit<PartialHandoverSubmission, 'evidenceAsset'> & {
+      evidenceAsset: ImagePicker.ImagePickerAsset | null;
+    }
+  ) => {
+    setRejectionReason(submission.rejectionReason);
+    setRejectEvidenceAsset(submission.evidenceAsset);
+    setIsReturnToWarehouse(submission.isReturnToWarehouse);
+    setStep('REJECT');
+  };
+
+  const submitPartialHandover = async (submission: PartialHandoverSubmission) => {
+    if (mutationLock.current || isProcessing) return;
+    if (!stopId) {
+      Alert.alert('Thiếu StopId', 'Không xác định được điểm dừng. Vui lòng tải lại màn hình.');
+      return;
+    }
+    if (!tripId) {
+      Alert.alert('Thiếu TripId', 'Không xác định được chuyến đi. Vui lòng tải lại màn hình.');
+      return;
+    }
+    if (!selectedOrder?.customerId) {
+      Alert.alert('Thiếu CustomerId', 'Không xác định được khách hàng của đơn. Vui lòng tải lại điểm dừng.');
+      return;
+    }
+
+    try {
+      mutationLock.current = true;
+      setIsProcessing(true);
+      const result = await deliveryApi.processDynamicCod(stopId, {
+        tripId,
+        customerId: selectedOrder.customerId,
+        rejectedQuantity: submission.rejectedQuantity,
+        rejectionReason: submission.rejectionReason,
+        isReturnToWarehouse: submission.isReturnToWarehouse,
+        evidenceImageFile: toDeliveryUploadFile(submission.evidenceAsset, 'partial-handover-evidence.jpg'),
+      });
+
+      const responseCodDue = getDynamicCodDue(result);
+      let resolvedEpod: EpodResponse = {
+        epodId: result.epodId,
+        orderId: selectedOrder.orderId,
+        status: 'OSD_PARTIAL_DELIVER',
+        paymentAmountDue: responseCodDue,
+        paymentStatus: responseCodDue > 0 ? 'AWAITING_PAYMENT' : 'PAID',
+        handoverConfirmedAt: result.handoverConfirmedAt ?? null,
+      };
+      try {
+        resolvedEpod = await deliveryApi.getEpodByOrderId(selectedOrder.orderId);
+      } catch {
+        // Dynamic COD succeeded. Keep its typed response so the existing payment flow can retry.
+      }
+
+      setEpodId(result.epodId);
+      setEpod(resolvedEpod);
+      setPartialResult(result);
+      setPartialCodDue(resolvedEpod.paymentAmountDue ?? responseCodDue);
+      setReturnFlowActive(result.isReturnToWarehouse && result.rejectedQuantity > 0);
+      setReturnCargoSummary(result.isReturnToWarehouse ? {
+        lpnCode: result.lpnCode,
+        quantity: result.rejectedQuantity,
+        reason: result.rejectionReason,
+      } : null);
+      await loadData(false);
+      setStep('PAYMENT');
+    } catch (error) {
+      Alert.alert('Không thể bàn giao một phần', formatActionError(error, 'PARTIAL_HANDOVER'));
+      await loadData(false);
+    } finally {
+      mutationLock.current = false;
+      setIsProcessing(false);
+    }
+  };
+
   const submitRejectEntireLpn = async () => {
     if (mutationLock.current || isProcessing || !stopId || !tripId || !selectedOrder) return;
     if (!selectedOrder.customerId) {
@@ -592,6 +698,11 @@ export default function StopDetailScreen() {
         evidenceImageFile: toDeliveryUploadFile(rejectEvidenceAsset, 'lpn-rejection-evidence.jpg'),
       });
       setReturnFlowActive(result.isReturnToWarehouse);
+      setReturnCargoSummary(result.isReturnToWarehouse ? {
+        lpnCode: result.lpnCode,
+        quantity: result.rejectedQuantity,
+        reason: result.rejectionReason,
+      } : null);
       await loadData(false);
       resetOrderForm();
       Alert.alert('Đã ghi nhận từ chối kiện hàng', `Trạng thái đơn do hệ thống trả về: ${formatOrderStatus(result.orderStatus)}.`);
@@ -635,6 +746,9 @@ export default function StopDetailScreen() {
     }
 
     try {
+      const noShowLpns = orders.flatMap((order) => order.lpns);
+      const noShowQuantity = noShowLpns.reduce((total, lpn) => total + (lpn.quantity ?? 0), 0)
+        || orders.reduce((total, order) => total + order.originalQuantity, 0);
       mutationLock.current = true;
       setIsProcessing(true);
       await deliveryApi.reportNoShow(
@@ -642,6 +756,11 @@ export default function StopDetailScreen() {
         toDeliveryUploadFile(noShowEvidenceAsset, 'customer-no-show-evidence.jpg')
       );
       setReturnFlowActive(true);
+      setReturnCargoSummary({
+        lpnCode: noShowLpns.map((lpn) => lpn.lpnCode).filter(Boolean).join(', ') || 'Đang cập nhật từ Backend',
+        quantity: noShowQuantity,
+        reason: 'Khách không có mặt',
+      });
       await loadData(false);
       resetOrderForm();
       Alert.alert('Đã báo khách không có mặt', 'Trạng thái điểm dừng và kiện hàng đã được tải lại từ hệ thống.');
@@ -852,7 +971,8 @@ export default function StopDetailScreen() {
                 {selectedOrder.lpns.map((lpn) => lpn.lpnCode).filter(Boolean).join(', ') || 'Chưa có mã LPN'}
               </Text>
               <View className="mt-5 gap-3">
-                <AppButton label="Bàn giao cho người nhận" onPress={() => startHandover(selectedOrder)} disabled={isProcessing} />
+                <AppButton label="Bàn giao toàn bộ" onPress={() => startHandover(selectedOrder)} disabled={isProcessing} />
+                <AppButton label="Bàn giao một phần" variant="secondary" onPress={() => startPartialHandover(selectedOrder)} disabled={isProcessing} />
                 <AppButton label="Khách từ chối toàn bộ kiện hàng" variant="secondary" onPress={startRejectEntireLpn} disabled={isProcessing} />
               </View>
             </View>
@@ -860,6 +980,16 @@ export default function StopDetailScreen() {
               <AppButton label="Quay lại" variant="secondary" onPress={resetOrderForm} disabled={isProcessing} />
             </View>
           </View>
+        ) : step === 'PARTIAL_HANDOVER' && selectedOrder ? (
+          <PartialHandoverPanel
+            trackingCode={selectedOrder.trackingCode}
+            lpnCodes={selectedOrder.lpns.map((lpn) => lpn.lpnCode).filter(Boolean).join(', ')}
+            originalQuantity={selectedOrder.originalQuantity}
+            processing={isProcessing}
+            onSubmit={(submission) => void submitPartialHandover(submission)}
+            onUseFullReject={continueWithFullReject}
+            onBack={() => setStep('ORDER_ACTIONS')}
+          />
         ) : step === 'REJECT' && selectedOrder ? (
           <View>
             <Text className="text-lg font-bold text-amber-950">Từ chối toàn bộ kiện hàng</Text>
@@ -969,20 +1099,25 @@ export default function StopDetailScreen() {
             </View>
           </View>
         ) : step === 'PAYMENT' && selectedOrder && epod ? (
-          <PaymentPanel
-            order={selectedOrder}
-            epod={epod}
-            paymentQr={paymentQr}
-            paymentVerification={paymentVerification}
-            proofAsset={paymentProofAsset}
-            processing={isProcessing}
-            onGetQr={() => void handleGetPaymentQr()}
-            onCheckStatus={() => void handleCheckPaymentStatus(false)}
-            onPickProof={() => void pickImage(setPaymentProofAsset, 'ảnh biên lai thanh toán')}
-            onVerify={() => void handleVerifyPayment()}
-            onOpenUrl={(url) => void openExternalUrl(url)}
-            onDone={resetOrderForm}
-          />
+          <View>
+            {partialResult ? (
+              <PartialSuccessSummary result={partialResult} actualCodDue={partialCodDue} />
+            ) : null}
+            <PaymentPanel
+              order={selectedOrder}
+              epod={epod}
+              paymentQr={paymentQr}
+              paymentVerification={paymentVerification}
+              proofAsset={paymentProofAsset}
+              processing={isProcessing}
+              onGetQr={() => void handleGetPaymentQr()}
+              onCheckStatus={() => void handleCheckPaymentStatus(false)}
+              onPickProof={() => void pickImage(setPaymentProofAsset, 'ảnh biên lai thanh toán')}
+              onVerify={() => void handleVerifyPayment()}
+              onOpenUrl={(url) => void openExternalUrl(url)}
+              onDone={resetOrderForm}
+            />
+          </View>
         ) : (
           <View>
             <DeliveryNotice
@@ -1037,6 +1172,21 @@ export default function StopDetailScreen() {
                   disabled={isProcessing}
                   onPress={() => void loadData(false)}
                 />
+              </View>
+            ) : null}
+
+            {isReturnFlow && returnCargoSummary ? (
+              <View className="mt-4 rounded-2xl border border-orange-200 bg-orange-50 p-4">
+                <View className="flex-row items-center gap-2">
+                  <Ionicons name="return-down-back-outline" size={22} color="#9A3412" />
+                  <Text className="font-bold text-orange-950">Hàng cần mang về kho</Text>
+                </View>
+                <Text className="mt-3 text-sm text-orange-800">LPN</Text>
+                <Text className="mt-1 font-bold text-orange-950">{returnCargoSummary.lpnCode}</Text>
+                <Text className="mt-3 text-sm text-orange-800">Số lượng</Text>
+                <Text className="mt-1 font-bold text-orange-950">{returnCargoSummary.quantity} kiện</Text>
+                <Text className="mt-3 text-sm text-orange-800">Lý do</Text>
+                <Text className="mt-1 text-orange-950">{returnCargoSummary.reason}</Text>
               </View>
             ) : null}
 
@@ -1140,9 +1290,6 @@ export default function StopDetailScreen() {
 
                 {hasRemainingStops ? (
                   <Text className="mt-4 text-sm text-orange-800">Tiếp tục xử lý các điểm dừng còn lại theo trạng thái hệ thống.</Text>
-                ) : null}
-                {hasNoShowOrder ? (
-                  <Text className="mt-4 text-sm text-orange-800">Ca chưa thể đóng vì Backend yêu cầu mọi đơn có xác nhận bàn giao/ePOD.</Text>
                 ) : null}
                 {!allPaymentsReady ? (
                   <Text className="mt-4 text-sm text-orange-800">Hoàn tất thanh toán COD của mọi ePOD trước khi đóng ca.</Text>
@@ -1335,6 +1482,47 @@ function ProofPicker({
           <Text className="font-bold text-red-700">Xóa ảnh đã chọn</Text>
         </Pressable>
       ) : null}
+    </View>
+  );
+}
+
+function PartialSuccessSummary({
+  result,
+  actualCodDue,
+}: {
+  result: ProcessDynamicCodResponse;
+  actualCodDue: number;
+}) {
+  return (
+    <View className="mb-5 rounded-2xl border border-green-200 bg-green-50 p-4">
+      <View className="flex-row items-center gap-2">
+        <Ionicons name="checkmark-circle" size={24} color="#15803d" />
+        <Text className="text-lg font-bold text-green-950">Bàn giao một phần thành công</Text>
+      </View>
+      <View className="mt-4 gap-3">
+        <View className="flex-row justify-between gap-4">
+          <Text className="text-green-800">Khách nhận</Text>
+          <Text className="font-bold text-green-950">{result.acceptedQuantity}/{result.originalQuantity} kiện</Text>
+        </View>
+        <View className="flex-row justify-between gap-4">
+          <Text className="text-green-800">Từ chối</Text>
+          <Text className="font-bold text-green-950">{result.rejectedQuantity} kiện</Text>
+        </View>
+        <View className="flex-row justify-between gap-4">
+          <Text className="text-green-800">COD sau điều chỉnh</Text>
+          <Text className="font-bold text-green-950">{formatCurrency(actualCodDue)}</Text>
+        </View>
+        {result.isReturnToWarehouse ? (
+          <View className="flex-row justify-between gap-4">
+            <Text className="text-green-800">Mang về kho</Text>
+            <Text className="font-bold text-green-950">{result.rejectedQuantity} kiện</Text>
+          </View>
+        ) : null}
+        <View className="flex-row justify-between gap-4">
+          <Text className="text-green-800">LPN</Text>
+          <Text className="flex-1 text-right font-bold text-green-950">{result.lpnCode}</Text>
+        </View>
+      </View>
     </View>
   );
 }
@@ -1640,7 +1828,7 @@ function isAlreadyCheckedInError(error: unknown) {
 function formatActionError(
   error: unknown,
   action: 'LOAD' | 'CHECK_IN' | 'CUT_SEAL' | 'HANDOVER' | 'PAYMENT' | 'APPLY_SEAL'
-    | 'REJECT' | 'NO_SHOW' | 'WAREHOUSE' | 'TEMPERATURE' | 'CLOSE_SHIFT'
+    | 'REJECT' | 'PARTIAL_HANDOVER' | 'NO_SHOW' | 'WAREHOUSE' | 'TEMPERATURE' | 'CLOSE_SHIFT'
 ) {
   if (error instanceof ApiClientError) {
     if (error.status === undefined) {
@@ -1687,10 +1875,10 @@ function formatActionError(
     if (action === 'APPLY_SEAL' && /seal/.test(message)) {
       return 'Mã seal chưa hợp lệ hoặc seal đã được áp dụng.';
     }
-    if ((action === 'REJECT' || action === 'NO_SHOW') && /evidence|image|photo|file/.test(message)) {
+    if ((action === 'REJECT' || action === 'PARTIAL_HANDOVER' || action === 'NO_SHOW') && /evidence|image|photo|file/.test(message)) {
       return 'Vui lòng thêm ảnh minh chứng.';
     }
-    if (action === 'REJECT' && /already|delivered|handover|processed|conflict/.test(message)) {
+    if ((action === 'REJECT' || action === 'PARTIAL_HANDOVER') && /already|delivered|handover|processed|conflict/.test(message)) {
       return 'Kiện hàng này đã được xử lý trước đó.';
     }
     if (action === 'NO_SHOW' && /already|no.?show|skipped/.test(message)) {
@@ -1726,6 +1914,8 @@ function formatActionError(
       return 'Không thể xử lý thanh toán. Vui lòng thử lại.';
     case 'REJECT':
       return 'Không thể ghi nhận từ chối kiện hàng. Vui lòng thử lại.';
+    case 'PARTIAL_HANDOVER':
+      return 'Không thể xác nhận bàn giao một phần. Vui lòng kiểm tra số lượng và thử lại.';
     case 'NO_SHOW':
       return 'Không thể báo khách không có mặt. Vui lòng thử lại.';
     case 'WAREHOUSE':
@@ -1749,6 +1939,13 @@ function toDeliveryUploadFile(asset: ImagePicker.ImagePickerAsset, fallbackName:
 
 function formatCurrency(value: number) {
   return `${value.toLocaleString('vi-VN')} ₫`;
+}
+
+function getDynamicCodDue(result: ProcessDynamicCodResponse) {
+  return result.actualCodDue
+    ?? result.automatedCodCalculation?.actualCodDue
+    ?? result.automatedCodCalculation?.actualCodToCollect
+    ?? 0;
 }
 
 function formatDateTime(value?: string | null) {
@@ -1781,6 +1978,7 @@ function formatWarehouseStatus(status?: string | null) {
 function getEpodStatusLabel(status?: string | null) {
   switch (status?.toUpperCase()) {
     case 'HANDOVER_CONFIRMED': return 'Bàn giao đã xác nhận';
+    case 'OSD_PARTIAL_DELIVER': return 'Bàn giao một phần đã xác nhận';
     case 'COMPLETED': return 'ePOD đã hoàn tất';
     default: return 'ePOD đã được tạo';
   }

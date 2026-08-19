@@ -111,6 +111,55 @@ export type RejectEntireLpnResponse = {
   inboundReturnSlip?: unknown;
 };
 
+export type DynamicCodInboundReturnSlip = {
+  returnSlipId: string;
+  slipCode: string;
+  returnedQty: number;
+  status: string;
+  note?: string | null;
+};
+
+export type DynamicCodAutomatedCalculation = {
+  originalCodAmount?: number | null;
+  estimatedDeduction?: number | null;
+  actualCodDue?: number | null;
+  actualCodToCollect?: number | null;
+};
+
+export type DynamicCodEvidenceCapture = {
+  evidenceImageUrl?: string | null;
+  capturedAt?: string | null;
+  status?: string | null;
+};
+
+export type ProcessDynamicCodRequest = {
+  tripId: string;
+  customerId: string;
+  rejectedQuantity: number;
+  rejectionReason: string;
+  isReturnToWarehouse: boolean;
+  evidenceImageFile: DeliveryUploadFile;
+};
+
+export type ProcessDynamicCodResponse = {
+  epodId: string;
+  handoverConfirmedAt?: string | null;
+  orderStatus: string;
+  lpnCode: string;
+  originalQuantity: number;
+  rejectedQuantity: number;
+  acceptedQuantity: number;
+  rejectedRatio: string | number;
+  rejectionReason: string;
+  osdNotes?: string | null;
+  isReturnToWarehouse: boolean;
+  inboundReturnSlip?: DynamicCodInboundReturnSlip | string | null;
+  automatedCodCalculation?: DynamicCodAutomatedCalculation | null;
+  step1_EvidenceCapture?: DynamicCodEvidenceCapture | null;
+  actualCodDue?: number | null;
+  nextStep?: string | null;
+};
+
 export type ReturnWarehouse = {
   warehouseId: string;
   warehouseCode: string;
@@ -256,6 +305,22 @@ export const deliveryApi = {
       { method: 'POST', headers: getAuthHeaders(), body: formData }
     );
     return unwrap(response, 'Không thể ghi nhận từ chối kiện hàng.');
+  },
+
+  processDynamicCod: async (stopId: string, request: ProcessDynamicCodRequest) => {
+    const formData = new FormData();
+    formData.append('TripId', request.tripId);
+    formData.append('CustomerId', request.customerId);
+    formData.append('RejectedQuantity', String(request.rejectedQuantity));
+    formData.append('RejectionReason', request.rejectionReason);
+    formData.append('IsReturnToWarehouse', String(request.isReturnToWarehouse));
+    appendFile(formData, 'EvidenceImageFile', request.evidenceImageFile);
+
+    const response = await apiRequest<ApiResponse<ProcessDynamicCodResponse>>(
+      `/api/Delivery/stops/${stopId}/dynamic-cod`,
+      { method: 'POST', headers: getAuthHeaders(), body: formData }
+    );
+    return unwrap(response, 'Không thể xác nhận bàn giao một phần.');
   },
 
   reportNoShow: async (stopId: string, evidenceImageFile: DeliveryUploadFile) => {
