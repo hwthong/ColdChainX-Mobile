@@ -845,20 +845,6 @@ export default function DriverIncidentDetailScreen() {
                   </View>
                 )}
               </View>
-
-              {/* Nút xác nhận sang hàng nếu đang ở bước RESCUE_DISPATCHED */}
-              {incident.status === 'RESCUE_DISPATCHED' && (
-                <Pressable
-                  onPress={() => setIsTransloadModalVisible(true)}
-                  style={{ backgroundColor: colors.brand.primary, minHeight: 48 }}
-                  className="flex-row items-center justify-center gap-2 rounded-2xl mt-3 shadow-sm"
-                >
-                  <Ionicons name="swap-horizontal" size={20} color="#ffffff" />
-                  <Text className="font-bold text-white text-base">
-                    Xác nhận đã sang hàng sang xe {replacementVehicle?.truckPlate || 'mới'}
-                  </Text>
-                </Pressable>
-              )}
             </View>
           )
         )}
@@ -943,20 +929,6 @@ export default function DriverIncidentDetailScreen() {
                 <InfoRow label="Mã chuyến xe" value={incident.tripCode || incident.tripId || currentTripId || '--'} />
                 <InfoRow label="Trạng thái hành trình" value="Đang vận chuyển giao khách" />
               </View>
-
-              {/* Nút xác nhận tiếp tục đi sang Bước 5 */}
-              {currentStep === 4 && !step4ManuallyConfirmed && (
-                <Pressable
-                  onPress={handleConfirmContinueFromStep4}
-                  style={{ backgroundColor: colors.brand.primary, minHeight: 48 }}
-                  className="flex-row items-center justify-center gap-2 rounded-2xl mt-2 shadow-sm"
-                >
-                  <Ionicons name="navigate" size={18} color="#ffffff" />
-                  <Text className="font-bold text-white text-base">
-                    Xác nhận tiếp tục đi (Chuyển sang Bước 5)
-                  </Text>
-                </Pressable>
-              )}
             </View>
           )
         )}
@@ -1033,32 +1005,6 @@ export default function DriverIncidentDetailScreen() {
                 ℹ <Text className="font-bold">Hướng dẫn:</Text> Mở chuyến xe để thực hiện giao từng điểm dừng (Check-in & POD), sau đó bấm đóng sự cố khi đã giao hàng hoàn tất.
               </Text>
             </View>
-
-            {/* Các nút thao tác trong thẻ Bước 5 */}
-            {incident.status !== 'RESOLVED' && (
-              <View className="gap-2.5 mt-2">
-                <Pressable
-                  onPress={() => router.push(`/trips/${incident.tripId || currentTripId}` as never)}
-                  style={{ backgroundColor: colors.brand.primary, minHeight: 48 }}
-                  className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm"
-                >
-                  <Ionicons name="navigate" size={18} color="#ffffff" />
-                  <Text className="font-bold text-white text-base">
-                    Mở chuyến xe để giao hàng các điểm dừng
-                  </Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => setIsResolveModalVisible(true)}
-                  style={{ borderColor: colors.status.success.main, backgroundColor: colors.status.success.bg, minHeight: 48 }}
-                  className="flex-row items-center justify-center gap-2 rounded-2xl border"
-                >
-                  <Ionicons name="checkmark-circle" size={18} color={colors.status.success.main} />
-                  <Text style={{ color: colors.status.success.main }} className="text-base font-bold">
-                    Hoàn tất & Đóng sự cố (Resolve)
-                  </Text>
-                </Pressable>
-              </View>
-            )}
           </View>
         )}
 
@@ -1302,21 +1248,35 @@ export default function DriverIncidentDetailScreen() {
                 className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm"
               >
                 <Ionicons name="navigate" size={18} color="#ffffff" />
-                <Text className="text-base font-bold text-white">Mở chuyến xe & Tiếp tục hành trình</Text>
+                <Text className="text-base font-bold text-white">Xác nhận tiếp tục đi (Chuyển sang Bước 5)</Text>
               </Pressable>
             ) : null}
 
-            {/* CTA: Bước 5 Hoàn tất & Đóng sự cố */}
+            {/* CTA: Bước 5 Hoàn tất & Đóng sự cố + Mở chuyến xe */}
             {currentStep === 5 && incident.status !== 'RESOLVED' ? (
-              <View className="gap-2">
+              <View className="gap-2.5">
                 <Pressable
                   onPress={() => setIsResolveModalVisible(true)}
-                  style={{ borderColor: colors.status.success.main, backgroundColor: colors.status.success.bg, minHeight: 48 }}
+                  style={{ backgroundColor: colors.status.success.main, minHeight: 48 }}
+                  className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm"
+                >
+                  <Ionicons name="checkmark-circle" size={18} color="#ffffff" />
+                  <Text className="text-base font-bold text-white">
+                    Hoàn tất & Đóng sự cố (Resolve)
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => router.push(`/trips/${incident.tripId || currentTripId}` as never)}
+                  style={{
+                    backgroundColor: colors.surface.page,
+                    borderColor: colors.border.default,
+                    minHeight: 44,
+                  }}
                   className="flex-row items-center justify-center gap-2 rounded-2xl border"
                 >
-                  <Ionicons name="checkmark-circle" size={18} color={colors.status.success.main} />
-                  <Text style={{ color: colors.status.success.main }} className="text-base font-bold">
-                    Hoàn tất & Đóng sự cố (Resolve)
+                  <Ionicons name="navigate-outline" size={16} color={colors.brand.primary} />
+                  <Text style={{ color: colors.brand.primary }} className="text-sm font-bold">
+                    Mở chuyến xe để giao hàng các điểm dừng
                   </Text>
                 </Pressable>
               </View>
