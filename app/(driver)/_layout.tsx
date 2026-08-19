@@ -1,44 +1,49 @@
 import React from 'react';
-import { Tabs } from 'expo-router';
+import { Tabs, usePathname } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { DriverHeader } from '../../components/DriverHeader';
 import { colors } from '../../constants/colors';
 
 export default function DriverLayout() {
+  const pathname = usePathname();
+
+  // Detect if we are on a full-screen subroute (nested trip pages, incident details, notifications)
+  const isNestedTrip =
+    pathname.includes('/trips/') &&
+    pathname !== '/(driver)/trips' &&
+    pathname !== '/trips';
+  const isNotifications = pathname.includes('/notifications');
+  const isFullScreenRoute = isNestedTrip || isNotifications;
+
   return (
     <Tabs
       screenOptions={{
         header: ({ route }) => {
+          if (isFullScreenRoute) return null;
+
           const titleMap: Record<string, string> = {
             home: 'ColdChainX Driver',
             trips: 'Chuyến xe',
             profile: 'Hồ sơ cá nhân',
           };
-          
-          let title = titleMap[route.name];
-          
-          // Fallbacks for dynamic routes
-          if (route.name === 'trips/[id]') title = 'Chi tiết chuyến';
-          if (route.name === 'trips/[id]/documents') title = 'Chứng từ & Waybill';
-          if (route.name === 'trips/[id]/incident') title = 'Báo cáo sự cố';
-          
-          if (!title) title = 'Tài xế';
 
-          const showBackButton = route.name !== 'home' && route.name !== 'trips' && route.name !== 'profile';
-
-          return <DriverHeader title={title} showBackButton={showBackButton} />;
+          const title = titleMap[route.name] || 'Tài xế';
+          return <DriverHeader title={title} showBackButton={false} />;
         },
+        headerShown: !isFullScreenRoute,
         tabBarActiveTintColor: colors.brand.primary,
         tabBarInactiveTintColor: colors.text.muted,
-        tabBarStyle: {
-          backgroundColor: colors.surface.card,
-          borderTopColor: colors.border.default,
-          elevation: 20,
-          shadowColor: '#000000',
-          shadowOffset: { width: 0, height: -10 },
-          shadowOpacity: 0.03,
-          shadowRadius: 20,
-        },
+        tabBarStyle: isFullScreenRoute
+          ? { display: 'none' }
+          : {
+              backgroundColor: colors.surface.card,
+              borderTopColor: colors.border.default,
+              elevation: 20,
+              shadowColor: '#000000',
+              shadowOffset: { width: 0, height: -10 },
+              shadowOpacity: 0.03,
+              shadowRadius: 20,
+            },
       }}
     >
       <Tabs.Screen
@@ -67,6 +72,7 @@ export default function DriverLayout() {
         options={{
           href: null,
           headerShown: false,
+          tabBarStyle: { display: 'none' },
         }}
       />
     </Tabs>
