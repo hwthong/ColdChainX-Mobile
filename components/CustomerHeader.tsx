@@ -1,8 +1,8 @@
-import React, { useCallback } from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 
 import { colors } from '../constants/colors';
 import { useAuthStore } from '../store/useAuthStore';
@@ -23,13 +23,11 @@ export function CustomerHeader({ title, showBackButton = false }: CustomerHeader
   const isHome = title === 'ColdChainX';
   const displayName = fullName?.trim() || 'bạn';
 
-  useFocusEffect(
-    useCallback(() => {
-      if (accessToken) {
-        fetchUnreadCount(accessToken);
-      }
-    }, [accessToken, fetchUnreadCount])
-  );
+  useEffect(() => {
+    if (accessToken) {
+      fetchUnreadCount(accessToken);
+    }
+  }, [accessToken, fetchUnreadCount]);
 
   return (
     <View

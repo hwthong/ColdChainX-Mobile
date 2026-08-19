@@ -1,8 +1,8 @@
-import React, { useCallback } from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 
 import { colors } from '../constants/colors';
 import { useAuthStore } from '../store/useAuthStore';
@@ -20,13 +20,11 @@ export function DriverHeader({ title, showBackButton = false }: DriverHeaderProp
   const unreadCount = useNotificationStore((state) => state.unreadCount);
   const fetchUnreadCount = useNotificationStore((state) => state.fetchUnreadCount);
 
-  useFocusEffect(
-    useCallback(() => {
-      if (token) {
-        fetchUnreadCount(token);
-      }
-    }, [fetchUnreadCount, token])
-  );
+  useEffect(() => {
+    if (token) {
+      fetchUnreadCount(token);
+    }
+  }, [fetchUnreadCount, token]);
 
   return (
     <View
