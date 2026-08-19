@@ -274,13 +274,21 @@ export default function DriverIncidentDetailScreen() {
   const isLow = incident.severity === 'LOW';
   const isNonBreakdownReported = !isBreakdown && incident.status === 'REPORTED';
 
+  // ── Phân biệt Xe ngoài vs Xe nội bộ ──────────────────────────────────────
+  // Xe ngoài (External Reefer): chở về kho tuyến -> Inbound -> Ghép chuyến mới.
+  // Xe nội bộ (Internal Fleet): điều xe thay thế -> Sang hàng (Transload) -> Tiếp tục chuyến giao thẳng cho khách.
+  const isExternalReefer = Boolean(
+    incident.externalReeferPlan ||
+    incident.rescuePlanType === 'EXTERNAL_REEFER_TO_ROUTE_WAREHOUSE'
+  );
+
   const destinationWarehouseName =
     incident.externalReeferPlan?.destinationWarehouseName ||
     incident.externalReeferPlan?.routeDestinationCity ||
     'Kho đích tuyến';
 
   // Bước hiện tại thực tế trên hệ thống
-  const currentStep = getIncidentCurrentStepNumber(incident.status, incident.severity);
+  const currentStep = getIncidentCurrentStepNumber(incident.status, incident.severity, isExternalReefer);
   // Bước đang xem (tua lại hoặc hiện tại)
   const activeStep = selectedStep ?? currentStep;
 
@@ -312,6 +320,7 @@ export default function DriverIncidentDetailScreen() {
         <IncidentWorkflowStepper
           status={incident.status}
           severity={incident.severity}
+          isExternalReefer={isExternalReefer}
           selectedStep={selectedStep}
           onSelectStep={(step) => setSelectedStep(step)}
         />
@@ -324,8 +333,8 @@ export default function DriverIncidentDetailScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.brand.primary} />}
       >
 
-        {/* Kho đích bắt buộc (chỉ hiển thị trong nhánh CRITICAL) */}
-        {isCritical && (
+        {/* Kho đích bắt buộc (chỉ hiển thị khi là xe ngoài chở về kho) */}
+        {isCritical && isExternalReefer && (
           <View
             style={{ backgroundColor: '#F8FAFC', borderColor: '#CBD5E1' }}
             className="flex-row items-center justify-between rounded-2xl border p-4 shadow-sm"
@@ -369,7 +378,7 @@ export default function DriverIncidentDetailScreen() {
             </View>
 
             <Text className="text-xs leading-5 text-red-800">
-              Sự cố xe / máy lạnh hư luôn được xác định là <Text className="font-bold">CRITICAL</Text>. Đóng kín cửa thùng xe ngay lập tức để bảo vệ cold chain.
+              Sự cố xe / máy lạnh hư được phân loại là <Text className="font-bold">CRITICAL</Text>. Đóng kín cửa thùng xe ngay lập tức để bảo vệ cold chain.
             </Text>
 
             {/* Checkbox: chỉ tương tác nếu đang ở Bước 1 và chưa xác nhận */}
@@ -409,111 +418,198 @@ export default function DriverIncidentDetailScreen() {
           </View>
         )}
 
-        {/* ─── BƯỚC 2: XE LẠNH THUÊ NGOÀI / LẬP PHƯƠNG ÁN CỨU HỘ ─── */}
+        {/* ─── BƯỚC 2: XE NGOÀI VỀ KHO HOẶC ĐIỀU XE NỘI BỘ ─── */}
         {activeStep === 2 && (
-          <View style={{ backgroundColor: '#FFF7ED', borderColor: '#FED7AA' }} className="gap-3 rounded-3xl border p-5 shadow-sm">
-            <View className="flex-row items-center justify-between">
-              <View className="flex-row items-center gap-2">
-                <Ionicons name="car-outline" size={22} color="#C2410C" />
-                <Text className="text-base font-bold text-amber-900">Bước 2: Xe Lạnh Thuê Ngoài Cứu Hộ</Text>
+          isExternalReefer ? (
+            /* Xe ngoài chở về kho tuyến */
+            <View style={{ backgroundColor: '#FFF7ED', borderColor: '#FED7AA' }} className="gap-3 rounded-3xl border p-5 shadow-sm">
+              <View className="flex-row items-center justify-between">
+                <View className="flex-row items-center gap-2">
+                  <Ionicons name="car-outline" size={22} color="#C2410C" />
+                  <Text className="text-base font-bold text-amber-900">Bước 2: Xe Lạnh Thuê Ngoài Cứu Hộ</Text>
+                </View>
+                <View className="rounded-lg bg-orange-200 px-2 py-1">
+                  <Text className="text-[10px] font-bold text-orange-950">
+                    {currentStep > 2 ? '✓ Đã điều xe ngoài' : 'Đang di chuyển'}
+                  </Text>
+                </View>
               </View>
-              <View className="rounded-lg bg-orange-200 px-2 py-1">
-                <Text className="text-[10px] font-bold text-orange-950">
-                  {currentStep > 2 ? '✓ Đã điều xe' : currentStep === 2 ? 'Đang di chuyển' : 'Sắp tới'}
+
+              {incident.externalReeferPlan ? (
+                <View className="gap-2 pt-1">
+                  <InfoRow label="Nhà cung cấp" value={incident.externalReeferPlan.rentalProvider} />
+                  <InfoRow label="Biển số xe ngoài" value={incident.externalReeferPlan.vehiclePlate} />
+                  <InfoRow
+                    label="Tài xế xe ngoài"
+                    value={`${incident.externalReeferPlan.driverName}${
+                      incident.externalReeferPlan.driverPhone ? ` (${incident.externalReeferPlan.driverPhone})` : ''
+                    }`}
+                  />
+                  <InfoRow label="Nhiệt độ cam kết" value={`${incident.externalReeferPlan.agreedTemperature}°C`} />
+                  <InfoRow label="Số seal niêm phong" value={incident.externalReeferPlan.sealNumber} />
+                  <InfoRow label="Kho nhận bắt buộc" value={`${incident.externalReeferPlan.destinationWarehouseName || destinationWarehouseName} 🔒`} />
+                </View>
+              ) : (
+                <View className="py-2">
+                  <Text className="text-xs leading-5 text-amber-800">
+                    Dispatcher đang thuê xe lạnh ngoài chuyên dụng để chở toàn bộ hàng về kho tuyến nhập kho lại.
+                  </Text>
+                </View>
+              )}
+
+              <View className="rounded-xl bg-orange-100 p-3">
+                <Text className="text-xs text-orange-900">
+                  ℹ <Text className="font-bold">Lưu ý:</Text> Tài xế bàn giao seal và toàn bộ LPN cho xe ngoài chở về kho tuyến.
                 </Text>
               </View>
             </View>
-
-            {incident.externalReeferPlan ? (
-              <View className="gap-2 pt-1">
-                <InfoRow label="Nhà cung cấp" value={incident.externalReeferPlan.rentalProvider} />
-                <InfoRow label="Biển số xe ngoài" value={incident.externalReeferPlan.vehiclePlate} />
-                <InfoRow
-                  label="Tài xế xe ngoài"
-                  value={`${incident.externalReeferPlan.driverName}${
-                    incident.externalReeferPlan.driverPhone ? ` (${incident.externalReeferPlan.driverPhone})` : ''
-                  }`}
-                />
-                <InfoRow label="Nhiệt độ cam kết" value={`${incident.externalReeferPlan.agreedTemperature}°C`} />
-                <InfoRow label="Số seal niêm phong" value={incident.externalReeferPlan.sealNumber} />
-                <InfoRow label="Kho nhận bắt buộc" value={`${incident.externalReeferPlan.destinationWarehouseName || destinationWarehouseName} 🔒`} />
+          ) : (
+            /* Xe thay thế nội bộ trong hệ thống */
+            <View style={{ backgroundColor: '#FFF7ED', borderColor: '#FED7AA' }} className="gap-3 rounded-3xl border p-5 shadow-sm">
+              <View className="flex-row items-center justify-between">
+                <View className="flex-row items-center gap-2">
+                  <Ionicons name="car-sport-outline" size={22} color="#C2410C" />
+                  <Text className="text-base font-bold text-amber-900">Bước 2: Điều Xe Thay Thế Trong Hệ Thống</Text>
+                </View>
+                <View className="rounded-lg bg-orange-200 px-2 py-1">
+                  <Text className="text-[10px] font-bold text-orange-950">
+                    {currentStep > 2 ? '✓ Đã điều xe nội bộ' : 'Đang đến vị trí'}
+                  </Text>
+                </View>
               </View>
-            ) : (
-              <View className="py-2">
-                <Text className="text-xs leading-5 text-amber-800">
-                  Dispatcher đang lập phương án và liên hệ đối tác xe lạnh chuyên dụng để điều xe cứu hộ đến vị trí sự cố.
-                </Text>
-              </View>
-            )}
 
-            <View className="rounded-xl bg-orange-100 p-3">
-              <Text className="text-xs text-orange-900">
-                ℹ <Text className="font-bold">Lưu ý:</Text> Tài xế giữ nguyên vị trí, bàn giao seal và toàn bộ LPN cho xe cứu hộ khi xe đến nơi.
+              <Text className="text-xs leading-5 text-amber-900">
+                Dispatcher đã điều động <Text className="font-bold">xe thay thế nội bộ</Text> trong hệ thống đến vị trí sự cố để sang hàng trực tiếp. Tài xế sẽ tiếp tục chuyến đi bằng xe thay thế này.
               </Text>
+
+              <View className="gap-2 rounded-2xl bg-white/80 p-3.5 border border-orange-200">
+                <InfoRow label="Loại phương án" value="Xe nội bộ — Sang hàng tiếp tục chuyến" />
+                <InfoRow label="Xe gặp sự cố" value={incident.brokenVehicleId || '--'} />
+                <InfoRow label="Xe thay thế được gán" value={incident.replacementVehicleId || 'Đang phân công xe'} />
+              </View>
+
+              <View className="rounded-xl bg-orange-100 p-3">
+                <Text className="text-xs text-orange-900">
+                  ℹ <Text className="font-bold">Lưu ý:</Text> Không chở về nhập kho. Khi xe thay thế đến nơi, thực hiện sang hàng trực tiếp để tiếp tục giao cho khách.
+                </Text>
+              </View>
             </View>
-          </View>
+          )
         )}
 
-        {/* ─── BƯỚC 3: INBOUND KHO TUYẾN ─── */}
+        {/* ─── BƯỚC 3: INBOUND KHO TUYẾN (XE NGOÀI) HOẶC SANG HÀNG (XE NỘI BỘ) ─── */}
         {activeStep === 3 && (
-          <View style={{ backgroundColor: '#F3E8FF', borderColor: '#E9D5FF' }} className="gap-3 rounded-3xl border p-5 shadow-sm">
-            <View className="flex-row items-center justify-between">
-              <View className="flex-row items-center gap-2">
-                <Ionicons name="cube-outline" size={22} color="#6B21A8" />
-                <Text className="text-base font-bold text-purple-950">Bước 3: Inbound Kho Đích Tuyến</Text>
+          isExternalReefer ? (
+            /* Inbound kho tuyến */
+            <View style={{ backgroundColor: '#F3E8FF', borderColor: '#E9D5FF' }} className="gap-3 rounded-3xl border p-5 shadow-sm">
+              <View className="flex-row items-center justify-between">
+                <View className="flex-row items-center gap-2">
+                  <Ionicons name="cube-outline" size={22} color="#6B21A8" />
+                  <Text className="text-base font-bold text-purple-950">Bước 3: Inbound Kho Đích Tuyến</Text>
+                </View>
+                <View className="rounded-lg bg-purple-200 px-2 py-1">
+                  <Text className="text-[10px] font-bold text-purple-950">
+                    {currentStep > 3 ? '✓ Đã nhập kho' : currentStep === 3 ? 'Đang Inbound' : 'Chờ xe đến'}
+                  </Text>
+                </View>
               </View>
-              <View className="rounded-lg bg-purple-200 px-2 py-1">
-                <Text className="text-[10px] font-bold text-purple-950">
-                  {currentStep > 3 ? '✓ Đã nhập kho' : currentStep === 3 ? 'Đang Inbound' : 'Chờ xe đến'}
-                </Text>
+
+              <Text className="text-xs leading-5 text-purple-900">
+                Xe ngoài chở hàng về <Text className="font-bold">{destinationWarehouseName} 🔒</Text>. Nhân viên kho nhập số seal để Inbound tự động toàn bộ LPN sang trạng thái <Text className="font-bold">IN_STOCK</Text>.
+              </Text>
+
+              <View className="gap-2 rounded-2xl bg-white/80 p-3.5 border border-purple-200">
+                <InfoRow label="Kho nhận" value={`${destinationWarehouseName} 🔒`} />
+                <InfoRow label="Số seal Inbound" value={incident.externalReeferPlan?.sealNumber || 'Theo xe ngoài'} />
+                <InfoRow label="Quy chuẩn Inbound" value="Tự động toàn bộ LPN (Không QC)" />
               </View>
             </View>
+          ) : (
+            /* Sang hàng xe nội bộ */
+            <View style={{ backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }} className="gap-3 rounded-3xl border p-5 shadow-sm">
+              <View className="flex-row items-center justify-between">
+                <View className="flex-row items-center gap-2">
+                  <Ionicons name="swap-horizontal-outline" size={22} color="#166534" />
+                  <Text className="text-base font-bold text-green-950">Bước 3: Sang Hàng Tại Chỗ (Transload)</Text>
+                </View>
+                <View className="rounded-lg bg-green-200 px-2 py-1">
+                  <Text className="text-[10px] font-bold text-green-950">
+                    {incident.status === 'TRANSLOAD_COMPLETED' || currentStep > 3 ? '✓ Đã sang hàng' : 'Đang sang hàng'}
+                  </Text>
+                </View>
+              </View>
 
-            <Text className="text-xs leading-5 text-purple-900">
-              Xe cứu hộ chở hàng về <Text className="font-bold">{destinationWarehouseName} 🔒</Text>. Nhân viên kho quét/nhập số seal để Inbound tự động toàn bộ LPN sang trạng thái <Text className="font-bold">IN_STOCK</Text>.
-            </Text>
+              <Text className="text-xs leading-5 text-green-900">
+                Hàng hóa và thiết bị IoT đã được chuyển sang <Text className="font-bold">xe thay thế nội bộ</Text> an toàn. Toàn bộ LPN được giữ nguyên để giao tiếp.
+              </Text>
 
-            <View className="gap-2 rounded-2xl bg-white/80 p-3.5 border border-purple-200">
-              <InfoRow label="Kho nhận" value={`${destinationWarehouseName} 🔒`} />
-              <InfoRow label="Số seal Inbound" value={incident.externalReeferPlan?.sealNumber || 'Theo xe ngoài'} />
-              <InfoRow label="Quy chuẩn Inbound" value="Tự động toàn bộ LPN (Không QC)" />
+              <View className="gap-2 rounded-2xl bg-white/80 p-3.5 border border-green-200">
+                <InfoRow label="Xe tiếp nhận hàng" value={incident.replacementVehicleId || '--'} />
+                <InfoRow label="Hình thức" value="Sang hàng trực tiếp trên đường (Không về kho)" />
+                <InfoRow label="Trạng thái LPN" value="Giữ nguyên SHIPPING để tiếp tục giao" />
+              </View>
             </View>
-          </View>
+          )
         )}
 
-        {/* ─── BƯỚC 4: GHÉP CHUYẾN MỚI (REDISPATCH) ─── */}
+        {/* ─── BƯỚC 4: GHÉP CHUYẾN (XE NGOÀI) HOẶC TIẾP TỤC CHUYẾN (XE NỘI BỘ) ─── */}
         {activeStep === 4 && (
-          <View style={{ backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }} className="gap-3 rounded-3xl border p-5 shadow-sm">
-            <View className="flex-row items-center justify-between">
-              <View className="flex-row items-center gap-2">
-                <Ionicons name="navigate-circle-outline" size={22} color="#1D4ED8" />
-                <Text className="text-base font-bold text-blue-950">Bước 4: Ghép Chuyến Lại (Redispatch)</Text>
+          isExternalReefer ? (
+            /* Ghép chuyến mới tại kho */
+            <View style={{ backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }} className="gap-3 rounded-3xl border p-5 shadow-sm">
+              <View className="flex-row items-center justify-between">
+                <View className="flex-row items-center gap-2">
+                  <Ionicons name="navigate-circle-outline" size={22} color="#1D4ED8" />
+                  <Text className="text-base font-bold text-blue-950">Bước 4: Ghép Chuyến Lại (Redispatch)</Text>
+                </View>
+                <View className="rounded-lg bg-blue-200 px-2 py-1">
+                  <Text className="text-[10px] font-bold text-blue-950">
+                    {currentStep > 4 ? '✓ Đã tạo chuyến' : currentStep === 4 ? 'Đang xử lý' : 'Sắp tới'}
+                  </Text>
+                </View>
               </View>
-              <View className="rounded-lg bg-blue-200 px-2 py-1">
-                <Text className="text-[10px] font-bold text-blue-950">
-                  {currentStep > 4 ? '✓ Đã tạo chuyến' : currentStep === 4 ? 'Đang xử lý' : 'Sắp tới'}
-                </Text>
-              </View>
-            </View>
 
-            <Text className="text-xs leading-5 text-blue-900">
-              Dispatcher tạo chuyến xe thay thế tại kho tuyến. Giữ nguyên toàn bộ LPN của sự cố để tiếp tục hành trình giao khách.
-            </Text>
+              <Text className="text-xs leading-5 text-blue-900">
+                Dispatcher tạo chuyến xe thay thế tại kho tuyến. Giữ nguyên toàn bộ LPN của sự cố để tiếp tục hành trình giao khách.
+              </Text>
 
-            {incident.redispatchPlan ? (
-              <View className="rounded-xl bg-blue-100 p-3">
-                <Text className="text-xs font-semibold text-blue-900">{incident.redispatchPlan}</Text>
-              </View>
-            ) : null}
-
-            <View className="gap-2 rounded-2xl bg-white/80 p-3.5 border border-blue-200">
-              <InfoRow label="Kho xuất phát" value={`${destinationWarehouseName} 🔒`} />
-              <InfoRow label="LPN ghép chuyến" value="Toàn bộ LPN sự cố (Khóa cố định)" />
-              {incident.replacementVehicleId ? (
-                <InfoRow label="Xe phân công mới" value={incident.replacementVehicleId} />
+              {incident.redispatchPlan ? (
+                <View className="rounded-xl bg-blue-100 p-3">
+                  <Text className="text-xs font-semibold text-blue-900">{incident.redispatchPlan}</Text>
+                </View>
               ) : null}
+
+              <View className="gap-2 rounded-2xl bg-white/80 p-3.5 border border-blue-200">
+                <InfoRow label="Kho xuất phát" value={`${destinationWarehouseName} 🔒`} />
+                <InfoRow label="LPN ghép chuyến" value="Toàn bộ LPN sự cố (Khóa cố định)" />
+              </View>
             </View>
-          </View>
+          ) : (
+            /* Tiếp tục chuyến với xe mới */
+            <View style={{ backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }} className="gap-3 rounded-3xl border p-5 shadow-sm">
+              <View className="flex-row items-center justify-between">
+                <View className="flex-row items-center gap-2">
+                  <Ionicons name="navigate-outline" size={22} color="#1D4ED8" />
+                  <Text className="text-base font-bold text-blue-950">Bước 4: Tiếp Tục Chuyến Vận Chuyển</Text>
+                </View>
+                <View className="rounded-lg bg-blue-200 px-2 py-1">
+                  <Text className="text-[10px] font-bold text-blue-950">
+                    {currentStep >= 4 ? '✓ Đang chạy' : 'Sắp tới'}
+                  </Text>
+                </View>
+              </View>
+
+              <Text className="text-xs leading-5 text-blue-900">
+                Chuyến xe tiếp tục trạng thái <Text className="font-bold">IN_TRANSIT</Text> với xe thay thế mới. Tài xế tiếp tục hành trình giao các đơn hàng theo đúng lộ trình.
+              </Text>
+
+              <View className="gap-2 rounded-2xl bg-white/80 p-3.5 border border-blue-200">
+                <InfoRow label="Xe đang chạy" value={incident.replacementVehicleId || '--'} />
+                <InfoRow label="Mã chuyến xe" value={incident.tripCode || incident.tripId || currentTripId || '--'} />
+                <InfoRow label="Trạng thái hành trình" value="Đang vận chuyển giao khách" />
+              </View>
+            </View>
+          )
         )}
 
         {/* ─── BƯỚC 5: GIAO HÀNG CHO KHÁCH & ĐÓNG SỰ CỐ ─── */}
@@ -523,7 +619,9 @@ export default function DriverIncidentDetailScreen() {
               <View className="flex-row items-center gap-2">
                 <Ionicons name="checkmark-circle-outline" size={22} color="#166534" />
                 <Text className="text-base font-bold text-green-950">
-                  {incident.status === 'TRANSLOAD_COMPLETED' ? 'Bước 5: Đã Đổi Xe & Tiếp Tục Giao Hàng' : 'Bước 5: Giao Hàng Cho Khách'}
+                  {incident.status === 'TRANSLOAD_COMPLETED'
+                    ? 'Bước 5: Đã Đổi Xe & Tiếp Tục Giao Hàng'
+                    : 'Bước 5: Giao Hàng Cho Khách & Đóng Sự Cố'}
                 </Text>
               </View>
               <View className="rounded-lg bg-green-200 px-2 py-1">
@@ -536,7 +634,7 @@ export default function DriverIncidentDetailScreen() {
             <Text className="text-xs leading-5 text-green-900">
               {incident.status === 'TRANSLOAD_COMPLETED'
                 ? 'Hàng hóa đã được sang xe thay thế an toàn. Tài xế tiếp tục hành trình giao hàng cho khách theo lộ trình.'
-                : 'Chuyến xe mới đã rời kho tuyến và đang trong quá trình giao hàng đến tay khách hàng.'}
+                : 'Chuyến xe đang trong quá trình giao hàng đến tay khách hàng.'}
             </Text>
 
             <View className="gap-2 rounded-2xl bg-white/80 p-3.5 border border-green-200">
@@ -552,6 +650,12 @@ export default function DriverIncidentDetailScreen() {
               {incident.resolvedAt ? (
                 <InfoRow label="Thời gian đóng" value={new Date(incident.resolvedAt).toLocaleString('vi-VN')} />
               ) : null}
+            </View>
+
+            <View className="rounded-xl bg-green-100 p-3">
+              <Text className="text-xs text-green-900">
+                ℹ <Text className="font-bold">Hướng dẫn:</Text> Mở chuyến xe để thực hiện giao từng điểm dừng (Check-in & POD), sau đó bấm đóng sự cố khi đã giao hàng hoàn tất.
+              </Text>
             </View>
           </View>
         )}
@@ -738,7 +842,7 @@ export default function DriverIncidentDetailScreen() {
               >
                 <Text style={{ color: colors.text.secondary }} className="text-sm font-semibold">
                   {incident.status === 'MONITORING' && '🌡️ Đang theo dõi — Chờ Dispatcher quyết định...'}
-                  {incident.status === 'RESCUE_PLANNING' && '⏳ Đang chờ Dispatcher thuê xe cứu hộ...'}
+                  {incident.status === 'RESCUE_PLANNING' && (isExternalReefer ? '⏳ Đang chờ Dispatcher thuê xe cứu hộ...' : '⏳ Đang chờ Dispatcher điều xe thay thế nội bộ...')}
                   {incident.status === 'EXTERNAL_REEFER_IN_TRANSIT' && '🚚 Xe lạnh đang trên đường đến kho...'}
                   {incident.status === 'READY_FOR_REDISPATCH' && '⏳ Đang chờ Dispatcher ghép chuyến mới...'}
                   {incident.status === 'REDISPATCH_PLANNED' && '📦 Kho đang picking & loading hàng...'}
@@ -746,7 +850,7 @@ export default function DriverIncidentDetailScreen() {
               </View>
             )}
 
-            {/* CTA: Bước 5 Giao khách — TRANSLOAD_COMPLETED hoặc REDISPATCHED_TO_CUSTOMER */}
+            {/* CTA: Giao khách — TRANSLOAD_COMPLETED hoặc REDISPATCHED_TO_CUSTOMER */}
             {(incident.status === 'TRANSLOAD_COMPLETED' || incident.status === 'REDISPATCHED_TO_CUSTOMER') && (
               <View className="gap-2.5">
                 {/* Nút mở chuyến xe để giao hàng từng điểm dừng (Check-in / POD) */}
@@ -872,7 +976,7 @@ export default function DriverIncidentDetailScreen() {
         <View className="flex-1 items-center justify-center bg-black/60 px-5">
           <View style={{ backgroundColor: colors.surface.card }} className="w-full rounded-3xl p-6 shadow-xl">
             <Text style={{ color: colors.text.primary }} className="text-lg font-bold mb-2">
-              Xác Nhận Đóng Sự Cố
+              Xác Nhận Đóng Sự CỐ
             </Text>
             <Text style={{ color: colors.text.secondary }} className="text-xs leading-5 mb-4">
               Xác nhận toàn bộ quy trình cứu hộ, sang hàng và giao hàng cho khách đã hoàn thành trọn vẹn.

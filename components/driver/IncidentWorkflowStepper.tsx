@@ -8,6 +8,8 @@ export interface IncidentWorkflowStepperProps {
   status: IncidentStatus | string;
   /** Severity xác định template stepper hiển thị */
   severity?: string;
+  /** Loại phương án cứu hộ: true = Xe ngoài chở về kho tuyến; false = Xe nội bộ sang hàng tiếp tục chuyến */
+  isExternalReefer?: boolean;
   /** Bước đang được chọn để xem lại thông tin (nếu null thì xem bước hiện tại) */
   selectedStep?: number | null;
   /** Callback khi người dùng chạm vào bước trên Stepper để tua/xem lại */
@@ -20,18 +22,25 @@ interface StepItem {
   statuses: string[];
 }
 
-// ── Stepper CRITICAL (5 bước) ──────────────────────────────────────────────
-// Dùng cho VEHICLE_BREAKDOWN / REEFER_BREAKDOWN và mọi CRITICAL incident.
-export const CRITICAL_STEPS: StepItem[] = [
+// ── Stepper CRITICAL: Xe thuê ngoài chở về kho tuyến (5 bước) ──────────────
+export const EXTERNAL_REEFER_STEPS: StepItem[] = [
   { id: 1, label: 'Báo sự cố', statuses: ['REPORTED', 'CONTAINMENT_REQUIRED'] },
-  { id: 2, label: 'Xe ngoài', statuses: ['RESCUE_PLANNING', 'EXTERNAL_REEFER_IN_TRANSIT', 'RESCUE_DISPATCHED'] },
+  { id: 2, label: 'Xe ngoài', statuses: ['RESCUE_PLANNING', 'EXTERNAL_REEFER_IN_TRANSIT'] },
   { id: 3, label: 'Inbound kho', statuses: ['READY_FOR_REDISPATCH'] },
   { id: 4, label: 'Ghép chuyến', statuses: ['REDISPATCH_PLANNED'] },
-  { id: 5, label: 'Giao khách', statuses: ['REDISPATCHED_TO_CUSTOMER', 'RESOLVED', 'CONTINUED', 'TRANSLOAD_COMPLETED'] },
+  { id: 5, label: 'Giao khách', statuses: ['REDISPATCHED_TO_CUSTOMER', 'RESOLVED'] },
+];
+
+// ── Stepper CRITICAL: Xe nội bộ trong hệ thống sang hàng trực tiếp (5 bước) ─
+export const INTERNAL_FLEET_STEPS: StepItem[] = [
+  { id: 1, label: 'Báo sự cố', statuses: ['REPORTED', 'CONTAINMENT_REQUIRED'] },
+  { id: 2, label: 'Điều xe', statuses: ['RESCUE_PLANNING', 'RESCUE_DISPATCHED'] },
+  { id: 3, label: 'Sang hàng', statuses: ['TRANSLOAD_COMPLETED'] },
+  { id: 4, label: 'Tiếp tục đi', statuses: ['IN_TRANSIT', 'CONTINUED'] },
+  { id: 5, label: 'Giao khách', statuses: ['DELIVERING', 'RESOLVED'] },
 ];
 
 // ── Stepper WARNING (3 bước) ───────────────────────────────────────────────
-// Dùng khi severity = WARNING (MEDIUM | HIGH). Có thể escalate lên CRITICAL flow.
 export const WARNING_STEPS: StepItem[] = [
   { id: 1, label: 'Báo sự cố', statuses: ['REPORTED'] },
   { id: 2, label: 'Theo dõi', statuses: ['MONITORING'] },
@@ -39,35 +48,39 @@ export const WARNING_STEPS: StepItem[] = [
 ];
 
 // ── Stepper LOW (3 bước) ───────────────────────────────────────────────────
-// Dùng khi severity = LOW. Driver tự xử lý, không cần cứu hộ.
 export const LOW_STEPS: StepItem[] = [
   { id: 1, label: 'Báo sự cố', statuses: ['REPORTED'] },
   { id: 2, label: 'Tự xử lý', statuses: ['TRIAGED'] },
   { id: 3, label: 'Hoàn tất', statuses: ['CONTINUED', 'RESOLVED'] },
 ];
 
-export function getStepsForSeverity(severity?: string): StepItem[] {
+export function getStepsForSeverity(severity?: string, isExternalReefer?: boolean): StepItem[] {
   const s = severity?.toUpperCase();
   if (s === 'LOW') return LOW_STEPS;
   if (s === 'MEDIUM' || s === 'HIGH') return WARNING_STEPS; // MEDIUM | HIGH → WARNING path
-  return CRITICAL_STEPS; // CRITICAL hoặc không xác định → CRITICAL stepper
+  return isExternalReefer ? EXTERNAL_REEFER_STEPS : INTERNAL_FLEET_STEPS;
 }
 
-export function getIncidentCurrentStepNumber(status: string, severity?: string): number {
+export function getIncidentCurrentStepNumber(
+  status: string,
+  severity?: string,
+  isExternalReefer?: boolean
+): number {
   const upper = status?.toUpperCase() || '';
-  const steps = getStepsForSeverity(severity);
+  const steps = getStepsForSeverity(severity, isExternalReefer);
 
   for (const step of steps) {
     if (step.statuses.includes(upper)) return step.id;
   }
 
-  // Nếu WARNING (MEDIUM|HIGH)/LOW incident bị escalate lên CRITICAL flow → dùng CRITICAL stepper fallback
+  // Fallback nếu có escalation
   if (
     severity?.toUpperCase() === 'LOW' ||
     severity?.toUpperCase() === 'MEDIUM' ||
     severity?.toUpperCase() === 'HIGH'
   ) {
-    const criticalStep = CRITICAL_STEPS.find((step) => step.statuses.includes(upper));
+    const fallbackSteps = isExternalReefer ? EXTERNAL_REEFER_STEPS : INTERNAL_FLEET_STEPS;
+    const criticalStep = fallbackSteps.find((step) => step.statuses.includes(upper));
     if (criticalStep) return criticalStep.id;
   }
 
@@ -77,12 +90,13 @@ export function getIncidentCurrentStepNumber(status: string, severity?: string):
 export function IncidentWorkflowStepper({
   status,
   severity,
+  isExternalReefer = false,
   selectedStep,
   onSelectStep,
 }: IncidentWorkflowStepperProps) {
   // Normalize status lên uppercase để tránh lỗi so sánh case
   const normalizedStatus = status?.toUpperCase() ?? '';
-  const allCriticalStatuses = CRITICAL_STEPS.flatMap((s) => s.statuses);
+  const allCriticalStatuses = (isExternalReefer ? EXTERNAL_REEFER_STEPS : INTERNAL_FLEET_STEPS).flatMap((s) => s.statuses);
   const allLowStatuses = LOW_STEPS.flatMap((s) => s.statuses);
   const allWarningStatuses = WARNING_STEPS.flatMap((s) => s.statuses);
 
@@ -96,9 +110,11 @@ export function IncidentWorkflowStepper({
     !allLowStatuses.includes(normalizedStatus) &&
     !allWarningStatuses.includes(normalizedStatus);
 
-  const steps = isEscalated ? CRITICAL_STEPS : getStepsForSeverity(severity);
+  const steps = isEscalated
+    ? (isExternalReefer ? EXTERNAL_REEFER_STEPS : INTERNAL_FLEET_STEPS)
+    : getStepsForSeverity(severity, isExternalReefer);
   const effectiveSeverity = isEscalated ? 'CRITICAL' : severity;
-  const currentStep = getIncidentCurrentStepNumber(status, effectiveSeverity);
+  const currentStep = getIncidentCurrentStepNumber(status, effectiveSeverity, isExternalReefer);
 
   // Bước đang active hiển thị (nếu user chọn tua thì là selectedStep, mặc định là currentStep)
   const activeViewingStep = selectedStep ?? currentStep;
@@ -109,7 +125,7 @@ export function IncidentWorkflowStepper({
       ? '#16A34A'        // xanh lá
       : effectiveSeverity?.toUpperCase() === 'MEDIUM' || effectiveSeverity?.toUpperCase() === 'HIGH' || effectiveSeverity?.toUpperCase() === 'WARNING'
       ? '#D97706'        // cam/vàng
-      : colors.brand.primary; // CRITICAL → màu thương hiệu (đỏ)
+      : colors.brand.primary; // CRITICAL → đỏ
 
   return (
     <View style={styles.container}>
@@ -123,7 +139,9 @@ export function IncidentWorkflowStepper({
               effectiveSeverity?.toUpperCase() === 'WARNING') &&
               '🟡 Cần theo dõi — WARNING'}
             {(effectiveSeverity?.toUpperCase() === 'CRITICAL' || !effectiveSeverity) &&
-              '🔴 Nghiêm trọng — Cứu hộ bắt buộc'}
+              (isExternalReefer
+                ? '🔴 Cứu hộ — Xe ngoài về kho'
+                : '🔴 Cứu hộ — Xe nội bộ đổi sang hàng')}
           </Text>
         </View>
 
