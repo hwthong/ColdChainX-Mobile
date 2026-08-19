@@ -362,3 +362,52 @@ function getItemNameFromPayload(payloadRecord: Record<string, unknown> | null): 
   const name = payloadRecord.itemName ?? payloadRecord.ItemName;
   return typeof name === 'string' && name.trim() ? name.trim() : null;
 }
+
+export function extractImageUrl(
+  notificationOrText: NotificationResponse | string | null | undefined
+): string | null {
+  if (!notificationOrText) return null;
+
+  if (typeof notificationOrText === 'object') {
+    const payload = getPayloadRecord(notificationOrText);
+    const candidate =
+      payload?.receiptUrl ??
+      payload?.ReceiptUrl ??
+      payload?.receipt_url ??
+      payload?.imageUrl ??
+      payload?.ImageUrl ??
+      payload?.image_url ??
+      payload?.url ??
+      payload?.Url;
+
+    if (typeof candidate === 'string' && candidate.trim().startsWith('http')) {
+      return candidate.trim();
+    }
+
+    const body = notificationOrText.body || notificationOrText.message || notificationOrText.content;
+    return extractImageUrl(body);
+  }
+
+  const urlMatch = notificationOrText.match(
+    /(https?:\/\/[^\s"'<>]+\.(?:jpg|jpeg|png|webp|gif|svg)(?:\?[^\s"'<>]*)?|https?:\/\/res\.cloudinary\.com\/[^\s"'<>]+)/i
+  );
+
+  if (urlMatch) {
+    return urlMatch[0];
+  }
+
+  return null;
+}
+
+export function cleanNotificationBody(body: string | null | undefined): string {
+  if (!body) return '';
+
+  return body
+    .replace(/(?:[.,;]?\s*)?Biên lai:\s*https?:\/\/[^\s]+/gi, '')
+    .replace(/(?:[.,;]?\s*)?Hình ảnh:\s*https?:\/\/[^\s]+/gi, '')
+    .replace(/(?:[.,;]?\s*)?Chứng từ:\s*https?:\/\/[^\s]+/gi, '')
+    .replace(/https?:\/\/[^\s"'<>]+\.(?:jpg|jpeg|png|webp|gif|svg)(?:\?[^\s"'<>]*)?/gi, '')
+    .replace(/https?:\/\/res\.cloudinary\.com\/[^\s"'<>]+/gi, '')
+    .trim();
+}
+

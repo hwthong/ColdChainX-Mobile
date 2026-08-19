@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 
 import { colors } from '../../constants/colors';
 import { getApiErrorMessage } from '../../services/apiClient';
@@ -22,7 +23,11 @@ import {
 } from '../../services/notificationApi';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useNotificationStore } from '../../store/useNotificationStore';
-import { formatNotificationTime } from '../../utils/notificationPresenter';
+import {
+  cleanNotificationBody,
+  extractImageUrl,
+  formatNotificationTime,
+} from '../../utils/notificationPresenter';
 
 export default function DriverNotificationsScreen() {
   const router = useRouter();
@@ -37,6 +42,7 @@ export default function DriverNotificationsScreen() {
 
   const [notifications, setNotifications] = useState<NotificationResponse[]>([]);
   const [selectedNotification, setSelectedNotification] = useState<NotificationResponse | null>(null);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isMarkingAll, setIsMarkingAll] = useState(false);
@@ -167,6 +173,10 @@ export default function DriverNotificationsScreen() {
     }
   };
 
+  const modalImageUrl = selectedNotification ? extractImageUrl(selectedNotification) : null;
+  const modalRawBody = selectedNotification?.body || selectedNotification?.message || selectedNotification?.content || '';
+  const modalDisplayBody = cleanNotificationBody(modalRawBody) || 'Không có nội dung chi tiết.';
+
   return (
     <View style={{ backgroundColor: colors.surface.page }} className="flex-1">
       {/* Header */}
@@ -247,7 +257,9 @@ export default function DriverNotificationsScreen() {
             const isRead = Boolean(item.isRead || item.readAt);
             const timeStr = formatNotificationTime(item.createdAt);
             const title = item.title || item.message || 'Thông báo';
-            const body = item.body || item.content || item.message || '';
+            const rawBody = item.body || item.content || item.message || '';
+            const imageUrl = extractImageUrl(item);
+            const body = cleanNotificationBody(rawBody);
 
             return (
               <Pressable
@@ -296,6 +308,34 @@ export default function DriverNotificationsScreen() {
                       </Text>
                     ) : null}
 
+                    {/* Image Thumbnail preview on card */}
+                    {imageUrl ? (
+                      <Pressable
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          setPreviewImageUrl(imageUrl);
+                        }}
+                        className="mt-2.5 flex-row items-center gap-2 rounded-xl bg-blue-50/80 p-1.5 border border-blue-200/60 max-w-[210px]"
+                      >
+                        <Image
+                          source={{ uri: imageUrl }}
+                          style={{ width: 44, height: 44, borderRadius: 8 }}
+                          contentFit="cover"
+                        />
+                        <View className="flex-1 pr-1">
+                          <View className="flex-row items-center gap-1">
+                            <Ionicons name="receipt-outline" size={13} color={colors.brand.primary} />
+                            <Text style={{ color: colors.brand.primary }} className="text-[11px] font-bold">
+                              Biên lai hoàn tiền
+                            </Text>
+                          </View>
+                          <Text style={{ color: colors.text.muted }} className="text-[10px] mt-0.5 font-medium">
+                            Nhấn để phóng to
+                          </Text>
+                        </View>
+                      </Pressable>
+                    ) : null}
+
                     <Text style={{ color: colors.text.muted }} className="mt-2 text-[10px] font-medium">
                       {timeStr}
                     </Text>
@@ -320,13 +360,47 @@ export default function DriverNotificationsScreen() {
               </Pressable>
             </View>
 
-            <ScrollView className="max-h-[300px] my-4">
+            <ScrollView className="max-h-[420px] my-4" showsVerticalScrollIndicator={false}>
               <Text style={{ color: colors.text.primary }} className="text-base font-bold mb-2">
                 {selectedNotification?.title || 'Thông báo'}
               </Text>
               <Text style={{ color: colors.text.secondary }} className="text-sm leading-5">
-                {selectedNotification?.body || selectedNotification?.message || selectedNotification?.content || 'Không có nội dung chi tiết.'}
+                {modalDisplayBody}
               </Text>
+
+              {/* Receipt Image Section in Detail Modal */}
+              {modalImageUrl ? (
+                <View className="mt-4 rounded-2xl border border-gray-200 bg-gray-50 p-3">
+                  <View className="flex-row items-center justify-between mb-2">
+                    <View className="flex-row items-center gap-1.5">
+                      <Ionicons name="receipt-outline" size={16} color={colors.brand.primary} />
+                      <Text style={{ color: colors.text.primary }} className="text-xs font-bold">
+                        Biên lai / Chứng từ hoàn tiền
+                      </Text>
+                    </View>
+                    <Text style={{ color: colors.brand.primary }} className="text-[11px] font-medium">
+                      Nhấn để phóng to
+                    </Text>
+                  </View>
+
+                  <Pressable
+                    onPress={() => setPreviewImageUrl(modalImageUrl)}
+                    className="relative overflow-hidden rounded-xl bg-gray-200 items-center justify-center"
+                    style={{ height: 180 }}
+                  >
+                    <Image
+                      source={{ uri: modalImageUrl }}
+                      style={{ width: '100%', height: '100%' }}
+                      contentFit="cover"
+                    />
+                    <View className="absolute bottom-2 right-2 rounded-lg bg-black/60 px-2.5 py-1 flex-row items-center gap-1">
+                      <Ionicons name="scan-outline" size={13} color="#FFFFFF" />
+                      <Text className="text-[10px] font-bold text-white">Xem ảnh lớn</Text>
+                    </View>
+                  </Pressable>
+                </View>
+              ) : null}
+
               <Text style={{ color: colors.text.muted }} className="mt-4 text-xs">
                 {formatNotificationTime(selectedNotification?.createdAt)}
               </Text>
@@ -342,6 +416,31 @@ export default function DriverNotificationsScreen() {
               </Text>
             </Pressable>
           </View>
+        </View>
+      </Modal>
+
+      {/* Fullscreen Image Lightbox Modal */}
+      <Modal visible={Boolean(previewImageUrl)} transparent animationType="fade" onRequestClose={() => setPreviewImageUrl(null)}>
+        <View className="flex-1 bg-black/95 items-center justify-center p-4">
+          <Pressable
+            onPress={() => setPreviewImageUrl(null)}
+            className="absolute top-12 right-6 z-50 rounded-full bg-white/20 p-2.5"
+            hitSlop={15}
+          >
+            <Ionicons name="close" size={24} color="#FFFFFF" />
+          </Pressable>
+
+          {previewImageUrl ? (
+            <Image
+              source={{ uri: previewImageUrl }}
+              style={{ width: '100%', height: '80%' }}
+              contentFit="contain"
+            />
+          ) : null}
+
+          <Text className="absolute bottom-10 text-center text-xs text-white/70">
+            Chạm dấu ✕ hoặc nhấn nút đóng để quay lại
+          </Text>
         </View>
       </Modal>
     </View>
