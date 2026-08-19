@@ -1,12 +1,12 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 
 import { colors } from '../constants/colors';
-import { getUnreadNotificationCount } from '../services/notificationApi';
 import { useAuthStore } from '../store/useAuthStore';
+import { useNotificationStore } from '../store/useNotificationStore';
 
 interface DriverHeaderProps {
   title: string;
@@ -17,30 +17,15 @@ export function DriverHeader({ title, showBackButton = false }: DriverHeaderProp
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const token = useAuthStore((state) => state.token);
-  const [unreadCount, setUnreadCount] = useState(0);
-
-  const fetchUnreadCount = useCallback(async () => {
-    if (!token) {
-      setUnreadCount(0);
-      return;
-    }
-
-    try {
-      const response = await getUnreadNotificationCount(token);
-      if (response.success && response.data) {
-        setUnreadCount(response.data.unreadCount);
-      }
-    } catch (error) {
-      if (__DEV__) {
-        console.warn('[DriverHeader] Failed to load unread count', error);
-      }
-    }
-  }, [token]);
+  const unreadCount = useNotificationStore((state) => state.unreadCount);
+  const fetchUnreadCount = useNotificationStore((state) => state.fetchUnreadCount);
 
   useFocusEffect(
     useCallback(() => {
-      fetchUnreadCount();
-    }, [fetchUnreadCount])
+      if (token) {
+        fetchUnreadCount(token);
+      }
+    }, [fetchUnreadCount, token])
   );
 
   return (

@@ -1,12 +1,12 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 
 import { colors } from '../constants/colors';
-import { getUnreadNotificationCount } from '../services/notificationApi';
 import { useAuthStore } from '../store/useAuthStore';
+import { useNotificationStore } from '../store/useNotificationStore';
 
 interface CustomerHeaderProps {
   title: string;
@@ -18,35 +18,17 @@ export function CustomerHeader({ title, showBackButton = false }: CustomerHeader
   const router = useRouter();
   const accessToken = useAuthStore((state) => state.token);
   const fullName = useAuthStore((state) => state.fullName ?? state.user?.fullName ?? null);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const unreadCount = useNotificationStore((state) => state.unreadCount);
+  const fetchUnreadCount = useNotificationStore((state) => state.fetchUnreadCount);
   const isHome = title === 'ColdChainX';
   const displayName = fullName?.trim() || 'bạn';
 
-  const fetchUnreadCount = useCallback(async () => {
-    if (!accessToken) {
-      setUnreadCount(0);
-      return;
-    }
-
-    try {
-      const response = await getUnreadNotificationCount(accessToken);
-
-      if (response.success && response.data) {
-        setUnreadCount(response.data.unreadCount);
-      }
-    } catch (error) {
-      if (__DEV__) {
-        console.warn('[CustomerHeader] Failed to load unread notifications', {
-          message: error instanceof Error ? error.message : 'Unknown error',
-        });
-      }
-    }
-  }, [accessToken]);
-
   useFocusEffect(
     useCallback(() => {
-      fetchUnreadCount();
-    }, [fetchUnreadCount])
+      if (accessToken) {
+        fetchUnreadCount(accessToken);
+      }
+    }, [accessToken, fetchUnreadCount])
   );
 
   return (

@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -21,11 +21,19 @@ import {
   NotificationResponse,
 } from '../../services/notificationApi';
 import { useAuthStore } from '../../store/useAuthStore';
+import { useNotificationStore } from '../../store/useNotificationStore';
 import { formatNotificationTime } from '../../utils/notificationPresenter';
 
 export default function DriverNotificationsScreen() {
   const router = useRouter();
   const token = useAuthStore((state) => state.token);
+
+  const realtimeItems = useNotificationStore((state) => state.realtimeItems);
+  const unreadCount = useNotificationStore((state) => state.unreadCount);
+  const connectionStatus = useNotificationStore((state) => state.connectionStatus);
+  const fetchUnreadCount = useNotificationStore((state) => state.fetchUnreadCount);
+  const setUnreadCount = useNotificationStore((state) => state.setUnreadCount);
+  const decrementUnreadCount = useNotificationStore((state) => state.decrementUnreadCount);
 
   const [notifications, setNotifications] = useState<NotificationResponse[]>([]);
   const [selectedNotification, setSelectedNotification] = useState<NotificationResponse | null>(null);
@@ -34,8 +42,7 @@ export default function DriverNotificationsScreen() {
   const [isMarkingAll, setIsMarkingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const unreadCount = notifications.filter((n) => !n.isRead && !n.readAt).length;
-
+  // Fetch initial notifications via REST API
   const fetchNotifications = useCallback(async () => {
     if (!token) {
       setError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
@@ -47,10 +54,13 @@ export default function DriverNotificationsScreen() {
 
     try {
       setError(null);
-      const res = await getUserNotifications(token, {
-        pageNumber: 1,
-        pageSize: 30,
-      });
+      const [res] = await Promise.all([
+        getUserNotifications(token, {
+          pageNumber: 1,
+          pageSize: 30,
+        }),
+        fetchUnreadCount(token),
+      ]);
 
       if (res.success && res.data) {
         setNotifications(res.data.items);
@@ -63,7 +73,7 @@ export default function DriverNotificationsScreen() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [token]);
+  }, [fetchUnreadCount, token]);
 
   useFocusEffect(
     useCallback(() => {
@@ -71,6 +81,24 @@ export default function DriverNotificationsScreen() {
       fetchNotifications();
     }, [fetchNotifications])
   );
+
+  // Prepend real-time SignalR notifications when received
+  useEffect(() => {
+    if (!realtimeItems || realtimeItems.length === 0) return;
+
+    setNotifications((current) => {
+      const existingIds = new Set(
+        current.map((item) => item.notificationId ?? item.id).filter(Boolean)
+      );
+
+      const newItems = realtimeItems.filter(
+        (item) => !existingIds.has(item.notificationId ?? item.id)
+      );
+
+      if (newItems.length === 0) return current;
+      return [...newItems, ...current];
+    });
+  }, [realtimeItems]);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
@@ -82,7 +110,12 @@ export default function DriverNotificationsScreen() {
 
     const notifId = notification.notificationId ?? notification.notiId ?? notification.id;
     if (notifId) {
+      const wasUnread = !notification.isRead && !notification.readAt;
       markNotificationRead(token, notifId).catch(() => {});
+      if (wasUnread) {
+        decrementUnreadCount(1);
+      }
+
       setNotifications((current) =>
         current.map((item) =>
           (item.notificationId ?? item.id) === notifId
@@ -119,6 +152,7 @@ export default function DriverNotificationsScreen() {
     setIsMarkingAll(true);
     try {
       await markAllNotificationsRead(token);
+      setUnreadCount(0);
       setNotifications((current) =>
         current.map((n) => ({
           ...n,
@@ -141,9 +175,22 @@ export default function DriverNotificationsScreen() {
           <Pressable onPress={() => router.back()} style={{ backgroundColor: colors.brand.primarySoft }} className="rounded-full p-2">
             <Ionicons name="arrow-back" size={20} color={colors.brand.primary} />
           </Pressable>
-          <Text style={{ color: colors.text.primary }} className="text-lg font-bold">
-            Thông báo tài xế
-          </Text>
+          <View className="items-center">
+            <Text style={{ color: colors.text.primary }} className="text-lg font-bold">
+              Thông báo tài xế
+            </Text>
+            {connectionStatus === 'connected' ? (
+              <View className="flex-row items-center gap-1 mt-0.5">
+                <View className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                <Text className="text-[10px] text-emerald-600 font-medium">Realtime SignalR</Text>
+              </View>
+            ) : connectionStatus === 'connecting' || connectionStatus === 'reconnecting' ? (
+              <View className="flex-row items-center gap-1 mt-0.5">
+                <View className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                <Text className="text-[10px] text-amber-600 font-medium">Đang kết nối lại...</Text>
+              </View>
+            ) : null}
+          </View>
           {unreadCount > 0 ? (
             <Pressable
               onPress={handleMarkAllRead}
