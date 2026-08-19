@@ -61,7 +61,8 @@ class SignalRService {
       this.setStatus('connecting');
 
       if (!this.connection) {
-        const hubUrl = `${API_BASE_URL.replace(/\/+$/, '')}/hubs/notifications`;
+        const rootBaseUrl = API_BASE_URL.replace(/\/api\/?$/i, '').replace(/\/+$/, '');
+        const hubUrl = `${rootBaseUrl}/hubs/notifications`;
 
         this.connection = new signalR.HubConnectionBuilder()
           .withUrl(hubUrl, {
@@ -296,7 +297,22 @@ class SignalRService {
       this.dispatchGenericEvent('VehicleDocumentExpired', data);
     });
 
-    // 6. Generic IoT Warning
+    // 6. Generic IoT Warning & Alert
+    this.connection.on('ReceiveAlert', (data: any) => {
+      const normalized: NotificationResponse = {
+        id: data?.alertId || String(Date.now()),
+        notificationId: data?.alertId || String(Date.now()),
+        title: data?.title || 'Cảnh báo vận hành',
+        body: data?.message || data?.body || 'Có cảnh báo mới về thiết bị/chuyến xe.',
+        type: 'ALERT',
+        isRead: false,
+        createdAt: new Date().toISOString(),
+        data,
+      };
+      this.dispatchNotification(normalized);
+      this.dispatchGenericEvent('ReceiveAlert', data);
+    });
+
     this.connection.on('IotWarning', (message: string) => {
       const normalized: NotificationResponse = {
         id: String(Date.now()),
@@ -308,6 +324,35 @@ class SignalRService {
       };
       this.dispatchNotification(normalized);
       this.dispatchGenericEvent('IotWarning', message);
+    });
+
+    // 7. Customer Events
+    const customerEvents: Record<string, string> = {
+      ReceiveQuotation: 'Báo giá mới đã được tạo',
+      OrderNeedsUpdate: 'Đơn hàng cần cập nhật thông tin',
+      OrderRejected: 'Đơn hàng đã bị từ chối',
+      ContractPendingSignature: 'Hợp đồng chờ bạn ký xác nhận',
+      TrackingIssued: 'Đơn hàng đã được cấp mã vận đơn',
+      AppendixPendingSignature: 'Phụ lục hợp đồng chờ bạn ký',
+    };
+
+    Object.entries(customerEvents).forEach(([eventName, defaultTitle]) => {
+      this.connection?.on(eventName, (data: any) => {
+        const normalized: NotificationResponse = {
+          id: String(Date.now()),
+          title: data?.title || defaultTitle,
+          body: data?.message || data?.body || data?.note || 'Có cập nhật mới về đơn hàng của bạn.',
+          type: eventName,
+          category: 'ORDER',
+          isRead: false,
+          createdAt: new Date().toISOString(),
+          data,
+          payload: data,
+          orderId: data?.orderId,
+        };
+        this.dispatchNotification(normalized);
+        this.dispatchGenericEvent(eventName, data);
+      });
     });
   }
 
