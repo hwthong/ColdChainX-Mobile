@@ -101,6 +101,9 @@ export default function DriverIncidentDetailScreen() {
   const [transloadNote, setTransloadNote] = useState('');
   const [isTransloadSubmitting, setIsTransloadSubmitting] = useState(false);
 
+  // ── Nhánh CRITICAL: Bước 4 Tiếp tục đi xác nhận qua Bước 5 ──────────────────
+  const [step4ManuallyConfirmed, setStep4ManuallyConfirmed] = useState(false);
+
   // ── Resolve Modal ─────────────────────────────────────────────────────────
   const [isResolveModalVisible, setIsResolveModalVisible] = useState(false);
   const [resolveNote, setResolveNote] = useState('');
@@ -345,6 +348,24 @@ export default function DriverIncidentDetailScreen() {
     }
   };
 
+  // ── CRITICAL: Xác nhận tiếp tục đi từ Bước 4 qua Bước 5 ──────────────────
+  const handleConfirmContinueFromStep4 = () => {
+    setStep4ManuallyConfirmed(true);
+    setSelectedStep(5);
+    Alert.alert(
+      'Tiếp tục hành trình',
+      `Đã xác nhận xe thay thế ${replacementVehicle?.truckPlate || ''} bắt đầu lăn bánh tiếp tục hành trình giao hàng!`,
+      [
+        { text: 'Xem Bước 5: Giao khách', style: 'cancel' },
+        {
+          text: 'Mở trang giao hàng',
+          style: 'default',
+          onPress: () => router.push(`/trips/${incident?.tripId || currentTripId}` as never),
+        },
+      ]
+    );
+  };
+
   // ── Resolve sự cố ─────────────────────────────────────────────────────────
   const handleConfirmResolve = async () => {
     if (!token || !incidentId) return;
@@ -425,8 +446,9 @@ export default function DriverIncidentDetailScreen() {
     incident.externalReeferPlan?.routeDestinationCity ||
     'Kho đích tuyến';
 
-  // Bước hiện tại thực tế trên hệ thống
-  const currentStep = getIncidentCurrentStepNumber(incident.status, incident.severity, isExternalReefer);
+  // Bước hiện tại thực tế trên hệ thống (nếu đã bấm xác nhận Bước 4 thì tự động tiến lên Bước 5)
+  const rawCurrentStep = getIncidentCurrentStepNumber(incident.status, incident.severity, isExternalReefer);
+  const currentStep = step4ManuallyConfirmed && rawCurrentStep === 4 ? 5 : rawCurrentStep;
   // Bước đang xem (tua lại hoặc hiện tại)
   const activeStep = selectedStep ?? currentStep;
 
@@ -921,6 +943,20 @@ export default function DriverIncidentDetailScreen() {
                 <InfoRow label="Mã chuyến xe" value={incident.tripCode || incident.tripId || currentTripId || '--'} />
                 <InfoRow label="Trạng thái hành trình" value="Đang vận chuyển giao khách" />
               </View>
+
+              {/* Nút xác nhận tiếp tục đi sang Bước 5 */}
+              {currentStep === 4 && !step4ManuallyConfirmed && (
+                <Pressable
+                  onPress={handleConfirmContinueFromStep4}
+                  style={{ backgroundColor: colors.brand.primary, minHeight: 48 }}
+                  className="flex-row items-center justify-center gap-2 rounded-2xl mt-2 shadow-sm"
+                >
+                  <Ionicons name="navigate" size={18} color="#ffffff" />
+                  <Text className="font-bold text-white text-base">
+                    Xác nhận tiếp tục đi (Chuyển sang Bước 5)
+                  </Text>
+                </Pressable>
+              )}
             </View>
           )
         )}
@@ -935,7 +971,7 @@ export default function DriverIncidentDetailScreen() {
                 </View>
                 <View className="flex-1 min-w-0">
                   <Text numberOfLines={1} style={{ color: colors.text.primary }} className="text-sm font-bold">
-                    {incident.status === 'TRANSLOAD_COMPLETED'
+                    {incident.status === 'TRANSLOAD_COMPLETED' || step4ManuallyConfirmed
                       ? 'Bước 5: Tiếp Tục Giao Hàng'
                       : 'Bước 5: Giao Khách & Đóng Sự Cố'}
                   </Text>
@@ -950,7 +986,7 @@ export default function DriverIncidentDetailScreen() {
             </View>
 
             <Text style={{ color: colors.text.secondary }} className="text-xs leading-5">
-              {incident.status === 'TRANSLOAD_COMPLETED'
+              {incident.status === 'TRANSLOAD_COMPLETED' || step4ManuallyConfirmed
                 ? 'Hàng hóa đã được sang xe thay thế an toàn. Tài xế tiếp tục hành trình giao hàng cho khách theo lộ trình.'
                 : 'Chuyến xe đang trong quá trình giao hàng đến tay khách hàng.'}
             </Text>
@@ -989,6 +1025,7 @@ export default function DriverIncidentDetailScreen() {
               {incident.resolvedAt ? (
                 <InfoRow label="Thời gian đóng" value={new Date(incident.resolvedAt).toLocaleString('vi-VN')} />
               ) : null}
+              <InfoRow label="Trạng thái giao hàng" value="Đang giao các điểm dừng còn lại" />
             </View>
 
             <View style={{ backgroundColor: colors.brand.primarySoft }} className="rounded-2xl p-3">
@@ -996,6 +1033,32 @@ export default function DriverIncidentDetailScreen() {
                 ℹ <Text className="font-bold">Hướng dẫn:</Text> Mở chuyến xe để thực hiện giao từng điểm dừng (Check-in & POD), sau đó bấm đóng sự cố khi đã giao hàng hoàn tất.
               </Text>
             </View>
+
+            {/* Các nút thao tác trong thẻ Bước 5 */}
+            {incident.status !== 'RESOLVED' && (
+              <View className="gap-2.5 mt-2">
+                <Pressable
+                  onPress={() => router.push(`/trips/${incident.tripId || currentTripId}` as never)}
+                  style={{ backgroundColor: colors.brand.primary, minHeight: 48 }}
+                  className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm"
+                >
+                  <Ionicons name="navigate" size={18} color="#ffffff" />
+                  <Text className="font-bold text-white text-base">
+                    Mở chuyến xe để giao hàng các điểm dừng
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setIsResolveModalVisible(true)}
+                  style={{ borderColor: colors.status.success.main, backgroundColor: colors.status.success.bg, minHeight: 48 }}
+                  className="flex-row items-center justify-center gap-2 rounded-2xl border"
+                >
+                  <Ionicons name="checkmark-circle" size={18} color={colors.status.success.main} />
+                  <Text style={{ color: colors.status.success.main }} className="text-base font-bold">
+                    Hoàn tất & Đóng sự cố (Resolve)
+                  </Text>
+                </Pressable>
+              </View>
+            )}
           </View>
         )}
 
@@ -1231,10 +1294,10 @@ export default function DriverIncidentDetailScreen() {
               </Pressable>
             ) : null}
 
-            {/* CTA: Bước 4 Mở chuyến xe để tiếp tục vận chuyển */}
-            {currentStep === 4 && (incident.status === 'TRANSLOAD_COMPLETED' || incident.status === 'CONTINUED') ? (
+            {/* CTA: Bước 4 Xác nhận tiếp tục đi để qua Bước 5 */}
+            {currentStep === 4 ? (
               <Pressable
-                onPress={() => router.push(`/trips/${incident.tripId || currentTripId}` as never)}
+                onPress={handleConfirmContinueFromStep4}
                 style={{ backgroundColor: colors.brand.primary, minHeight: 48 }}
                 className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm"
               >
