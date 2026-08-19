@@ -2,9 +2,31 @@ import { ApiClientError, apiRequest } from './apiClient';
 import { ApiResponse } from './trackingApi';
 import type { PagedResult } from './pagination';
 
-export type IncidentType = 'ACCIDENT' | 'VEHICLE_BREAKDOWN' | 'TEMP_EXCURSION' | 'DAMAGE_CARGO' | 'DELAY';
+export type IncidentType =
+  | 'ACCIDENT'
+  | 'VEHICLE_BREAKDOWN'
+  | 'REEFER_BREAKDOWN'
+  | 'TEMP_EXCURSION'
+  | 'DAMAGE_CARGO'
+  | 'DELAY';
+
 export type IncidentSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
-export type IncidentStatus = 'REPORTED' | 'RESCUE_DISPATCHED' | 'TRANSLOAD_COMPLETED' | 'CONTINUED' | 'RESOLVED';
+
+export type IncidentStatus =
+  | 'REPORTED'
+  | 'CONTAINMENT_REQUIRED'
+  | 'TRIAGED'           // LOW path: sự cố nhẹ, chờ Driver xác nhận tự xử lý
+  | 'MONITORING'        // WARNING path: theo dõi nhiệt độ, chờ Dispatcher quyết định
+  | 'RESCUE_PLANNING'
+  | 'EXTERNAL_REEFER_IN_TRANSIT'
+  | 'READY_FOR_REDISPATCH'
+  | 'REDISPATCH_PLANNED'
+  | 'REDISPATCHED_TO_CUSTOMER'
+  | 'RESOLVED'
+  | 'RESCUE_DISPATCHED'
+  | 'TRANSLOAD_COMPLETED'
+  | 'CONTINUED';
+
 export type IncidentExpenseStatus = 'NOT_REQUIRED' | 'PENDING_APPROVAL' | 'APPROVED' | 'REIMBURSED';
 
 export interface IncidentRequestLogContext {
@@ -19,6 +41,32 @@ export interface IncidentEvidence {
   evidenceType: 'INCIDENT_ATTACHMENT' | 'INCIDENT_PHOTO' | 'DRIVER_RECEIPT' | 'REIMBURSEMENT_RECEIPT' | 'RESOLUTION_PDF';
 }
 
+export interface ExternalReeferPlanRecord {
+  rentalProvider: string;
+  vehiclePlate: string;
+  driverName: string;
+  driverPhone?: string | null;
+  destinationWarehouseId: string;
+  destinationWarehouseName?: string | null;
+  destinationWarehouseAddress?: string | null;
+  routeDestinationCity?: string | null;
+  agreedTemperature: number;
+  originalTripId?: string;
+  dispatchedAt?: string;
+  expectedWarehouseArrivalAt?: string | null;
+  arrivedAt?: string | null;
+  sealNumber: string;
+  lpnIds?: string[];
+  dispatchEvidenceUrls?: string[];
+  inboundReceiptIds?: string[];
+  recordedBy?: string;
+  arrivalConfirmedBy?: string | null;
+  redispatchTripId?: string | null;
+  redispatchPlannedAt?: string | null;
+  dispatchNote?: string | null;
+  arrivalNote?: string | null;
+}
+
 export interface IncidentResponse {
   incidentId: string;
   tripId?: string;
@@ -30,6 +78,7 @@ export interface IncidentResponse {
   maintenanceTicketId?: string;
   incidentType: IncidentType;
   severity: IncidentSeverity;
+  riskLevel?: string;
   description: string;
   requiresRescue: boolean;
   currentLatitude?: number;
@@ -38,10 +87,25 @@ export interface IncidentResponse {
   
   driverPaidAmount?: number;
   approvedAmount?: number;
+  reimbursedAmount?: number;
   expenseStatus: IncidentExpenseStatus;
+
+  temperatureSource?: string;
+  latestTemperature?: number;
+  temperatureMeasuredAt?: string;
+  containmentConfirmedAt?: string;
+  remainingSafeTimeMinutes?: number;
+  safeTimeCalculation?: string;
+  directDeliveryLocked?: boolean;
   
+  rescuePlanType?: string;
+  rescuePlanDetails?: string;
+  externalReeferPlan?: ExternalReeferPlanRecord | null;
+  redispatchPlan?: string | null;
+
   reportedAt: string;
   resolvedAt?: string;
+  resolutionNote?: string | null;
   evidences: IncidentEvidence[];
 }
 
@@ -187,6 +251,215 @@ export async function confirmTransload(
     {
       method: 'POST',
       body: payload,
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
+}
+
+// 7. Đánh giá rủi ro / Xác nhận containment
+export interface AssessIncidentRiskRequest {
+  riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  temperatureSource?: 'NONE' | 'IOT_SENSOR' | 'MANUAL_THERMOMETER';
+  measuredTemperature?: number;
+  measuredAt?: string;
+  temperatureStable: boolean;
+  canSafelyRepairOnSite?: boolean;
+  containmentConfirmed: boolean;
+  note?: string;
+}
+
+export interface IncidentRiskAssessmentResponse {
+  incidentId: string;
+  requestedRiskLevel: string;
+  effectiveRiskLevel: string;
+  incidentStatus: string;
+  escalatedToCritical: boolean;
+  decisionReason: string;
+  targetTemperature: number;
+  temperatureTolerance: number;
+  latestTemperature?: number;
+  temperatureMeasuredAt?: string;
+  temperatureSource: string;
+  hasTrustedTemperatureSource: boolean;
+  temperatureThresholdBreached: boolean;
+  directDeliveryLocked: boolean;
+  requiresRescue: boolean;
+  remainingSafeTimeMinutes?: number;
+  safeTimeCalculation: string;
+}
+
+export async function assessIncidentRisk(
+  token: string,
+  incidentId: string,
+  payload: AssessIncidentRiskRequest
+): Promise<ApiResponse<IncidentRiskAssessmentResponse>> {
+  return apiRequest<ApiResponse<IncidentRiskAssessmentResponse>>(
+    `/api/v1/incidents/${encodeURIComponent(incidentId)}/assess-risk`,
+    {
+      method: 'POST',
+      body: payload,
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
+}
+
+// 8. Lấy phương án cứu hộ (Rescue Options)
+export interface RescueCandidateResponse {
+  vehicleId: string;
+  truckPlate: string;
+  vehicleType: string;
+  warehouseId?: string;
+  warehouseName?: string;
+  warehouseAddress?: string;
+  distanceKm?: number;
+  maxWeight: number;
+  maxCbm: number;
+  minTemp: number;
+  maxTemp: number;
+  iotDeviceCount: number;
+  onlineIotDeviceCount: number;
+  hasOnlineIot: boolean;
+  estimatedArrivalMinutes?: number;
+  canArriveWithinSafeTime?: boolean;
+  remainingSafeTimeMinutes?: number;
+  remainingWeightCapacity: number;
+  remainingCbmCapacity: number;
+  transferCount: number;
+  recommended: boolean;
+  recommendationReason: string;
+  label: string;
+}
+
+export interface InternalColdStorageOption {
+  warehouseId: string;
+  warehouseName: string;
+  address?: string;
+  distanceKm?: number;
+  estimatedArrivalMinutes?: number;
+  canArriveWithinSafeTime?: boolean;
+  minTemperature?: number;
+  maxTemperature?: number;
+  availablePalletPositions: number;
+  isNearby: boolean;
+  isRouteDestinationWarehouse: boolean;
+}
+
+export interface IncidentRescuePlanResponse {
+  incidentId: string;
+  tripId: string;
+  targetTemperature: number;
+  remainingSafeTimeMinutes?: number;
+  temperatureThresholdBreached: boolean;
+  directDeliveryLocked: boolean;
+  recommendedAction: string;
+  recommendationReason: string;
+  vehicles: RescueCandidateResponse[];
+  internalColdStorages: InternalColdStorageOption[];
+  routeDestinationWarehouse?: InternalColdStorageOption | null;
+  requiresExternalVehicleRental: boolean;
+  requiresManualEscalation: boolean;
+}
+
+export async function getRescueOptions(
+  token: string,
+  incidentId: string
+): Promise<ApiResponse<IncidentRescuePlanResponse>> {
+  return apiRequest<ApiResponse<IncidentRescuePlanResponse>>(
+    `/api/v1/incidents/${encodeURIComponent(incidentId)}/rescue-options`,
+    {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
+}
+
+// 9. Dispatcher thuê xe lạnh ngoài
+export interface DispatchExternalReeferRequest {
+  rentalProvider: string;
+  vehiclePlate: string;
+  driverName: string;
+  driverPhone?: string;
+  destinationWarehouseId: string;
+  agreedTemperature: number;
+  expectedWarehouseArrivalAt?: string;
+  sealNumber: string;
+  lpnIds?: string[];
+  evidenceUrls?: string[];
+  note: string;
+}
+
+export interface ExternalReeferWorkflowResult {
+  incidentId: string;
+  tripId: string;
+  incidentStatus: string;
+  tripStatus: string;
+  destinationWarehouseId: string;
+  destinationWarehouseName: string;
+  externalVehiclePlate: string;
+  lpnCount: number;
+  message: string;
+}
+
+export async function dispatchExternalReefer(
+  token: string,
+  incidentId: string,
+  payload: DispatchExternalReeferRequest
+): Promise<ApiResponse<ExternalReeferWorkflowResult>> {
+  return apiRequest<ApiResponse<ExternalReeferWorkflowResult>>(
+    `/api/v1/incidents/${encodeURIComponent(incidentId)}/external-reefer-dispatch`,
+    {
+      method: 'POST',
+      body: {
+        ...payload,
+        lpnIds: payload.lpnIds ?? [],
+        evidenceUrls: payload.evidenceUrls ?? [],
+      },
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
+}
+
+// 10. Warehouse Worker Inbound sự cố bằng Seal
+export interface InboundRouteWarehouseRequest {
+  sealNumber: string;
+}
+
+export interface InboundRouteWarehouseResponse {
+  incidentId: string;
+  receiptId?: string;
+  receiptCode?: string;
+  lpnCount?: number;
+  warehouseId?: string;
+  warehouseName?: string;
+  message?: string;
+}
+
+export async function inboundRouteWarehouse(
+  token: string,
+  incidentId: string,
+  sealNumber: string
+): Promise<ApiResponse<InboundRouteWarehouseResponse>> {
+  return apiRequest<ApiResponse<InboundRouteWarehouseResponse>>(
+    `/api/v1/incidents/${encodeURIComponent(incidentId)}/inbound-route-warehouse`,
+    {
+      method: 'POST',
+      body: { sealNumber: sealNumber.trim() },
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
+}
+
+// 11. Đóng sự cố (Resolve)
+export async function resolveIncident(
+  token: string,
+  incidentId: string,
+  note: string
+): Promise<ApiResponse<any>> {
+  return apiRequest<ApiResponse<any>>(
+    `/api/v1/incidents/${encodeURIComponent(incidentId)}/resolve`,
+    {
+      method: 'POST',
+      body: { resolutionNote: note.trim() },
       headers: { Authorization: `Bearer ${token}` },
     }
   );

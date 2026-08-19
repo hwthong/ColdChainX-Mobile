@@ -43,8 +43,64 @@ export interface StatusStyle {
   label: string;
 }
 
-/** Maps LPN / ASN status codes to display styles and Vietnamese labels. */
 export const STATUS_STYLES: Record<string, StatusStyle> = {
+  // Incident Breakdown & Redispatch Statuses
+  CRITICAL: {
+    bg: '#FEF2F2',
+    text: '#991B1B',
+    border: '#FECACA',
+    label: 'Nghiêm trọng',
+  },
+  REPORTED: {
+    bg: '#FEF2F2',
+    text: '#991B1B',
+    border: '#FECACA',
+    label: 'Đã báo cáo',
+  },
+  CONTAINMENT_REQUIRED: {
+    bg: '#FFF7ED',
+    text: '#C2410C',
+    border: '#FED7AA',
+    label: 'Cần bảo toàn',
+  },
+  RESCUE_PLANNING: {
+    bg: '#FFF7ED',
+    text: '#C2410C',
+    border: '#FED7AA',
+    label: 'Lập phương án',
+  },
+  EXTERNAL_REEFER_IN_TRANSIT: {
+    bg: '#FFF7ED',
+    text: '#C2410C',
+    border: '#FED7AA',
+    label: 'Xe ngoài đang chở',
+  },
+  READY_FOR_REDISPATCH: {
+    bg: '#F3E8FF',
+    text: '#6B21A8',
+    border: '#E9D5FF',
+    label: 'Sẵn sàng ghép chuyến',
+  },
+  REDISPATCH_PLANNED: {
+    bg: '#EFF6FF',
+    text: '#1D4ED8',
+    border: '#BFDBFE',
+    label: 'Đã lên chuyến mới',
+  },
+  REDISPATCHED_TO_CUSTOMER: {
+    bg: '#F0FDF4',
+    text: '#166534',
+    border: '#BBF7D0',
+    label: 'Đang giao khách',
+  },
+  RESOLVED: {
+    bg: '#F0FDF4',
+    text: '#166534',
+    border: '#BBF7D0',
+    label: 'Đã xử lý xong',
+  },
+
+  // Existing Warehouse Statuses
   IN_STOCK: {
     bg: colors.status.success.bg,
     text: colors.status.success.main,

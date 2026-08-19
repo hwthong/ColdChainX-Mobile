@@ -1,7 +1,7 @@
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import * as WebBrowser from 'expo-web-browser';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -73,6 +73,7 @@ type InboundMode = 'ASN' | 'RETURNS';
 const todayInput = formatDateInput(new Date());
 
 export default function WarehouseInboundScreen() {
+  const router = useRouter();
   const token = useAuthStore((state) => state.token);
   const storedWarehouseId = useAuthStore((state) => state.warehouseId ?? state.user?.warehouseId ?? null);
   const [inboundMode, setInboundMode] = useState<InboundMode>('ASN');
@@ -667,12 +668,19 @@ export default function WarehouseInboundScreen() {
         {([
           { key: 'ASN' as const, label: 'Tiếp nhận ASN' },
           { key: 'RETURNS' as const, label: 'Hàng trả về' },
+          { key: 'EMERGENCY' as const, label: 'Inbound sự cố' },
         ]).map((item) => {
-          const active = inboundMode === item.key;
+          const active = inboundMode === (item.key as InboundMode);
           return (
             <Pressable
               key={item.key}
-              onPress={() => setInboundMode(item.key)}
+              onPress={() => {
+                if (item.key === 'EMERGENCY') {
+                  router.push('/(warehouse)/emergency-inbound' as never);
+                } else {
+                  setInboundMode(item.key);
+                }
+              }}
               style={{
                 flex: 1,
                 alignItems: 'center',
@@ -684,7 +692,7 @@ export default function WarehouseInboundScreen() {
                 paddingVertical: 12,
               }}
             >
-              <Text style={{ color: active ? colors.text.onPrimary : colors.text.primary, fontWeight: '700' }}>
+              <Text style={{ color: active ? colors.text.onPrimary : colors.text.primary, fontWeight: '700', fontSize: 12 }}>
                 {item.label}
               </Text>
             </Pressable>

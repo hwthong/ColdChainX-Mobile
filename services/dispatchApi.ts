@@ -213,3 +213,101 @@ function getAuthHeaders(accessToken: string) {
     Authorization: `Bearer ${accessToken}`,
   };
 }
+
+export interface WarehouseVehicleLookupDto {
+  vehicleId: string;
+  label: string;
+  truckPlate: string;
+  vehicleType: string;
+  maxWeight: number;
+  maxCbm: number;
+  usableCbm?: number;
+  currentLocation?: string;
+}
+
+export interface WarehouseDriverLookupDto {
+  driverId: string;
+  label: string;
+  fullName: string;
+  phoneNumber?: string;
+  driverStatus: string;
+  currentLocation?: string;
+}
+
+export interface ManualDispatchPayload {
+  lpnIds: string[];
+  vehicleId: string;
+  driverIds: string[];
+  plannedStartTime: string;
+  plannedEndTime: string;
+  incidentId?: string;
+  scheduleId?: string;
+}
+
+export interface ManualDispatchResult {
+  tripId: string;
+  tripCode?: string;
+  status?: string;
+  message?: string;
+}
+
+export async function lookupVehiclesByWarehouse(
+  accessToken: string,
+  warehouseId: string
+): Promise<WarehouseVehicleLookupDto[]> {
+  const response = await apiRequest<WarehouseVehicleLookupDto[] | DispatchEnvelope<WarehouseVehicleLookupDto[]>>(
+    `/api/Dispatch/lookup/vehicles/by-warehouse/${encodeURIComponent(warehouseId)}`,
+    {
+      headers: getAuthHeaders(accessToken),
+    }
+  );
+
+  if (Array.isArray(response)) return response;
+  if (response && Array.isArray(response.data)) return response.data;
+  return [];
+}
+
+export async function lookupDriversByWarehouse(
+  accessToken: string,
+  warehouseId: string
+): Promise<WarehouseDriverLookupDto[]> {
+  const response = await apiRequest<WarehouseDriverLookupDto[] | DispatchEnvelope<WarehouseDriverLookupDto[]>>(
+    `/api/Dispatch/lookup/drivers/by-warehouse/${encodeURIComponent(warehouseId)}`,
+    {
+      headers: getAuthHeaders(accessToken),
+    }
+  );
+
+  if (Array.isArray(response)) return response;
+  if (response && Array.isArray(response.data)) return response.data;
+  return [];
+}
+
+export async function manualDispatch(
+  accessToken: string,
+  payload: ManualDispatchPayload
+): Promise<DispatchEnvelope<ManualDispatchResult>> {
+  const query = payload.lpnIds.map((id) => `lpnIds=${encodeURIComponent(id)}`).join('&');
+  const formData = new FormData();
+  formData.append('VehicleId', payload.vehicleId);
+  payload.driverIds.forEach((driverId) => {
+    formData.append('DriverIds', driverId);
+  });
+  formData.append('PlannedStartTime', payload.plannedStartTime);
+  formData.append('PlannedEndTime', payload.plannedEndTime);
+  if (payload.incidentId) {
+    formData.append('IncidentId', payload.incidentId);
+  }
+  if (payload.scheduleId) {
+    formData.append('ScheduleId', payload.scheduleId);
+  }
+
+  return apiRequest<DispatchEnvelope<ManualDispatchResult>>(
+    `/api/Dispatch/manual-dispatch?${query}`,
+    {
+      method: 'POST',
+      headers: getAuthHeaders(accessToken),
+      body: formData,
+    }
+  );
+}

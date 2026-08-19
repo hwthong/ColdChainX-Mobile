@@ -121,6 +121,9 @@ function getCategoryInfo(
   if (text.includes('PAYMENT') || text.includes('INVOICE') || text.includes('THANH TOAN')) {
     return { label: 'Thanh toán', icon: 'card-outline' };
   }
+  if (text.includes('INCIDENT_WORKFLOW')) {
+    return { label: 'Quy trình cứu hộ', icon: 'warning-outline' };
+  }
   if (text.includes('ALERT') || text.includes('INCIDENT') || text.includes('SU CO') || text.includes('CLAIM')) {
     return { label: 'Sự cố', icon: 'alert-circle-outline' };
   }
@@ -150,6 +153,15 @@ function normalizeContent(
     extractAmountFromText(rawMessage);
 
   const importantValue = rawAmount ? formatCurrencyVnd(rawAmount) : null;
+
+  // 0. INCIDENT WORKFLOW CASES
+  if (type === 'INCIDENT_WORKFLOW' || text.includes('INCIDENT_WORKFLOW')) {
+    return {
+      title: rawTitle?.trim() || 'Cập nhật quy trình xử lý sự cố',
+      description: rawMessage?.trim() || null,
+      importantValue: null,
+    };
+  }
 
   // 1. QUOTATION CASES
   if (text.includes('QUOTE') || text.includes('QUOTATION') || text.includes('BAO GIA')) {
@@ -189,7 +201,7 @@ function normalizeContent(
   if (text.includes('ALERT') || text.includes('INCIDENT') || text.includes('SU CO') || text.includes('CLAIM')) {
     const customReason = getCustomIncidentReason(rawMessage);
     return {
-      title: 'Đơn hàng cần được xử lý',
+      title: rawTitle?.trim() || 'Đơn hàng cần được xử lý',
       description: customReason,
       importantValue: null,
     };

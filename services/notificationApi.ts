@@ -37,8 +37,17 @@ export interface UnreadNotificationCount {
 
 export interface NotificationQueryOptions {
   unreadOnly?: boolean;
+  type?: string;
   pageNumber?: number;
   pageSize?: number;
+}
+
+export interface RegisterDeviceTokenPayload {
+  deviceToken: string;
+  platform: 'Android' | 'iOS' | 'Web' | string;
+  deviceId?: string;
+  deviceName?: string;
+  appVersion?: string;
 }
 
 interface PagedNotificationResponse {
@@ -58,6 +67,28 @@ interface ApiResponse<T> {
   data?: T | null;
 }
 
+export async function registerDeviceToken(
+  accessToken: string,
+  payload: RegisterDeviceTokenPayload
+) {
+  return apiRequest<ApiResponse<boolean>>('/api/notifications/register-token', {
+    method: 'POST',
+    headers: getAuthHeaders(accessToken),
+    body: payload,
+  });
+}
+
+export async function unregisterDeviceToken(
+  accessToken: string,
+  deviceToken: string
+) {
+  return apiRequest<ApiResponse<boolean>>('/api/notifications/unregister-token', {
+    method: 'DELETE',
+    headers: getAuthHeaders(accessToken),
+    body: { deviceToken },
+  });
+}
+
 export async function getUserNotifications(
   accessToken: string,
   options: NotificationQueryOptions = {}
@@ -71,6 +102,10 @@ export async function getUserNotifications(
 
   if (options.unreadOnly) {
     query.set('isRead', 'false');
+  }
+
+  if (options.type) {
+    query.set('type', options.type);
   }
 
   const response = await apiRequest<ApiResponse<PagedNotificationResponse | NotificationResponse[]>>(

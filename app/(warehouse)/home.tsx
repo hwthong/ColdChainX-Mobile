@@ -74,6 +74,12 @@ export default function WarehouseHomeScreen() {
           onPress={() => router.push('/(warehouse)/inbound' as never)}
         />
         <QuickAction
+          icon="warning-outline"
+          title="Inbound sự cố"
+          subtitle="Nhập xe cứu hộ bằng seal"
+          onPress={() => router.push('/(warehouse)/emergency-inbound' as never)}
+        />
+        <QuickAction
           icon="document-text-outline"
           title="Phiếu nhập"
           subtitle="Danh sách phiếu nhập"

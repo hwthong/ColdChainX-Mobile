@@ -75,6 +75,13 @@ export default function WarehouseLayout() {
           tabBarIcon: ({ color }) => <Ionicons name="layers-outline" size={24} color={color} />,
         }}
       />
+      <Tabs.Screen
+        name="emergency-inbound"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
     </Tabs>
   );
 }

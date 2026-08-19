@@ -20,19 +20,20 @@ type IncidentLocation = {
   source: 'DEVICE' | 'IOT';
 };
 
-const INCIDENT_TYPES: { label: string; value: IncidentType }[] = [
-  { label: 'Hỏng xe', value: 'VEHICLE_BREAKDOWN' },
-  { label: 'Hỏng hàng hóa', value: 'DAMAGE_CARGO' },
-  { label: 'Biến động nhiệt độ', value: 'TEMP_EXCURSION' },
-  { label: 'Tai nạn', value: 'ACCIDENT' },
-  { label: 'Chậm trễ', value: 'DELAY' },
+const INCIDENT_TYPES: { label: string; value: IncidentType; description: string }[] = [
+  { label: 'Xe hư', value: 'VEHICLE_BREAKDOWN', description: 'Động cơ, lốp xe, tai nạn kỹ thuật xe' },
+  { label: 'Thùng/máy lạnh hư', value: 'REEFER_BREAKDOWN', description: 'Hỏng máy lạnh, mất nhiệt, hở thùng' },
+  { label: 'Biến động nhiệt độ', value: 'TEMP_EXCURSION', description: 'Nhiệt độ vượt ngưỡng an toàn' },
+  { label: 'Hỏng hàng hóa', value: 'DAMAGE_CARGO', description: 'Bao bì rách, đổ vỡ kiện hàng' },
+  { label: 'Tai nạn', value: 'ACCIDENT', description: 'Va chạm giao thông trên đường' },
+  { label: 'Chậm trễ', value: 'DELAY', description: 'Ùn tắc hoặc sự cố thời gian' },
 ];
 
 const SEVERITIES: { label: string; value: IncidentSeverity }[] = [
   { label: 'Thấp', value: 'LOW' },
   { label: 'Trung bình', value: 'MEDIUM' },
   { label: 'Cao', value: 'HIGH' },
-  { label: 'Nghiêm trọng', value: 'CRITICAL' },
+  { label: 'Nghiêm trọng (CRITICAL)', value: 'CRITICAL' },
 ];
 
 export default function DriverTripIncidentScreen() {
@@ -42,12 +43,20 @@ export default function DriverTripIncidentScreen() {
   const token = useAuthStore((state) => state.token);
 
   const [type, setType] = useState<IncidentType>('VEHICLE_BREAKDOWN');
-  const [severity, setSeverity] = useState<IncidentSeverity>('MEDIUM');
-  const [requiresRescue, setRequiresRescue] = useState(false);
+  const [severity, setSeverity] = useState<IncidentSeverity>('CRITICAL');
+  const [requiresRescue, setRequiresRescue] = useState(true);
   const [description, setDescription] = useState('');
-  const [amount, setAmount] = useState('');
+  const [amount, setAmount] = useState('0');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [receiptUri, setReceiptUri] = useState<string | null>(null);
+
+  const handleTypeChange = (selectedType: IncidentType) => {
+    setType(selectedType);
+    if (selectedType === 'VEHICLE_BREAKDOWN' || selectedType === 'REEFER_BREAKDOWN') {
+      setSeverity('CRITICAL');
+      setRequiresRescue(true);
+    }
+  };
 
   const [submitting, setSubmitting] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
@@ -192,7 +201,7 @@ export default function DriverTripIncidentScreen() {
           {INCIDENT_TYPES.map((t) => (
             <Pressable
               key={t.value}
-              onPress={() => setType(t.value)}
+              onPress={() => handleTypeChange(t.value)}
               style={{
                 backgroundColor: type === t.value ? colors.surface.selected : colors.surface.card,
                 borderColor: type === t.value ? colors.border.selected : colors.border.default,

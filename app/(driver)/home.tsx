@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { Text, View, ActivityIndicator } from 'react-native';
+import { Text, View, ActivityIndicator, Pressable as RNPressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,15 +9,18 @@ import { colors } from '../../constants/colors';
 import { GlassWidget } from '../../components/GlassWidget';
 import { useAuthStore } from '../../store/useAuthStore';
 import { driverApi, TripListDto } from '../../services/driverApi';
+import { getUnreadNotificationCount } from '../../services/notificationApi';
 
 export default function DriverHomeScreen() {
   const user = useAuthStore(state => state.user);
+  const token = useAuthStore(state => state.token);
   const router = useRouter();
 
   const [activeTrip, setActiveTrip] = useState<TripListDto | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [unreadCount, setUnreadCount] = useState(0);
 
-  const loadActiveTrip = async () => {
+  const loadActiveTrip = useCallback(async () => {
     try {
       setIsLoading(true);
       const trips = await driverApi.getMyTrips();
@@ -33,19 +36,32 @@ export default function DriverHomeScreen() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  const loadUnreadCount = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await getUnreadNotificationCount(token);
+      if (res.success && res.data) {
+        setUnreadCount(res.data.unreadCount);
+      }
+    } catch {
+      // Ignored
+    }
+  }, [token]);
 
   useFocusEffect(
     useCallback(() => {
       loadActiveTrip();
-    }, [])
+      loadUnreadCount();
+    }, [loadActiveTrip, loadUnreadCount])
   );
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface.page }}>
       <View style={{ backgroundColor: colors.surface.page }} className="flex-1 px-6 py-6">
-        <View className="mb-6 flex-row items-center justify-between">
-          <View>
+        <View className="mb-6 flex-row items-start justify-between">
+          <View className="flex-1 pr-4">
             <Text style={{ color: colors.text.secondary }} className="text-xs font-bold uppercase tracking-wider">Tổng quan tài xế</Text>
             <Text style={{ color: colors.text.primary }} className="mt-1 text-2xl font-bold">
               Xin chào, {user?.fullName || 'Tài xế'}
@@ -54,6 +70,24 @@ export default function DriverHomeScreen() {
               Theo dõi chuyến được phân công và tình trạng vận chuyển.
             </Text>
           </View>
+
+          <RNPressable
+            onPress={() => router.push('/(driver)/notifications' as never)}
+            style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }}
+            className="relative h-12 w-12 items-center justify-center rounded-2xl border shadow-sm"
+          >
+            <Ionicons name="notifications-outline" size={24} color={colors.brand.primary} />
+            {unreadCount > 0 ? (
+              <View
+                style={{ backgroundColor: colors.status.warning.main }}
+                className="absolute -top-1.5 -right-1.5 min-w-[20px] h-[20px] items-center justify-center rounded-full px-1.5"
+              >
+                <Text className="text-[10px] font-bold text-white">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </Text>
+              </View>
+            ) : null}
+          </RNPressable>
         </View>
 
         <View className="gap-4">

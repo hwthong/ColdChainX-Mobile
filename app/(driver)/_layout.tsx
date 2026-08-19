@@ -1,7 +1,7 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { WarehouseHeader } from '../../components/WarehouseHeader';
+import { DriverHeader } from '../../components/DriverHeader';
 import { colors } from '../../constants/colors';
 
 export default function DriverLayout() {
@@ -10,7 +10,7 @@ export default function DriverLayout() {
       screenOptions={{
         header: ({ route }) => {
           const titleMap: Record<string, string> = {
-            home: 'Trang chủ Tài xế',
+            home: 'ColdChainX Driver',
             trips: 'Chuyến xe',
             profile: 'Hồ sơ cá nhân',
           };
@@ -26,7 +26,7 @@ export default function DriverLayout() {
 
           const showBackButton = route.name !== 'home' && route.name !== 'trips' && route.name !== 'profile';
 
-          return <WarehouseHeader title={title} showBackButton={showBackButton} />;
+          return <DriverHeader title={title} showBackButton={showBackButton} />;
         },
         tabBarActiveTintColor: colors.brand.primary,
         tabBarInactiveTintColor: colors.text.muted,
@@ -62,7 +62,13 @@ export default function DriverLayout() {
           tabBarIcon: ({ color }) => <Ionicons name="person-outline" size={24} color={color} />,
         }}
       />
-      
+      <Tabs.Screen
+        name="notifications"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
     </Tabs>
   );
 }
