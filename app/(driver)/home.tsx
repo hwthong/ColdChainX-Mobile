@@ -287,7 +287,7 @@ export default function DriverHomeScreen() {
                   <Pressable
                     onPress={() =>
                       router.push(
-                        `/(driver)/trips/${activeTrip.tripId}/incident-detail?incidentId=${activeIncident.incidentId}` as never
+                        `/(driver)/trips/${activeTrip.tripId}/incident-detail?incidentId=${activeIncident.incidentId}&from=home` as never
                       )
                     }
                     style={{
@@ -360,7 +360,12 @@ export default function DriverHomeScreen() {
                         : colors.brand.primary,
                     })}
                     className="flex-1 items-center rounded-xl py-3.5"
-                    onPress={() => router.push(`/trips/${activeTrip.tripId}`)}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/(driver)/trips/[id]',
+                        params: { id: activeTrip.tripId, from: 'home' },
+                      } as never)
+                    }
                   >
                     <Text style={{ color: colors.text.onPrimary }} className="text-sm font-bold">
                       Chi tiết chuyến xe
@@ -371,7 +376,9 @@ export default function DriverHomeScreen() {
                     style={{ borderColor: colors.status.danger.border, backgroundColor: colors.status.danger.bg }}
                     className="items-center justify-center rounded-xl border px-3.5 py-3.5"
                     onPress={() =>
-                      router.push(`/(driver)/trips/${activeTrip.tripId}/incident` as never)
+                      router.push(
+                        `/(driver)/trips/${activeTrip.tripId}/incident?from=home` as never
+                      )
                     }
                   >
                     <Ionicons name="warning-outline" size={20} color={colors.status.danger.main} />

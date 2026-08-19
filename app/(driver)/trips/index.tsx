@@ -247,7 +247,12 @@ export default function DriverTripsScreen() {
     return (
       <Pressable
         key={item.tripId}
-        onPress={() => router.push(`/(driver)/trips/${item.tripId}` as any)}
+        onPress={() =>
+          router.push({
+            pathname: '/(driver)/trips/[id]',
+            params: { id: item.tripId, from: 'trips' },
+          } as never)
+        }
         style={({ pressed }) => ({
           backgroundColor: isHero
             ? '#FFFFFF'

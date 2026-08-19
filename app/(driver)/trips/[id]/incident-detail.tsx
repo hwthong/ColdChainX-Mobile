@@ -70,7 +70,7 @@ const BREAKDOWN_TYPES = ['VEHICLE_BREAKDOWN', 'REEFER_BREAKDOWN'];
 
 export default function DriverIncidentDetailScreen() {
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ id?: string | string[]; incidentId?: string | string[] }>();
+  const params = useLocalSearchParams<{ id?: string | string[]; incidentId?: string | string[]; from?: string }>();
   const incidentId = Array.isArray(params.incidentId) ? params.incidentId[0] : params.incidentId;
   const currentTripId = Array.isArray(params.id) ? params.id[0] : params.id;
   const router = useRouter();
@@ -470,10 +470,14 @@ export default function DriverIncidentDetailScreen() {
         <View className="flex-row items-center justify-between mb-2">
           <Pressable
             onPress={() => {
-              if (router.canGoBack()) {
+              if (params.from === 'home') {
+                router.navigate('/(driver)/home');
+              } else if (params.from === 'trips') {
+                router.navigate('/(driver)/trips');
+              } else if (router.canGoBack()) {
                 router.back();
               } else {
-                router.replace('/(driver)/trips');
+                router.navigate('/(driver)/home');
               }
             }}
             style={{ backgroundColor: colors.brand.primarySoft }}

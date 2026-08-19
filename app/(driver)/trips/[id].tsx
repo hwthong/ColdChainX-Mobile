@@ -50,7 +50,7 @@ const STOP_STATUS: Record<string, string> = {
 
 export default function DriverTripDetailScreen() {
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ id?: string | string[] }>();
+  const params = useLocalSearchParams<{ id?: string | string[]; from?: string }>();
   const tripId = Array.isArray(params.id) ? params.id[0] : params.id;
   const router = useRouter();
   const token = useAuthStore((state) => state.token);
@@ -408,6 +408,18 @@ export default function DriverTripDetailScreen() {
   const status = trip?.status || tracking?.status || 'UNKNOWN';
   const isCompleted = TERMINAL.has(status.toUpperCase());
 
+  const handleGoBack = () => {
+    if (params.from === 'home') {
+      router.navigate('/(driver)/home');
+    } else if (params.from === 'trips') {
+      router.navigate('/(driver)/trips');
+    } else if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.navigate('/(driver)/home');
+    }
+  };
+
   return (
     <View style={{ backgroundColor: colors.surface.page }} className="flex-1">
       {/* ── TOP APP BAR WITH SAFE AREA INSETS ── */}
@@ -421,7 +433,7 @@ export default function DriverTripDetailScreen() {
       >
         <View className="flex-row items-center justify-between">
           <Pressable
-            onPress={() => router.back()}
+            onPress={handleGoBack}
             style={{ backgroundColor: colors.brand.primarySoft }}
             className="rounded-full p-2.5"
           >
