@@ -18,6 +18,7 @@ type RouteMapPoint = {
 type GoongRouteMapProps = {
   route: TripRouteResponse;
   height?: number;
+  isFullScreen?: boolean;
   vehiclePosition?: {
     latitude: number;
     longitude: number;
@@ -33,7 +34,12 @@ type MapBridgeMessage = {
 
 const GOONG_MAPTILES_KEY = process.env.EXPO_PUBLIC_GOONG_MAPTILES_KEY?.trim();
 
-export function GoongRouteMap({ route, height = 300, vehiclePosition = null }: GoongRouteMapProps) {
+export function GoongRouteMap({
+  route,
+  height = 300,
+  isFullScreen = false,
+  vehiclePosition = null,
+}: GoongRouteMapProps) {
   const [mapFailure, setMapFailure] = useState<MapBridgeMessage | null>(null);
   const [isMapReady, setIsMapReady] = useState(false);
   const points = useMemo(() => buildRoutePoints(route), [route]);
@@ -64,9 +70,12 @@ export function GoongRouteMap({ route, height = 300, vehiclePosition = null }: G
   }
 
   return (
-    <View className="overflow-hidden rounded-2xl border border-[#DAC2B6]/60 bg-[#F8F9FA]">
+    <View
+      style={isFullScreen ? { flex: 1, width: '100%', height: '100%' } : undefined}
+      className={`overflow-hidden rounded-2xl border border-[#DAC2B6]/60 bg-[#F8F9FA] ${isFullScreen ? 'flex-1' : ''}`}
+    >
       <WebView
-        key={`${route.tripId}-${route.overviewPolyline ?? 'route'}-${vehiclePosition?.latitude ?? 'no-lat'}-${vehiclePosition?.longitude ?? 'no-lon'}`}
+        key={`map-${isFullScreen ? 'full' : 'inline'}-${route.tripId}-${route.overviewPolyline ?? 'route'}-${vehiclePosition?.latitude ?? 'no-lat'}-${vehiclePosition?.longitude ?? 'no-lon'}`}
         originWhitelist={['about:blank', 'https://*']}
         source={{ html: mapHtml }}
         javaScriptEnabled
@@ -102,9 +111,13 @@ export function GoongRouteMap({ route, height = 300, vehiclePosition = null }: G
             <Text style={{ color: colors.text.secondary }} className="mt-2 text-xs font-medium">Đang tải bản đồ...</Text>
           </View>
         )}
-        style={{ height, backgroundColor: colors.surface.page }}
+        style={
+          isFullScreen
+            ? { flex: 1, width: '100%', height: '100%', backgroundColor: colors.surface.page }
+            : { height, backgroundColor: colors.surface.page }
+        }
       />
-      {routeCoordinates.length < 2 ? (
+      {!isFullScreen && routeCoordinates.length < 2 ? (
         <View style={{ borderTopColor: colors.border.default }} className="border-t bg-amber-50 px-4 py-3">
           <Text className="text-xs font-medium leading-5 text-amber-800">
             API chưa trả polyline; bản đồ hiện chỉ hiển thị các điểm tuyến dự kiến.

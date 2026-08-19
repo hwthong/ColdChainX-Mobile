@@ -4,7 +4,6 @@ import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   AppState,
-  Dimensions,
   Linking,
   Modal,
   RefreshControl,
@@ -710,11 +709,11 @@ export default function DriverTripDetailScreen() {
 
         {/* Bản đồ Goong toàn màn hình */}
         <View className="flex-1 p-2">
-          {route ? (
+          {route && isMapFullscreen ? (
             <GoongRouteMap
               route={route}
               vehiclePosition={vehiclePosition}
-              height={Math.max(Dimensions.get('window').height - 180, 500)}
+              isFullScreen
             />
           ) : null}
         </View>
