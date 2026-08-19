@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   Alert,
   AppState,
+  Image,
   Linking,
   Modal,
   Pressable,
@@ -98,6 +99,47 @@ export default function DriverIncidentDetailScreen() {
   const [isResolveModalVisible, setIsResolveModalVisible] = useState(false);
   const [resolveNote, setResolveNote] = useState('');
   const [isSubmittingResolve, setIsSubmittingResolve] = useState(false);
+
+  // ── Image Preview Modal ───────────────────────────────────────────────────
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+
+  const handleOpenEvidence = async (url: string) => {
+    if (!url) return;
+    const isImg =
+      /\.(jpg|jpeg|png|webp|gif|bmp)(\?.*)?$/i.test(url) ||
+      url.includes('cloudinary.com') ||
+      url.includes('image/upload');
+    if (isImg) {
+      setPreviewImageUrl(url);
+      return;
+    }
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (supported) {
+        await Linking.openURL(url);
+      } else {
+        Alert.alert('Thông báo', 'Không thể mở liên kết tài liệu này trên thiết bị.');
+      }
+    } catch {
+      Alert.alert('Thông báo', 'Không thể mở liên kết tài liệu.');
+    }
+  };
+
+  const handleMakePhoneCall = async (phone: string) => {
+    if (!phone) return;
+    const cleaned = phone.replace(/[^\d+]/g, '');
+    const url = `tel:${cleaned}`;
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (supported) {
+        await Linking.openURL(url);
+      } else {
+        Alert.alert('Thông báo', `Không thể gọi đến số ${phone} trên thiết bị này.`);
+      }
+    } catch {
+      Alert.alert('Thông báo', 'Không thể thực hiện cuộc gọi.');
+    }
+  };
 
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -1007,22 +1049,57 @@ export default function DriverIncidentDetailScreen() {
                 Hình ảnh & Minh chứng ({incident.evidences.length})
               </Text>
             </View>
-            {incident.evidences.map((e) => (
-              <Pressable
-                key={e.evidenceId}
-                onPress={() => Linking.openURL(e.fileUrl)}
-                style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default }}
-                className="flex-row items-center justify-between rounded-2xl border p-3.5"
-              >
-                <View className="flex-row items-center gap-3">
-                  <Ionicons name="image" size={22} color={colors.brand.primary} />
-                  <Text style={{ color: colors.text.primary }} className="text-sm font-medium">
-                    {e.evidenceType}
-                  </Text>
-                </View>
-                <Ionicons name="open-outline" size={18} color={colors.brand.primary} />
-              </Pressable>
-            ))}
+            <View className="gap-2.5">
+              {incident.evidences.map((e, idx) => {
+                const isImage =
+                  /\.(jpg|jpeg|png|webp|gif|bmp)(\?.*)?$/i.test(e.fileUrl) ||
+                  e.fileUrl.includes('cloudinary.com') ||
+                  e.fileUrl.includes('image/upload');
+
+                let label = 'Tài liệu đính kèm';
+                if (e.evidenceType === 'INCIDENT_PHOTO' || e.evidenceType === 'INCIDENT_ATTACHMENT') {
+                  label = `Ảnh hiện trường #${idx + 1}`;
+                } else if (e.evidenceType === 'DRIVER_RECEIPT') {
+                  label = 'Hóa đơn chi phí tài xế';
+                } else if (e.evidenceType === 'REIMBURSEMENT_RECEIPT') {
+                  label = 'Biên lai hoàn tiền';
+                } else if (e.evidenceType === 'RESOLUTION_PDF') {
+                  label = 'Biên bản xử lý sự cố';
+                }
+
+                return (
+                  <Pressable
+                    key={e.evidenceId || idx}
+                    onPress={() => handleOpenEvidence(e.fileUrl)}
+                    style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default }}
+                    className="flex-row items-center justify-between rounded-2xl border p-3"
+                  >
+                    <View className="flex-row items-center gap-3 flex-1 pr-2">
+                      {isImage ? (
+                        <Image
+                          source={{ uri: e.fileUrl }}
+                          style={{ width: 44, height: 44, borderRadius: 10 }}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View style={{ backgroundColor: colors.brand.primarySoft }} className="h-11 w-11 items-center justify-center rounded-xl">
+                          <Ionicons name="document-text" size={22} color={colors.brand.primary} />
+                        </View>
+                      )}
+                      <View className="flex-1">
+                        <Text style={{ color: colors.text.primary }} className="text-xs font-bold" numberOfLines={1}>
+                          {label}
+                        </Text>
+                        <Text style={{ color: colors.text.secondary }} className="text-[10px] mt-0.5" numberOfLines={1}>
+                          {isImage ? 'Chạm để xem ảnh toàn màn hình' : 'Chạm để mở tài liệu'}
+                        </Text>
+                      </View>
+                    </View>
+                    <Ionicons name={isImage ? "eye-outline" : "open-outline"} size={18} color={colors.brand.primary} />
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
         )}
       </ScrollView>
@@ -1056,30 +1133,6 @@ export default function DriverIncidentDetailScreen() {
               </View>
             )}
 
-            {/* CTA: CRITICAL breakdown — Xác nhận bảo toàn hàng */}
-            {isBreakdown && (incident.status === 'REPORTED' || incident.status === 'CONTAINMENT_REQUIRED') && (
-              <Pressable
-                onPress={handleAssessContainment}
-                disabled={actionLoading || !containmentConfirmed}
-                style={{
-                  backgroundColor: !containmentConfirmed || actionLoading ? colors.surface.muted : colors.brand.primary,
-                  minHeight: 48,
-                }}
-                className="items-center justify-center rounded-2xl shadow-sm"
-              >
-                {actionLoading ? (
-                  <ActivityIndicator color={colors.text.onPrimary} />
-                ) : (
-                  <Text
-                    style={{ color: !containmentConfirmed ? colors.text.secondary : colors.text.onPrimary }}
-                    className="text-base font-bold"
-                  >
-                    Xác nhận bảo toàn hàng
-                  </Text>
-                )}
-              </Pressable>
-            )}
-
             {/* CTA: LOW — Xác nhận tiếp tục chuyến (từ TRIAGED) */}
             {incident.status === 'TRIAGED' && (
               <Pressable
@@ -1093,116 +1146,78 @@ export default function DriverIncidentDetailScreen() {
               </Pressable>
             )}
 
-            {/* Read-only labels cho các trạng thái chờ */}
-            {(incident.status === 'MONITORING' ||
-              incident.status === 'RESCUE_PLANNING' ||
-              incident.status === 'EXTERNAL_REEFER_IN_TRANSIT' ||
-              incident.status === 'READY_FOR_REDISPATCH' ||
-              incident.status === 'REDISPATCH_PLANNED') && (
-              <View
-                style={{ minHeight: 48, backgroundColor: colors.surface.muted }}
-                className="items-center justify-center rounded-2xl"
+            {/* CTA: Bước 1 Containment Required */}
+            {currentStep === 1 && (incident.status === 'REPORTED' || incident.status === 'CONTAINMENT_REQUIRED') ? (
+              <Pressable
+                onPress={handleAssessContainment}
+                disabled={!containmentConfirmed || actionLoading}
+                style={{
+                  backgroundColor: !containmentConfirmed || actionLoading ? colors.surface.muted : colors.brand.primary,
+                  minHeight: 48,
+                }}
+                className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm"
               >
-                <Text style={{ color: colors.text.secondary }} className="text-sm font-semibold">
-                  {incident.status === 'MONITORING' && '🌡️ Đang theo dõi — Chờ Dispatcher quyết định...'}
-                  {incident.status === 'RESCUE_PLANNING' && (isExternalReefer ? '⏳ Đang chờ Dispatcher thuê xe cứu hộ...' : '⏳ Đang chờ Dispatcher điều xe thay thế nội bộ...')}
-                  {incident.status === 'EXTERNAL_REEFER_IN_TRANSIT' && '🚚 Xe lạnh đang trên đường đến kho...'}
-                  {incident.status === 'READY_FOR_REDISPATCH' && '⏳ Đang chờ Dispatcher ghép chuyến mới...'}
-                  {incident.status === 'REDISPATCH_PLANNED' && '📦 Kho đang picking & loading hàng...'}
-                </Text>
-              </View>
-            )}
+                {actionLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="shield-checkmark" size={18} color="#ffffff" />
+                    <Text className="text-base font-bold text-white">
+                      Hoàn thành Bước 1: Xác nhận bảo toàn hàng
+                    </Text>
+                  </>
+                )}
+              </Pressable>
+            ) : null}
 
-            {/* CTA: Giao khách — TRANSLOAD_COMPLETED hoặc REDISPATCHED_TO_CUSTOMER */}
-            {(incident.status === 'TRANSLOAD_COMPLETED' || incident.status === 'REDISPATCHED_TO_CUSTOMER') && (
-              <View className="gap-2.5">
-                {/* Nút mở chuyến xe để giao hàng từng điểm dừng (Check-in / POD) */}
-                {(incident.tripId || currentTripId) ? (
+            {/* CTA: Bước 5 Hoàn tất & Đóng sự cố */}
+            {currentStep === 5 && incident.status !== 'RESOLVED' ? (
+              <View className="gap-2">
+                {incident.status === 'TRANSLOAD_COMPLETED' ? (
                   <Pressable
                     onPress={() => router.push(`/trips/${incident.tripId || currentTripId}` as never)}
                     style={{ backgroundColor: colors.brand.primary, minHeight: 48 }}
-                    className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm px-4"
+                    className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm"
                   >
-                    <Ionicons name="navigate" size={18} color={colors.text.onPrimary} />
-                    <Text style={{ color: colors.text.onPrimary }} className="text-base font-bold">
-                      Mở chuyến xe để giao khách
-                    </Text>
+                    <Ionicons name="navigate" size={18} color="#ffffff" />
+                    <Text className="text-base font-bold text-white">Mở chuyến xe để giao khách</Text>
                   </Pressable>
                 ) : null}
-
-                {/* Nút đóng sự cố sau khi đã xử lý / giao hàng xong */}
                 <Pressable
                   onPress={() => setIsResolveModalVisible(true)}
-                  style={{
-                    backgroundColor: colors.surface.card,
-                    borderColor: colors.status.success.main,
-                    borderWidth: 1.5,
-                    minHeight: 48,
-                  }}
-                  className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm px-4"
+                  style={{ borderColor: colors.status.success.main, backgroundColor: colors.status.success.bg, minHeight: 48 }}
+                  className="flex-row items-center justify-center gap-2 rounded-2xl border"
                 >
-                  <Ionicons
-                    name="checkmark-done-circle"
-                    size={20}
-                    color={colors.status.success.main}
-                  />
-                  <Text
-                    style={{ color: colors.status.success.main }}
-                    className="text-base font-bold"
-                  >
+                  <Ionicons name="checkmark-circle" size={18} color={colors.status.success.main} />
+                  <Text style={{ color: colors.status.success.main }} className="text-base font-bold">
                     Hoàn tất & Đóng sự cố (Resolve)
                   </Text>
                 </Pressable>
               </View>
-            )}
-
-            {/* CONTINUED / RESOLVED — Read-only */}
-            {(incident.status === 'CONTINUED' || incident.status === 'RESOLVED') && (
-              <View style={{ minHeight: 48 }} className="items-center justify-center">
-                <Text style={{ color: colors.text.secondary }} className="font-semibold">
-                  {incident.status === 'CONTINUED' ? '✅ Đã tiếp tục chuyến bình thường' : 'Sự cố đã được hoàn tất · Read-only'}
-                </Text>
-              </View>
-            )}
+            ) : null}
           </>
         )}
       </View>
 
-      {/* ════════════════════════════════════════════════════════════════════
-          MODAL: XÁC NHẬN TIẾP TỤC CHUYẾN (LOW path - TRIAGED)
-          ════════════════════════════════════════════════════════════════════ */}
+      {/* ── CONTINUE TRIP MODAL (LOW) ── */}
       <Modal
         visible={isContinueTripModalVisible}
         transparent
         animationType="slide"
         onRequestClose={() => setIsContinueTripModalVisible(false)}
       >
-        <View className="flex-1 justify-end bg-black/60">
-          <View style={{ backgroundColor: colors.surface.card }} className="rounded-t-3xl p-6 shadow-2xl">
-            <View className="mb-4 flex-row items-center justify-between border-b border-slate-100 pb-3">
-              <Text style={{ color: colors.text.primary }} className="text-lg font-bold">
-                Xác Nhận Tiếp Tục Chuyến
-              </Text>
-              <Pressable onPress={() => setIsContinueTripModalVisible(false)} style={{ backgroundColor: colors.surface.page }} className="rounded-full p-2">
-                <Ionicons name="close" size={20} color={colors.text.secondary} />
-              </Pressable>
-            </View>
-
-            <Text style={{ color: colors.text.secondary }} className="text-xs leading-5 mb-3">
-              Ghi lại cách bạn đã tự xử lý sự cố tại chỗ (tùy chọn). Sau khi xác nhận, chuyến hàng sẽ tiếp tục bình thường.
-            </Text>
-
+        <View style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} className="flex-1 justify-end">
+          <View style={{ backgroundColor: colors.surface.card }} className="gap-4 rounded-t-3xl p-6">
+            <Text style={{ color: colors.text.primary }} className="text-lg font-bold">Xác nhận tiếp tục chuyến đi</Text>
             <TextInput
               value={continueTripNote}
               onChangeText={setContinueTripNote}
-              placeholder="Ví dụ: Đã thay lốp dự phòng tại chỗ, xe vận hành bình thường..."
-              placeholderTextColor={colors.text.muted}
+              placeholder="Ghi chú xử lý sự cố tại chỗ..."
               multiline
               numberOfLines={3}
               style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default, color: colors.text.primary }}
-              className="rounded-2xl border p-3 text-sm mb-4"
+              className="rounded-2xl border p-4 text-sm"
             />
-
             <View className="flex-row gap-3">
               <Pressable
                 onPress={() => setIsContinueTripModalVisible(false)}
@@ -1214,13 +1229,13 @@ export default function DriverIncidentDetailScreen() {
               <Pressable
                 onPress={handleSubmitContinueTrip}
                 disabled={isContinueTripSubmitting}
-                style={{ backgroundColor: colors.status.success.main, minHeight: 48 }}
+                style={{ backgroundColor: colors.brand.primary, minHeight: 48 }}
                 className="flex-1 items-center justify-center rounded-2xl shadow-sm"
               >
                 {isContinueTripSubmitting ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text className="font-bold text-white">Xác nhận tiếp tục</Text>
+                  <Text className="font-bold text-white">Xác nhận</Text>
                 )}
               </Pressable>
             </View>
@@ -1228,32 +1243,24 @@ export default function DriverIncidentDetailScreen() {
         </View>
       </Modal>
 
-      {/* ════════════════════════════════════════════════════════════════════
-          MODAL: ĐÓNG SỰ CỐ (CRITICAL path)
-          ════════════════════════════════════════════════════════════════════ */}
+      {/* ── RESOLVE MODAL ── */}
       <Modal
         visible={isResolveModalVisible}
         transparent
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() => setIsResolveModalVisible(false)}
       >
-        <View className="flex-1 items-center justify-center bg-black/60 px-5">
-          <View style={{ backgroundColor: colors.surface.card }} className="w-full rounded-3xl p-6 shadow-xl">
-            <Text style={{ color: colors.text.primary }} className="text-lg font-bold mb-2">
-              Xác Nhận Đóng Sự Cố
-            </Text>
-            <Text style={{ color: colors.text.secondary }} className="text-xs leading-5 mb-4">
-              Xác nhận toàn bộ quy trình cứu hộ, sang hàng và giao hàng cho khách đã hoàn thành trọn vẹn.
-            </Text>
+        <View style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} className="flex-1 justify-end">
+          <View style={{ backgroundColor: colors.surface.card }} className="gap-4 rounded-t-3xl p-6">
+            <Text style={{ color: colors.text.primary }} className="text-lg font-bold">Đóng & Hoàn tất sự cố</Text>
             <TextInput
               value={resolveNote}
               onChangeText={setResolveNote}
-              placeholder="Ghi chú hoàn tất sự cố..."
-              placeholderTextColor={colors.text.muted}
+              placeholder="Nhập ghi chú hoàn tất sự cố (tùy chọn)..."
               multiline
               numberOfLines={3}
               style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default, color: colors.text.primary }}
-              className="rounded-2xl border p-3 text-sm mb-4"
+              className="rounded-2xl border p-4 text-sm"
             />
             <View className="flex-row gap-3">
               <Pressable
@@ -1272,18 +1279,53 @@ export default function DriverIncidentDetailScreen() {
                 {isSubmittingResolve ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text className="font-bold text-white">Đóng sự cố</Text>
+                  <Text className="font-bold text-white">Xác nhận đóng sự cố</Text>
                 )}
               </Pressable>
             </View>
           </View>
         </View>
       </Modal>
+
+      {/* ── FULLSCREEN IMAGE PREVIEW MODAL ── */}
+      <Modal
+        visible={Boolean(previewImageUrl)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPreviewImageUrl(null)}
+      >
+        <View style={{ backgroundColor: 'rgba(0,0,0,0.92)' }} className="flex-1 items-center justify-center p-4">
+          <Pressable
+            onPress={() => setPreviewImageUrl(null)}
+            hitSlop={12}
+            style={{ backgroundColor: 'rgba(255,255,255,0.25)' }}
+            className="absolute top-12 right-6 z-50 rounded-full p-2.5"
+          >
+            <Ionicons name="close" size={24} color="#ffffff" />
+          </Pressable>
+
+          {previewImageUrl ? (
+            <Image
+              source={{ uri: previewImageUrl }}
+              style={{ width: '100%', height: '80%' }}
+              resizeMode="contain"
+            />
+          ) : null}
+        </View>
+      </Modal>
     </View>
   );
 }
 
-function OrderCardItem({ order, lpns }: { order: OrderResponse; lpns: TripRouteLpnDto[] }) {
+function OrderCardItem({
+  order,
+  lpns,
+  onCallPhone,
+}: {
+  order: OrderResponse;
+  lpns: TripRouteLpnDto[];
+  onCallPhone?: (phone: string) => void;
+}) {
   const receiverPhone = order.receiverPhone || order.customerPhone;
   const receiverName = order.receiverName || order.customerName || order.customerContactName || 'Khách hàng';
   const destAddress = order.destination?.address || 'Địa chỉ nhận theo lộ trình';
@@ -1345,7 +1387,7 @@ function OrderCardItem({ order, lpns }: { order: OrderResponse; lpns: TripRouteL
           </View>
           {receiverPhone ? (
             <Pressable
-              onPress={() => Linking.openURL(`tel:${receiverPhone}`)}
+              onPress={() => onCallPhone ? onCallPhone(receiverPhone) : Linking.openURL(`tel:${receiverPhone}`).catch(() => {})}
               hitSlop={6}
               style={{ backgroundColor: colors.status.success.bg, borderColor: colors.status.success.border }}
               className="flex-row items-center gap-1 rounded-xl border px-2.5 py-1"
