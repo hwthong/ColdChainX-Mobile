@@ -10,7 +10,7 @@ import { useAuthStore } from '../../store/useAuthStore';
 import { driverApi, TripListDto } from '../../services/driverApi';
 import { getIncidents, IncidentResponse } from '../../services/incidentApi';
 import { getVehicleDetail } from '../../services/vehicleApi';
-import { getTripRoute } from '../../services/monitoringApi';
+import { getTripRoute, getTripTracking } from '../../services/monitoringApi';
 
 const STATUS_PRIORITY: Record<string, number> = {
   IN_TRANSIT: 1,
@@ -59,13 +59,27 @@ export default function DriverHomeScreen() {
       if (active) {
         setActiveTrip(active);
 
-        // Lấy khoảng cách thực tế từ tuyến đường nếu trip chưa có distanceKm
+        // Lấy khoảng cách còn lại tới đơn hàng cuối cùng (hoặc tổng cự ly tuyến đường)
         let dist = active.distanceKm || null;
         if (token && active.tripId) {
           try {
-            const routeRes = await getTripRoute(token, active.tripId);
-            if (routeRes.success && routeRes.data?.totalDistanceMeters) {
-              dist = Math.round((routeRes.data.totalDistanceMeters / 1000) * 10) / 10;
+            const [trackingRes, routeRes] = await Promise.allSettled([
+              getTripTracking(token, active.tripId),
+              getTripRoute(token, active.tripId),
+            ]);
+
+            if (
+              trackingRes.status === 'fulfilled' &&
+              trackingRes.value?.data?.eta?.remainingDistanceKm &&
+              trackingRes.value.data.eta.remainingDistanceKm > 0
+            ) {
+              dist = Math.round(trackingRes.value.data.eta.remainingDistanceKm * 10) / 10;
+            } else if (
+              routeRes.status === 'fulfilled' &&
+              routeRes.value?.data?.totalDistanceMeters &&
+              routeRes.value.data.totalDistanceMeters > 0
+            ) {
+              dist = Math.round((routeRes.value.data.totalDistanceMeters / 1000) * 10) / 10;
             }
           } catch {
             // fallback to active.distanceKm
@@ -278,7 +292,7 @@ export default function DriverHomeScreen() {
                     {activeTrip.totalOrders} đơn hàng
                   </Text>
                   <Text style={{ color: colors.text.secondary }} className="text-xs font-medium">
-                    Khoảng cách: {tripDistanceKm ? `${tripDistanceKm} km` : activeTrip.distanceKm ? `${activeTrip.distanceKm} km` : '--'}
+                    Khoảng cách: <Text className="font-semibold text-slate-800">{tripDistanceKm ? `${tripDistanceKm} km` : activeTrip.distanceKm ? `${activeTrip.distanceKm} km` : '--'}</Text>
                   </Text>
                 </View>
 
