@@ -16,6 +16,8 @@ export type CreateOrderFieldKey =
   | 'widthCm'
   | 'heightCm'
   | 'destAddressText'
+  | 'receiverName'
+  | 'receiverPhone'
   | 'routeId'
   | 'scheduleId'
   | 'dropoffStopId'
@@ -25,7 +27,7 @@ export type CreateOrderValidationErrors = Partial<Record<CreateOrderFieldKey, st
 export type CreateOrderStep = 1 | 2 | 3 | 4;
 
 export const CREATE_ORDER_STEP_FIELDS: Record<Exclude<CreateOrderStep, 4>, CreateOrderFieldKey[]> = {
-  1: ['routeId', 'scheduleId', 'dropoffStopId', 'destAddressText'],
+  1: ['routeId', 'scheduleId', 'dropoffStopId', 'destAddressText', 'receiverName', 'receiverPhone'],
   2: ['itemName', 'category', 'tempCondition', 'expectedWeightKg', 'quantity'],
   3: ['packagingType', 'lengthCm', 'widthCm', 'heightCm', 'documentImage'],
 };
@@ -47,6 +49,8 @@ export type CreateOrderFormValues = {
   widthCm: string;
   heightCm: string;
   destAddressText: string;
+  receiverName: string;
+  receiverPhone: string;
   routeId: string;
   scheduleId: string;
   dropoffStopId: string;
@@ -64,6 +68,8 @@ const INITIAL_CREATE_ORDER_VALUES: Omit<CreateOrderFormValues, 'routeId' | 'sche
   widthCm: '',
   heightCm: '',
   destAddressText: '',
+  receiverName: '',
+  receiverPhone: '',
 };
 
 export function isCreateOrderFormDirty(values: CreateOrderFormValues) {
@@ -78,6 +84,8 @@ export function isCreateOrderFormDirty(values: CreateOrderFormValues) {
     values.widthCm !== INITIAL_CREATE_ORDER_VALUES.widthCm ||
     values.heightCm !== INITIAL_CREATE_ORDER_VALUES.heightCm ||
     values.destAddressText !== INITIAL_CREATE_ORDER_VALUES.destAddressText ||
+    values.receiverName !== INITIAL_CREATE_ORDER_VALUES.receiverName ||
+    values.receiverPhone !== INITIAL_CREATE_ORDER_VALUES.receiverPhone ||
     Boolean(values.routeId || values.scheduleId || values.dropoffStopId || values.documentImage)
   );
 }
@@ -88,6 +96,14 @@ const SUPPORTED_CATEGORIES: GoodsType[] = [
   'FROZEN_FRUITS_VEGGIES',
   'PHARMACEUTICALS',
 ];
+
+export function isValidPhoneNumber(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 20) return false;
+  const digits = trimmed.replace(/\D/g, '');
+  if (digits.length < 8 || digits.length > 15) return false;
+  return /^[0-9+\-\s()]+$/.test(trimmed);
+}
 
 export function validateCreateOrderForm(
   values: CreateOrderFormValues,
@@ -117,6 +133,18 @@ export function validateCreateOrderForm(
   if (!isPositiveNumber(values.heightCm)) errors.heightCm = 'Chiều cao phải lớn hơn 0.';
   if (values.destAddressText.trim().length < 5) {
     errors.destAddressText = 'Địa chỉ giao hàng cần ít nhất 5 ký tự.';
+  }
+
+  if (!values.receiverName.trim()) {
+    errors.receiverName = 'Vui lòng nhập họ tên người nhận.';
+  } else if (values.receiverName.trim().length > 100) {
+    errors.receiverName = 'Họ tên người nhận không được vượt quá 100 ký tự.';
+  }
+
+  if (!values.receiverPhone.trim()) {
+    errors.receiverPhone = 'Vui lòng nhập số điện thoại người nhận.';
+  } else if (!isValidPhoneNumber(values.receiverPhone)) {
+    errors.receiverPhone = 'Số điện thoại người nhận phải từ 8 đến 15 chữ số.';
   }
 
   const selectedRouteIsActive = activeRoutes.some((route) => route.routeId === values.routeId);

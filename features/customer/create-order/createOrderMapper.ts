@@ -15,6 +15,8 @@ export function mapCreateOrderRequest(
     widthCm: parseCreateOrderDecimal(values.widthCm),
     heightCm: parseCreateOrderDecimal(values.heightCm),
     destAddressText: values.destAddressText.trim(),
+    receiverName: values.receiverName.trim(),
+    receiverPhone: values.receiverPhone.trim(),
     scheduleId: values.scheduleId,
     dropoffStopId: values.dropoffStopId,
     cargoPhoto: {

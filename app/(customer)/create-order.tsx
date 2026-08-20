@@ -96,6 +96,8 @@ export default function CreateOrderScreen() {
 
   // — Delivery routing —
   const [destAddressText, setDestAddressText] = useState('');
+  const [receiverName, setReceiverName] = useState('');
+  const [receiverPhone, setReceiverPhone] = useState('');
   const [selectedRouteId, setSelectedRouteId] = useState('');
   const [selectedScheduleId, setSelectedScheduleId] = useState('');
   const [selectedStopId, setSelectedStopId] = useState('');
@@ -140,6 +142,8 @@ export default function CreateOrderScreen() {
     widthCm,
     heightCm,
     destAddressText,
+    receiverName,
+    receiverPhone,
     routeId: selectedRouteId,
     scheduleId: selectedScheduleId,
     dropoffStopId: selectedStopId,
@@ -152,6 +156,8 @@ export default function CreateOrderScreen() {
     setCategory('FROZEN_FRUITS_VEGGIES');
     setTempCondition(-6);
     setDestAddressText('');
+    setReceiverName('');
+    setReceiverPhone('');
     setItemName('');
     setExpectedWeightKg('');
     setQuantity('1');
@@ -312,9 +318,15 @@ export default function CreateOrderScreen() {
               setExistingPhotoUrl(existingPhoto);
             }
 
-            // 4. Destination Address
+            // 4. Destination Address & Recipient
             if (ord.destination?.address) {
               setDestAddressText(ord.destination.address);
+            }
+            if (ord.receiverName) {
+              setReceiverName(ord.receiverName);
+            }
+            if (ord.receiverPhone) {
+              setReceiverPhone(ord.receiverPhone);
             }
 
             // 5. Route & Booking Options (Schedules + Stops)
@@ -453,6 +465,8 @@ export default function CreateOrderScreen() {
       scheduleId: undefined,
       dropoffStopId: undefined,
       destAddressText: undefined,
+      receiverName: undefined,
+      receiverPhone: undefined,
     }));
   };
 
@@ -639,6 +653,8 @@ export default function CreateOrderScreen() {
           widthCm: hasValidDimensions ? parsedWid : undefined,
           heightCm: hasValidDimensions ? parsedHgt : undefined,
           destAddressText: formValues.destAddressText.trim(),
+          receiverName: formValues.receiverName ? formValues.receiverName.trim() : undefined,
+          receiverPhone: formValues.receiverPhone ? formValues.receiverPhone.trim() : undefined,
           scheduleId: formValues.scheduleId || undefined,
           dropoffStopId: formValues.dropoffStopId || undefined,
           cargoPhoto: documentImage
@@ -871,6 +887,8 @@ export default function CreateOrderScreen() {
             selectedScheduleId={selectedScheduleId}
             selectedStopId={selectedStopId}
             address={destAddressText}
+            receiverName={receiverName}
+            receiverPhone={receiverPhone}
             errors={errors}
             isLoadingRoutes={isLoadingRoutes}
             isLoadingBooking={isLoadingBooking}
@@ -900,6 +918,10 @@ export default function CreateOrderScreen() {
               setDestAddressText(address);
               setErrors((current) => ({ ...current, destAddressText: undefined }));
             }}
+            onChangeReceiverName={(value) => updateTextField('receiverName', value, setReceiverName)}
+            onChangeReceiverPhone={(value) => updateTextField('receiverPhone', value, setReceiverPhone)}
+            onBlurField={validateFieldOnBlur}
+            onSubmitField={submitTextField}
           />
         ) : null}
 
@@ -1118,6 +1140,9 @@ function getCreateOrderErrorMessage(error: unknown) {
   if (technicalMessage.includes('length') || technicalMessage.includes('width') || technicalMessage.includes('height') || technicalMessage.includes('dimension')) {
     return 'Kích thước kiện hàng không hợp lệ.';
   }
+  if (technicalMessage.includes('receiver') || technicalMessage.includes('người nhận')) {
+    return 'Thông tin người nhận (tên hoặc số điện thoại) không hợp lệ.';
+  }
   if (technicalMessage.includes('photo') || technicalMessage.includes('image') || technicalMessage.includes('cargo')) {
     return 'Ảnh lô hàng không hợp lệ.';
   }
@@ -1131,6 +1156,9 @@ function getCreateOrderServerErrorField(error: unknown): CreateOrderFieldKey | n
   if (technicalMessage.includes('schedule')) return 'scheduleId';
   if (technicalMessage.includes('dropoff') || technicalMessage.includes('stop')) return 'dropoffStopId';
   if (technicalMessage.includes('address') || technicalMessage.includes('goong')) return 'destAddressText';
+  if (technicalMessage.includes('receiver') && technicalMessage.includes('name')) return 'receiverName';
+  if (technicalMessage.includes('receiver') && technicalMessage.includes('phone')) return 'receiverPhone';
+  if (technicalMessage.includes('receiver') || technicalMessage.includes('người nhận')) return 'receiverName';
   if (technicalMessage.includes('item') || technicalMessage.includes('hàng hóa')) return 'itemName';
   if (technicalMessage.includes('category')) return 'category';
   if (technicalMessage.includes('temperature') || technicalMessage.includes('temp_condition')) return 'tempCondition';
@@ -1168,7 +1196,9 @@ function getFirstInvalidField(errors: CreateOrderValidationErrors): CreateOrderF
 
 function getNextInputField(field: CreateOrderFieldKey): CreateOrderFieldKey | null {
   const nextFields: Partial<Record<CreateOrderFieldKey, CreateOrderFieldKey>> = {
-    destAddressText: 'itemName',
+    destAddressText: 'receiverName',
+    receiverName: 'receiverPhone',
+    receiverPhone: 'itemName',
     itemName: 'expectedWeightKg',
     expectedWeightKg: 'quantity',
     lengthCm: 'widthCm',

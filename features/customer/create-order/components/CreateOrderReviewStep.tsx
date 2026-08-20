@@ -56,6 +56,7 @@ export function CreateOrderReviewStep({
           ['Lịch vận chuyển', selectedSchedule ? formatScheduleLabel(selectedSchedule) : '—'],
           ['Điểm giao', selectedStop?.stopName || '—'],
           ['Địa chỉ', values.destAddressText || '—'],
+          ['Người nhận', values.receiverName && values.receiverPhone ? `${values.receiverName} · ${values.receiverPhone}` : values.receiverName || values.receiverPhone || '—'],
         ]}
       />
       <ReviewSection

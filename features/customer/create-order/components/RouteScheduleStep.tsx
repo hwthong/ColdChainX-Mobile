@@ -13,6 +13,7 @@ import type { CreateOrderValidationErrors } from '../createOrderValidation';
 import { AddressAutocompleteField } from './AddressAutocompleteField';
 import {
   CreateOrderChoiceCard,
+  CreateOrderTextField,
   type RegisterCreateOrderField,
   type RegisterCreateOrderInput,
 } from './CreateOrderUi';
@@ -24,6 +25,8 @@ type RouteScheduleStepProps = {
   selectedScheduleId: string;
   selectedStopId: string;
   address: string;
+  receiverName: string;
+  receiverPhone: string;
   errors: CreateOrderValidationErrors;
   isLoadingRoutes: boolean;
   isLoadingBooking: boolean;
@@ -38,6 +41,10 @@ type RouteScheduleStepProps = {
   onSelectStop: (stopId: string) => void;
   onChangeAddress: (address: string) => void;
   onSelectAddress: (address: string) => void;
+  onChangeReceiverName: (name: string) => void;
+  onChangeReceiverPhone: (phone: string) => void;
+  onBlurField?: (field: 'receiverName' | 'receiverPhone') => void;
+  onSubmitField?: (field: 'receiverName' | 'receiverPhone') => void;
 };
 
 export function RouteScheduleStep({
@@ -47,6 +54,8 @@ export function RouteScheduleStep({
   selectedScheduleId,
   selectedStopId,
   address,
+  receiverName,
+  receiverPhone,
   errors,
   isLoadingRoutes,
   isLoadingBooking,
@@ -61,6 +70,10 @@ export function RouteScheduleStep({
   onSelectStop,
   onChangeAddress,
   onSelectAddress,
+  onChangeReceiverName,
+  onChangeReceiverPhone,
+  onBlurField,
+  onSubmitField,
 }: RouteScheduleStepProps) {
   const [isChangingRoute, setIsChangingRoute] = useState(false);
   const selectedRoute = routes.find((route) => route.routeId === selectedRouteId) ?? null;
@@ -147,6 +160,33 @@ export function RouteScheduleStep({
               onSelectAddress={onSelectAddress}
             />
           </View>
+
+          <CreateOrderTextField
+            fieldKey="receiverName"
+            label="Họ tên người nhận"
+            required
+            value={receiverName}
+            error={errors.receiverName}
+            registerField={registerField}
+            registerInput={registerInput}
+            onChangeText={onChangeReceiverName}
+            onBlur={() => onBlurField?.('receiverName')}
+            onSubmitEditing={() => onSubmitField?.('receiverName')}
+          />
+
+          <CreateOrderTextField
+            fieldKey="receiverPhone"
+            label="Số điện thoại người nhận"
+            required
+            keyboardType="phone-pad"
+            value={receiverPhone}
+            error={errors.receiverPhone}
+            registerField={registerField}
+            registerInput={registerInput}
+            onChangeText={onChangeReceiverPhone}
+            onBlur={() => onBlurField?.('receiverPhone')}
+            onSubmitEditing={() => onSubmitField?.('receiverPhone')}
+          />
         </View>
       </CustomerCard>
     </View>

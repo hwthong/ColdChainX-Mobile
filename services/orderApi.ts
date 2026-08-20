@@ -11,6 +11,8 @@ export interface CreateOrderPayload {
   widthCm: number;
   heightCm: number;
   destAddressText: string;
+  receiverName: string;
+  receiverPhone: string;
   /** UUID của RouteSchedule — backend tự suy ra routeId từ schedule này */
   scheduleId: string;
   /** UUID của RouteStop thuộc tuyến đã chọn */
@@ -35,6 +37,8 @@ export interface UpdateOrderPayload {
   widthCm?: number;
   heightCm?: number;
   destAddressText?: string;
+  receiverName?: string;
+  receiverPhone?: string;
   scheduleId?: string;
   dropoffStopId?: string;
   hasStrongOdor?: boolean;
@@ -192,6 +196,8 @@ export function createOrder(accessToken: string, data: CreateOrderPayload) {
   appendFormAliases(formData, 'Width_CM', 'WidthCm', data.widthCm);
   appendFormAliases(formData, 'Height_CM', 'HeightCm', data.heightCm);
   appendFormAliases(formData, 'Dest_Address_Text', 'DestAddressText', data.destAddressText);
+  appendFormAliases(formData, 'Receiver_Name', 'ReceiverName', data.receiverName);
+  appendFormAliases(formData, 'Receiver_Phone', 'ReceiverPhone', data.receiverPhone);
   appendFormAliases(formData, 'Schedule_ID', 'ScheduleId', data.scheduleId);
   appendFormAliases(formData, 'Dropoff_Stop_ID', 'DropoffStopId', data.dropoffStopId);
   appendFormAliases(formData, 'Has_Strong_Odor', 'HasStrongOdor', data.hasStrongOdor ?? false);
@@ -207,6 +213,8 @@ export function createOrder(accessToken: string, data: CreateOrderPayload) {
     console.log('[orderApi] create order payload', {
       Schedule_ID: data.scheduleId,
       Dropoff_Stop_ID: data.dropoffStopId,
+      Receiver_Name: data.receiverName,
+      Receiver_Phone: data.receiverPhone,
       Packaging_Type: data.packagingType,
       Quantity: data.quantity,
       HasCargoPhoto: Boolean(data.cargoPhoto.uri),
@@ -249,6 +257,8 @@ export function updateOrder(accessToken: string, orderId: string, data: UpdateOr
   if (data.widthCm !== undefined && data.widthCm !== null) appendFormAliases(formData, 'Width_CM', 'WidthCm', data.widthCm);
   if (data.heightCm !== undefined && data.heightCm !== null) appendFormAliases(formData, 'Height_CM', 'HeightCm', data.heightCm);
   if (data.destAddressText !== undefined && data.destAddressText !== null) appendFormAliases(formData, 'Dest_Address_Text', 'DestAddressText', data.destAddressText);
+  if (data.receiverName !== undefined && data.receiverName !== null) appendFormAliases(formData, 'Receiver_Name', 'ReceiverName', data.receiverName);
+  if (data.receiverPhone !== undefined && data.receiverPhone !== null) appendFormAliases(formData, 'Receiver_Phone', 'ReceiverPhone', data.receiverPhone);
   if (data.scheduleId !== undefined && data.scheduleId !== null) appendFormAliases(formData, 'Schedule_ID', 'ScheduleId', data.scheduleId);
   if (data.dropoffStopId !== undefined && data.dropoffStopId !== null) appendFormAliases(formData, 'Dropoff_Stop_ID', 'DropoffStopId', data.dropoffStopId);
   if (data.hasStrongOdor !== undefined && data.hasStrongOdor !== null) appendFormAliases(formData, 'Has_Strong_Odor', 'HasStrongOdor', data.hasStrongOdor);
