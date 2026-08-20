@@ -1,19 +1,21 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, FlatList, KeyboardAvoidingView, Platform, Pressable, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, AppState, FlatList, Image, KeyboardAvoidingView, Platform, Pressable, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors } from '../../../constants/colors';
 import { getApiErrorMessage } from '../../../services/apiClient';
 import { ChatMessage, findChatCounterpart, getChatMessages, markChatMessagesRead, sendChatMessage } from '../../../services/chatApi';
+import { chatSignalRService } from '../../../services/chatSignalRService';
 import { getUserIdFromToken } from '../../../services/jwt';
 import { useAuthStore } from '../../../store/useAuthStore';
 
 export default function CustomerChatThreadScreen() {
-  const params = useLocalSearchParams<{ orderId?: string | string[]; trackingCode?: string | string[] }>();
+  const params = useLocalSearchParams<{ orderId?: string | string[]; trackingCode?: string | string[]; imageUrl?: string }>();
   const orderId = single(params.orderId);
   const trackingCode = single(params.trackingCode);
+  const imageUrl = params.imageUrl;
   const token = useAuthStore((state) => state.token);
   const storedUserId = useAuthStore((state) => state.userId ?? state.user?.userId ?? null);
   const currentUserId = storedUserId ?? (token ? getUserIdFromToken(token) : null);
@@ -38,12 +40,48 @@ export default function CustomerChatThreadScreen() {
     finally { setLoading(false); }
   }, [orderId, token]);
 
+  // Handle SignalR connection and realtime messages
+  React.useEffect(() => {
+    if (!token || !orderId) return;
+    let active = true;
+
+    const initChatSignalR = async () => {
+      try {
+        await chatSignalRService.start();
+        if (active) {
+          await chatSignalRService.joinOrder(orderId);
+        }
+      } catch (err) {
+        console.error('[CustomerChatThread] SignalR start/join error:', err);
+      }
+    };
+
+    void initChatSignalR();
+
+    const unsubscribe = chatSignalRService.onMessage((message) => {
+      if (active && message.orderId.toLowerCase() === orderId.toLowerCase()) {
+        setMessages((current) => mergeMessages(current, [message]));
+        markChatMessagesRead(token, orderId).catch(() => undefined);
+      }
+    });
+
+    return () => {
+      active = false;
+      unsubscribe();
+      void chatSignalRService.leaveOrder(orderId);
+    };
+  }, [orderId, token]);
+
   useFocusEffect(useCallback(() => {
     let appState = AppState.currentState;
     void load();
-    const timer = setInterval(() => { if (appState === 'active') void load(true); }, 5_000);
-    const subscription = AppState.addEventListener('change', (nextState) => { appState = nextState; });
-    return () => { clearInterval(timer); subscription.remove(); };
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (appState !== 'active' && nextState === 'active') {
+        void load(true);
+      }
+      appState = nextState;
+    });
+    return () => { subscription.remove(); };
   }, [load]));
 
   const send = useCallback(async () => {
@@ -63,9 +101,18 @@ export default function CustomerChatThreadScreen() {
   return (
     <SafeAreaView edges={['bottom']} style={{ backgroundColor: colors.surface.page }} className="flex-1">
       <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={88}>
-        <View style={{ backgroundColor: colors.surface.card, borderBottomColor: colors.border.default }} className="border-b px-5 py-3">
-          <Text style={{ color: colors.text.primary }} className="font-bold">Đơn {trackingCode || orderId?.slice(0, 8).toUpperCase() || '--'}</Text>
-          <Text style={{ color: colors.text.secondary }} className="mt-1 text-xs">{counterpart?.name || 'Bộ phận phụ trách đơn hàng'}</Text>
+        <View style={{ backgroundColor: colors.surface.card, borderBottomColor: colors.border.default }} className="flex-row items-center gap-3 border-b px-5 py-3">
+          {imageUrl ? (
+            <Image source={{ uri: imageUrl }} style={{ width: 38, height: 38, borderRadius: 8, backgroundColor: colors.surface.muted }} />
+          ) : (
+            <View style={{ backgroundColor: colors.brand.primarySoft, width: 38, height: 38, borderRadius: 8, alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name="cube-outline" size={20} color={colors.brand.primary} />
+            </View>
+          )}
+          <View className="flex-1">
+            <Text style={{ color: colors.text.primary }} className="font-bold">Đơn {trackingCode || orderId?.slice(0, 8).toUpperCase() || '--'}</Text>
+            <Text style={{ color: colors.text.secondary }} className="mt-1 text-xs">{counterpart?.name || 'Bộ phận phụ trách đơn hàng'}</Text>
+          </View>
         </View>
         {loading ? (
           <View className="flex-1 items-center justify-center">
