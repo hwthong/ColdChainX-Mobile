@@ -549,6 +549,7 @@ export default function DriverIncidentDetailScreen() {
         {/* Stepper tương tác */}
         <IncidentWorkflowStepper
           status={incident.status}
+          currentStep={currentStep}
           severity={incident.severity}
           isExternalReefer={isExternalReefer}
           selectedStep={selectedStep}

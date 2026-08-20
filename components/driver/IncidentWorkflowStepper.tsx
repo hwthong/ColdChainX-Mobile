@@ -6,6 +6,8 @@ import { IncidentStatus } from '../../services/incidentApi';
 
 export interface IncidentWorkflowStepperProps {
   status: IncidentStatus | string;
+  /** Cho phép component cha truyền currentStep đã được tính toán ghi đè */
+  currentStep?: number;
   /** Severity xác định template stepper hiển thị */
   severity?: string;
   /** Loại phương án cứu hộ: true = Xe ngoài chở về kho tuyến; false = Xe nội bộ sang hàng tiếp tục chuyến */
@@ -28,7 +30,7 @@ export const EXTERNAL_REEFER_STEPS: StepItem[] = [
   { id: 2, label: 'Xe ngoài', statuses: ['RESCUE_PLANNING', 'EXTERNAL_REEFER_IN_TRANSIT'] },
   { id: 3, label: 'Inbound kho', statuses: ['READY_FOR_REDISPATCH'] },
   { id: 4, label: 'Ghép chuyến', statuses: ['REDISPATCH_PLANNED'] },
-  { id: 5, label: 'Giao khách', statuses: ['REDISPATCHED_TO_CUSTOMER', 'RESOLVED'] },
+  { id: 5, label: 'Giao khách', statuses: ['REDISPATCHED_TO_CUSTOMER', 'CONTINUED', 'IN_TRANSIT', 'DELIVERING', 'RESOLVED'] },
 ];
 
 // ── Stepper CRITICAL: Xe nội bộ trong hệ thống sang hàng trực tiếp (5 bước) ─
@@ -36,8 +38,8 @@ export const INTERNAL_FLEET_STEPS: StepItem[] = [
   { id: 1, label: 'Báo sự cố', statuses: ['REPORTED', 'CONTAINMENT_REQUIRED'] },
   { id: 2, label: 'Điều xe', statuses: ['RESCUE_PLANNING'] },
   { id: 3, label: 'Sang hàng', statuses: ['RESCUE_DISPATCHED'] },
-  { id: 4, label: 'Tiếp tục đi', statuses: ['TRANSLOAD_COMPLETED', 'IN_TRANSIT', 'CONTINUED'] },
-  { id: 5, label: 'Giao khách', statuses: ['DELIVERING', 'RESOLVED'] },
+  { id: 4, label: 'Đã sang xe', statuses: ['TRANSLOAD_COMPLETED'] },
+  { id: 5, label: 'Giao khách', statuses: ['CONTINUED', 'IN_TRANSIT', 'DELIVERING', 'RESOLVED'] },
 ];
 
 // ── Stepper WARNING (3 bước) ───────────────────────────────────────────────
@@ -88,6 +90,7 @@ export function getIncidentCurrentStepNumber(
 
 export function IncidentWorkflowStepper({
   status,
+  currentStep: propCurrentStep,
   severity,
   isExternalReefer = false,
   selectedStep,
@@ -111,7 +114,8 @@ export function IncidentWorkflowStepper({
     ? (isExternalReefer ? EXTERNAL_REEFER_STEPS : INTERNAL_FLEET_STEPS)
     : getStepsForSeverity(severity, isExternalReefer);
   const effectiveSeverity = isEscalated ? 'CRITICAL' : severity;
-  const currentStep = getIncidentCurrentStepNumber(status, effectiveSeverity, isExternalReefer);
+  const computedStep = getIncidentCurrentStepNumber(status, effectiveSeverity, isExternalReefer);
+  const currentStep = propCurrentStep ?? computedStep;
   const activeViewingStep = selectedStep ?? currentStep;
 
   // Accent and theme palette
