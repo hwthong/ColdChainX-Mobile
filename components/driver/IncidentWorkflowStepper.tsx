@@ -38,8 +38,8 @@ export const INTERNAL_FLEET_STEPS: StepItem[] = [
   { id: 1, label: 'Báo sự cố', statuses: ['REPORTED', 'CONTAINMENT_REQUIRED'] },
   { id: 2, label: 'Điều xe', statuses: ['RESCUE_PLANNING'] },
   { id: 3, label: 'Sang hàng', statuses: ['RESCUE_DISPATCHED'] },
-  { id: 4, label: 'Đã sang xe', statuses: ['TRANSLOAD_COMPLETED'] },
-  { id: 5, label: 'Giao khách', statuses: ['CONTINUED', 'IN_TRANSIT', 'DELIVERING', 'RESOLVED'] },
+  { id: 4, label: 'Tiếp tục đi', statuses: [] },
+  { id: 5, label: 'Giao khách', statuses: ['TRANSLOAD_COMPLETED', 'CONTINUED', 'IN_TRANSIT', 'DELIVERING', 'RESOLVED'] },
 ];
 
 // ── Stepper WARNING (3 bước) ───────────────────────────────────────────────
