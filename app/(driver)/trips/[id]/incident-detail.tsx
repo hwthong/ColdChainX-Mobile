@@ -321,7 +321,7 @@ export default function DriverIncidentDetailScreen() {
           setIncident({
             ...incident,
             status: 'CONTINUED',
-            handlingNote: note || 'Đã tự xử lý tại chỗ, tiếp tục hành trình.',
+            handlingNote: note || 'Đã xử lý sự cố, xe hoạt động bình thường.',
           });
         }
         Alert.alert(
@@ -1402,7 +1402,7 @@ export default function DriverIncidentDetailScreen() {
               <TextInput
                 value={continueTripNote}
                 onChangeText={setContinueTripNote}
-                placeholder="Ví dụ: Đã kiểm tra và siết lại dây điện, nhiệt độ đã ổn định..."
+                placeholder="Ví dụ: Đã xử lý sự cố, xe hoạt động bình thường."
                 multiline
                 numberOfLines={3}
                 style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default, color: colors.text.primary }}
@@ -1417,7 +1417,7 @@ export default function DriverIncidentDetailScreen() {
               <TextInput
                 value={expectedDelayMinutesText}
                 onChangeText={setExpectedDelayMinutesText}
-                placeholder="0"
+                placeholder="15"
                 keyboardType="number-pad"
                 style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default, color: colors.text.primary }}
                 className="rounded-2xl border px-4 py-3 text-sm font-bold"

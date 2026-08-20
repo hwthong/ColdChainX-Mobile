@@ -229,7 +229,7 @@ export async function continueTrip(
     {
       method: 'POST',
       body: {
-        handlingNote: handlingNote?.trim() || 'Đã tự xử lý tại chỗ, tiếp tục hành trình.',
+        handlingNote: handlingNote?.trim() || 'Đã xử lý sự cố, xe hoạt động bình thường.',
         expectedDelayMinutes,
       },
       headers: { Authorization: `Bearer ${token}` },
