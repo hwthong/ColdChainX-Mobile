@@ -8,7 +8,13 @@ import {
   refreshTokens as refreshTokensApi,
 } from '../services/authApi';
 import { ApiClientError, getApiErrorMessage } from '../services/apiClient';
-import { getCustomerIdFromToken, getRoleFromToken, getUserIdFromToken, getWarehouseIdFromToken } from '../services/jwt';
+import {
+  getAccessTokenExpirationMs,
+  getCustomerIdFromToken,
+  getRoleFromToken,
+  getUserIdFromToken,
+  getWarehouseIdFromToken,
+} from '../services/jwt';
 
 export type UserRole = 'DRIVER' | 'CUSTOMER' | 'WAREHOUSE';
 
@@ -71,6 +77,8 @@ const emptyAuthState = {
 >;
 
 const LOGOUT_REFRESH_SKEW_MS = 30 * 1000;
+const ACCESS_TOKEN_REFRESH_SKEW_MS = 60 * 1000;
+let refreshSessionPromise: Promise<string | null> | null = null;
 
 export const useAuthStore = create<AuthState>()(
   persist(
@@ -176,9 +184,14 @@ export const useAuthStore = create<AuthState>()(
 
           return authData.accessToken;
         } catch (error) {
-          console.error('[authStore] Refresh session failed', {
-            message: getApiErrorMessage(error),
-          });
+          if (__DEV__) {
+            const details = { message: getApiErrorMessage(error) };
+            if (isAuthRejection(error)) {
+              console.info('[authStore] Refresh session was rejected; clearing local session', details);
+            } else {
+              console.warn('[authStore] Refresh session failed; clearing local session', details);
+            }
+          }
           set(emptyAuthState);
           return null;
         }
@@ -190,6 +203,29 @@ export const useAuthStore = create<AuthState>()(
     }
   )
 );
+
+export async function ensureValidAccessToken({
+  forceRefresh = false,
+}: {
+  forceRefresh?: boolean;
+} = {}): Promise<string | null> {
+  const state = useAuthStore.getState();
+  if (!state.token) {
+    return null;
+  }
+
+  if (!forceRefresh && !shouldRefreshAccessToken(state.token, state.accessTokenExpiresAt)) {
+    return state.token;
+  }
+
+  if (!refreshSessionPromise) {
+    refreshSessionPromise = state.refreshSession().finally(() => {
+      refreshSessionPromise = null;
+    });
+  }
+
+  return refreshSessionPromise;
+}
 
 async function getLogoutToken({
   token,
@@ -225,6 +261,14 @@ function shouldRefreshBeforeLogout(accessTokenExpiresAt: string | null) {
 
   const expiresAt = Date.parse(accessTokenExpiresAt);
   return Number.isFinite(expiresAt) && expiresAt <= Date.now() + LOGOUT_REFRESH_SKEW_MS;
+}
+
+function shouldRefreshAccessToken(token: string, accessTokenExpiresAt: string | null) {
+  const jwtExpiresAt = getAccessTokenExpirationMs(token);
+  const storedExpiresAt = accessTokenExpiresAt ? Date.parse(accessTokenExpiresAt) : Number.NaN;
+  const expiresAt = jwtExpiresAt ?? (Number.isFinite(storedExpiresAt) ? storedExpiresAt : null);
+
+  return expiresAt !== null && expiresAt <= Date.now() + ACCESS_TOKEN_REFRESH_SKEW_MS;
 }
 
 function logLogoutFailure(error: unknown) {

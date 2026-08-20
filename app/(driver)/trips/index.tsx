@@ -1,10 +1,11 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
   FlatList,
   ActivityIndicator,
   RefreshControl,
+  StyleSheet,
   TextInput,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -35,6 +36,33 @@ const ACTIVE_STATUSES = new Set([
 
 // Các trạng thái xe đã kết thúc
 const COMPLETED_STATUSES = new Set(['COMPLETED', 'CLOSED', 'CANCELLED']);
+
+// NativeWind shadow utilities can trigger a dev-only css-interop upgrade path
+// that crashes while inspecting React Navigation context objects. Keep shadows
+// native on this stateful screen so press/filter updates do not hit that path.
+const styles = StyleSheet.create({
+  shadowXs: {
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  shadowSm: {
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  shadowMd: {
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+});
 
 const STATUS_WEIGHT: Record<string, number> = {
   IN_TRANSIT: 10,
@@ -68,8 +96,10 @@ export default function DriverTripsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const fetchRequestId = useRef(0);
 
   const fetchTrips = useCallback(async () => {
+    const requestId = ++fetchRequestId.current;
     try {
       setError('');
       // Đồng thời tải chuyến đang chạy và lịch sử chuyến đã hoàn tất
@@ -78,8 +108,15 @@ export default function DriverTripsScreen() {
         driverApi.getMyTripHistory(1, 50),
       ]);
 
-      const activeList: TripListDto[] =
-        activeTripsRes.status === 'fulfilled' ? activeTripsRes.value : [];
+      if (requestId !== fetchRequestId.current) return;
+
+      // Never turn an authentication/network failure into "no active trips".
+      // Keep the last successful list visible and let the user retry instead.
+      if (activeTripsRes.status === 'rejected') {
+        throw activeTripsRes.reason;
+      }
+
+      const activeList: TripListDto[] = activeTripsRes.value;
       const historyList: TripListDto[] =
         historyRes.status === 'fulfilled' && historyRes.value?.data
           ? historyRes.value.data
@@ -151,19 +188,28 @@ export default function DriverTripsScreen() {
               }
             })
         );
-        setReplacementMap(repMap);
+        if (requestId === fetchRequestId.current) {
+          setReplacementMap(repMap);
+        }
       }
     } catch (err: any) {
-      setError(err.message || 'Không thể tải danh sách chuyến đi. Vui lòng thử lại.');
+      if (requestId === fetchRequestId.current) {
+        setError(err.message || 'Không thể tải danh sách chuyến đi. Vui lòng thử lại.');
+      }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (requestId === fetchRequestId.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [token]);
 
   useFocusEffect(
     useCallback(() => {
       fetchTrips();
+      return () => {
+        fetchRequestId.current += 1;
+      };
     }, [fetchTrips])
   );
 
@@ -253,21 +299,25 @@ export default function DriverTripsScreen() {
             params: { id: item.tripId, from: 'trips' },
           } as never)
         }
-        style={({ pressed }) => ({
-          backgroundColor: isHero
-            ? '#FFFFFF'
-            : isRunning
-            ? '#FFFFFF'
-            : colors.surface.card,
-          borderColor: isHero
-            ? colors.brand.primary
-            : isRunning
-            ? '#BFDBFE'
-            : colors.border.default,
-          borderWidth: isHero ? 2 : 1,
-          opacity: pressed ? 0.75 : 1,
-        })}
-        className={`mb-3.5 rounded-2xl p-4 shadow-xs ${isHero ? 'shadow-md' : ''}`}
+        style={({ pressed }) => [
+          styles.shadowXs,
+          isHero ? styles.shadowMd : null,
+          {
+            backgroundColor: isHero
+              ? '#FFFFFF'
+              : isRunning
+              ? '#FFFFFF'
+              : colors.surface.card,
+            borderColor: isHero
+              ? colors.brand.primary
+              : isRunning
+              ? '#BFDBFE'
+              : colors.border.default,
+            borderWidth: isHero ? 2 : 1,
+            opacity: pressed ? 0.75 : 1,
+          },
+        ]}
+        className="mb-3.5 rounded-2xl p-4"
       >
         {/* Header thẻ: Badge mới nhất / Mã chuyến / Status */}
         <View className="mb-2.5 flex-row items-start justify-between">
@@ -382,16 +432,20 @@ export default function DriverTripsScreen() {
     <View style={{ backgroundColor: colors.surface.page }} className="flex-1">
       {/* ── BỘ LỌC 3 TABS (TẤT CẢ | ĐANG CHẠY | ĐÃ HOÀN THÀNH) ── */}
       <View
-        style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }}
-        className="border-b px-4 pt-3 pb-2.5 shadow-xs"
+        style={[
+          styles.shadowXs,
+          { backgroundColor: colors.surface.card, borderColor: colors.border.default },
+        ]}
+        className="border-b px-4 pt-3 pb-2.5"
       >
         <View className="flex-row items-center gap-2 rounded-2xl bg-gray-100/90 p-1">
           <Pressable
             onPress={() => setFilter('ALL')}
-            style={{
-              backgroundColor: filter === 'ALL' ? colors.surface.card : 'transparent',
-            }}
-            className="flex-1 items-center justify-center rounded-xl py-2 shadow-xs"
+            style={[
+              styles.shadowXs,
+              { backgroundColor: filter === 'ALL' ? colors.surface.card : 'transparent' },
+            ]}
+            className="flex-1 items-center justify-center rounded-xl py-2"
           >
             <Text
               style={{
@@ -405,10 +459,11 @@ export default function DriverTripsScreen() {
 
           <Pressable
             onPress={() => setFilter('ACTIVE')}
-            style={{
-              backgroundColor: filter === 'ACTIVE' ? colors.surface.card : 'transparent',
-            }}
-            className="flex-1 items-center justify-center rounded-xl py-2 shadow-xs"
+            style={[
+              styles.shadowXs,
+              { backgroundColor: filter === 'ACTIVE' ? colors.surface.card : 'transparent' },
+            ]}
+            className="flex-1 items-center justify-center rounded-xl py-2"
           >
             <Text
               style={{
@@ -422,10 +477,11 @@ export default function DriverTripsScreen() {
 
           <Pressable
             onPress={() => setFilter('COMPLETED')}
-            style={{
-              backgroundColor: filter === 'COMPLETED' ? colors.surface.card : 'transparent',
-            }}
-            className="flex-1 items-center justify-center rounded-xl py-2 shadow-xs"
+            style={[
+              styles.shadowXs,
+              { backgroundColor: filter === 'COMPLETED' ? colors.surface.card : 'transparent' },
+            ]}
+            className="flex-1 items-center justify-center rounded-xl py-2"
           >
             <Text
               style={{
@@ -500,8 +556,11 @@ export default function DriverTripsScreen() {
         ListEmptyComponent={
           !loading && !error ? (
             <View
-              style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }}
-              className="mt-10 items-center justify-center rounded-3xl border p-8 shadow-sm"
+              style={[
+                styles.shadowSm,
+                { backgroundColor: colors.surface.card, borderColor: colors.border.default },
+              ]}
+              className="mt-10 items-center justify-center rounded-3xl border p-8"
             >
               <Ionicons
                 name={

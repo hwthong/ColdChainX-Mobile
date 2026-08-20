@@ -1,5 +1,5 @@
-import { apiRequest } from './apiClient';
-import { useAuthStore } from '../store/useAuthStore';
+import { ApiClientError, apiRequest } from './apiClient';
+import { ensureValidAccessToken, useAuthStore } from '../store/useAuthStore';
 
 // Common structures from backend
 export interface PagedResult<T> {
@@ -78,15 +78,38 @@ export interface DriverTripDetailResponseDto {
 // API Service
 // ------------------------------------------
 
+async function authenticatedDriverRequest<T>(
+  request: (token: string) => Promise<T>
+): Promise<T> {
+  const token = await ensureValidAccessToken();
+  if (!token) throw new Error('Not authenticated');
+
+  try {
+    return await request(token);
+  } catch (error) {
+    if (!(error instanceof ApiClientError) || error.status !== 401) {
+      throw error;
+    }
+
+    // A concurrent refresh may already have replaced the rejected token. Only
+    // force another refresh when the store still contains the same token.
+    const currentToken = useAuthStore.getState().token;
+    const retryToken =
+      currentToken && currentToken !== token
+        ? await ensureValidAccessToken()
+        : await ensureValidAccessToken({ forceRefresh: true });
+
+    if (!retryToken) throw error;
+    return request(retryToken);
+  }
+}
+
 export const driverApi = {
   /**
    * Fetch active trips assigned to the currently authenticated driver.
    * Route: GET /api/drivers/my/trips
    */
   getMyTrips: async (status?: string): Promise<TripListDto[]> => {
-    const token = useAuthStore.getState().token;
-    if (!token) throw new Error('Not authenticated');
-
     const params = new URLSearchParams();
     if (status) {
       params.append('status', status);
@@ -94,12 +117,14 @@ export const driverApi = {
 
     const endpoint = `/api/drivers/my/trips?${params.toString()}`;
 
-    const response = await apiRequest<{ success: boolean; data: TripListDto[] }>(endpoint, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    const response = await authenticatedDriverRequest((token) =>
+      apiRequest<{ success: boolean; data: TripListDto[] }>(endpoint, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+    );
 
     if (!response.success || !response.data) {
       throw new Error('Không thể tải danh sách chuyến. Vui lòng thử lại.');
@@ -113,17 +138,16 @@ export const driverApi = {
    * Route: GET /api/drivers/my/trip-history
    */
   getMyTripHistory: async (pageNumber = 1, pageSize = 10): Promise<PagedResult<TripListDto>> => {
-    const token = useAuthStore.getState().token;
-    if (!token) throw new Error('Not authenticated');
-
     const endpoint = `/api/drivers/my/trip-history?pageNumber=${pageNumber}&pageSize=${pageSize}`;
 
-    const response = await apiRequest<ApiResponse<PagedResult<TripListDto>>>(endpoint, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    const response = await authenticatedDriverRequest((token) =>
+      apiRequest<ApiResponse<PagedResult<TripListDto>>>(endpoint, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+    );
 
     if (!response.success || !response.data) {
       throw new Error(response.message || 'Không thể tải lịch sử chuyến.');
@@ -137,17 +161,16 @@ export const driverApi = {
    * Route: GET /api/drivers/my/trips/{tripId}/detail
    */
   getMyTripDetail: async (tripId: string): Promise<DriverTripDetailResponseDto> => {
-    const token = useAuthStore.getState().token;
-    if (!token) throw new Error('Not authenticated');
-
     const endpoint = `/api/drivers/my/trips/${tripId}/detail`;
 
-    const response = await apiRequest<{ success: boolean; data: DriverTripDetailResponseDto }>(endpoint, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    const response = await authenticatedDriverRequest((token) =>
+      apiRequest<{ success: boolean; data: DriverTripDetailResponseDto }>(endpoint, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+    );
 
     if (!response.success || !response.data) {
       throw new Error('Không thể tải chi tiết chuyến.');
@@ -160,17 +183,16 @@ export const driverApi = {
    * Fetch E-Waybill URL for a specific trip.
    */
   getWaybillUrl: async (tripId: string): Promise<string> => {
-    const token = useAuthStore.getState().token;
-    if (!token) throw new Error('Not authenticated');
-
-    const response = await apiRequest<{ success: boolean; waybillPdfUrl?: string; error?: string }>(
-      `/api/Dispatch/trip/${tripId}/waybill-url`,
-      {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
+    const response = await authenticatedDriverRequest((token) =>
+      apiRequest<{ success: boolean; waybillPdfUrl?: string; error?: string }>(
+        `/api/Dispatch/trip/${tripId}/waybill-url`,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      )
     );
 
     if (!response.success || !response.waybillPdfUrl) {

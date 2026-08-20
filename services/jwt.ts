@@ -32,6 +32,25 @@ export function getRoleFromToken(token: string): string | null {
   );
 }
 
+export function getAccessTokenExpirationMs(token: string): number | null {
+  const payload = decodeJwtPayload(token);
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const exp = (payload as Record<string, unknown>).exp;
+  if (typeof exp === 'number' && Number.isFinite(exp)) {
+    return exp * 1000;
+  }
+
+  if (typeof exp === 'string' && exp.trim()) {
+    const parsed = Number(exp);
+    return Number.isFinite(parsed) ? parsed * 1000 : null;
+  }
+
+  return null;
+}
+
 function decodeJwtPayload(token: string): unknown {
   try {
     const [, payload] = token.split('.');

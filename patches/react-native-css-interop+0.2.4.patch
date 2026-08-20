@@ -1,0 +1,42 @@
+diff --git a/node_modules/react-native-css-interop/dist/runtime/native/render-component.js b/node_modules/react-native-css-interop/dist/runtime/native/render-component.js
+index eba25ec..a3b2de2 100644
+--- a/node_modules/react-native-css-interop/dist/runtime/native/render-component.js
++++ b/node_modules/react-native-css-interop/dist/runtime/native/render-component.js
+@@ -131,7 +131,15 @@ function stringify(object) {
+         }
+         seen.add(value);
+         const newValue = Array.isArray(value) ? [] : {};
+-        for (const entry of Object.entries(value)) {
++        let entries;
++        try {
++            entries = Object.entries(value);
++        }
++        catch {
++            seen.delete(value);
++            return "[Unserializable]";
++        }
++        for (const entry of entries) {
+             newValue[entry[0]] = replace(entry[0], entry[1]);
+         }
+         seen.delete(value);
+diff --git a/node_modules/react-native-css-interop/src/runtime/native/render-component.tsx b/node_modules/react-native-css-interop/src/runtime/native/render-component.tsx
+index cfb9a9e..ae97437 100644
+--- a/node_modules/react-native-css-interop/src/runtime/native/render-component.tsx
++++ b/node_modules/react-native-css-interop/src/runtime/native/render-component.tsx
+@@ -251,7 +251,15 @@ function stringify(object: any) {
+ 
+       const newValue: any = Array.isArray(value) ? [] : {};
+ 
+-      for (const entry of Object.entries(value)) {
++      let entries: [string, any][];
++      try {
++        entries = Object.entries(value);
++      } catch {
++        seen.delete(value);
++        return "[Unserializable]";
++      }
++
++      for (const entry of entries) {
+         newValue[entry[0]] = replace(entry[0], entry[1]);
+       }
+ 

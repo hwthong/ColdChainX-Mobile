@@ -1,7 +1,7 @@
 import * as signalR from '@microsoft/signalr';
 import { API_BASE_URL } from './apiClient';
 import { NotificationResponse } from './notificationApi';
-import { useAuthStore } from '../store/useAuthStore';
+import { ensureValidAccessToken, useAuthStore } from '../store/useAuthStore';
 
 export type SignalRConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
 
@@ -17,6 +17,7 @@ class SignalRService {
   private statusListeners = new Set<StatusChangeHandler>();
   private isExplicitlyStopped = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private startPromise: Promise<void> | null = null;
 
   public getStatus(): SignalRConnectionStatus {
     return this.status;
@@ -37,8 +38,20 @@ class SignalRService {
     });
   }
 
-  public async start(): Promise<void> {
-    const token = useAuthStore.getState().token;
+  public start(): Promise<void> {
+    if (this.startPromise) {
+      return this.startPromise;
+    }
+
+    this.startPromise = this.startInternal(true).finally(() => {
+      this.startPromise = null;
+    });
+
+    return this.startPromise;
+  }
+
+  private async startInternal(allowAuthRetry: boolean): Promise<void> {
+    const token = await ensureValidAccessToken();
     if (!token) {
       if (__DEV__) {
         console.log('[SignalR] Start skipped: No auth token.');
@@ -73,7 +86,7 @@ class SignalRService {
             transport: signalR.HttpTransportType.WebSockets | signalR.HttpTransportType.LongPolling,
           })
           .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
-          .configureLogging(__DEV__ ? signalR.LogLevel.Information : signalR.LogLevel.None)
+          .configureLogging(signalRLogger)
           .build();
 
         this.bindHubEvents();
@@ -86,12 +99,26 @@ class SignalRService {
       }
     } catch (error) {
       this.setStatus('disconnected');
+
+      if (allowAuthRetry && isUnauthorizedSignalRError(error)) {
+        const refreshedToken = await ensureValidAccessToken({ forceRefresh: true });
+        if (refreshedToken) {
+          this.connection = null;
+          return this.startInternal(false);
+        }
+        return;
+      }
+
       if (__DEV__) {
         console.warn('[SignalR] Failed to start SignalR connection:', error);
       }
 
       // Retry after delay if not explicitly stopped
-      if (!this.isExplicitlyStopped && !this.reconnectTimer) {
+      if (
+        !isUnauthorizedSignalRError(error) &&
+        !this.isExplicitlyStopped &&
+        !this.reconnectTimer
+      ) {
         this.reconnectTimer = setTimeout(() => {
           this.reconnectTimer = null;
           if (!this.isExplicitlyStopped && useAuthStore.getState().token) {
@@ -442,4 +469,35 @@ export function startSignalR() {
 
 export function stopSignalR() {
   return signalRService.stop();
+}
+
+const signalRLogger: signalR.ILogger = {
+  log(logLevel, message) {
+    if (!__DEV__ || logLevel === signalR.LogLevel.None) return;
+
+    if (isUnauthorizedMessage(message)) {
+      console.info('[SignalR] Stored access token was rejected; attempting session refresh.');
+      return;
+    }
+
+    if (logLevel >= signalR.LogLevel.Warning) {
+      console.warn(`[SignalR] ${message}`);
+      return;
+    }
+
+    console.log(`[SignalR] ${message}`);
+  },
+};
+
+function isUnauthorizedSignalRError(error: unknown) {
+  return (
+    (error instanceof signalR.HttpError && error.statusCode === 401) ||
+    (error instanceof Error && isUnauthorizedMessage(error.message))
+  );
+}
+
+function isUnauthorizedMessage(message: string) {
+  return /(?:status\s*code\s*['\"]?401|\b401\b|authentication is required|access token is invalid)/i.test(
+    message
+  );
 }

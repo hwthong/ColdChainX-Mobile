@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { Text, View, ActivityIndicator, ScrollView, RefreshControl, Linking } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -38,10 +38,13 @@ export default function DriverHomeScreen() {
   const [replacementPlate, setReplacementPlate] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const loadRequestId = useRef(0);
 
   const loadActiveTrip = useCallback(async () => {
+    const requestId = ++loadRequestId.current;
     try {
       const trips = await driverApi.getMyTrips();
+      if (requestId !== loadRequestId.current) return;
       
       // Lọc các chuyến đang trong quá trình thực hiện và sắp xếp theo độ ưu tiên trạng thái
       const eligibleTrips = trips.filter((t) =>
@@ -85,6 +88,7 @@ export default function DriverHomeScreen() {
             // fallback to active.distanceKm
           }
         }
+        if (requestId !== loadRequestId.current) return;
         setTripDistanceKm(dist);
 
         // Kiểm tra xem chuyến này có sự cố và được đổi xe cứu hộ không
@@ -131,19 +135,22 @@ export default function DriverHomeScreen() {
       }
     } catch (error) {
       console.warn('Failed to load active trip', error);
-      setActiveTrip(null);
-      setTripDistanceKm(null);
-      setActiveIncident(null);
-      setReplacementPlate(null);
+      // A transient token refresh/network failure must not make a real active
+      // trip disappear. Only a successful empty response clears this state.
     } finally {
-      setIsLoading(false);
-      setRefreshing(false);
+      if (requestId === loadRequestId.current) {
+        setIsLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [token]);
 
   useFocusEffect(
     useCallback(() => {
       loadActiveTrip();
+      return () => {
+        loadRequestId.current += 1;
+      };
     }, [loadActiveTrip])
   );
 

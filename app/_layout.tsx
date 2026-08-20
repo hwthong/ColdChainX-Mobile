@@ -6,7 +6,7 @@ import { useEffect, useSyncExternalStore } from 'react';
 import { AppState } from 'react-native';
 
 import { startSignalR, stopSignalR } from '../services/signalrService';
-import { useAuthStore } from '../store/useAuthStore';
+import { ensureValidAccessToken, useAuthStore } from '../store/useAuthStore';
 import { useNotificationStore } from '../store/useNotificationStore';
 
 const loginRoute = '/(auth)/login';
@@ -35,21 +35,32 @@ export default function RootLayout() {
     if (!hasHydrated) return;
 
     if (token) {
+      let disposed = false;
       const cleanupListeners = useNotificationStore.getState().initSignalRListeners();
-      startSignalR().catch(() => {});
-      useNotificationStore.getState().fetchUnreadCount(token);
+
+      const startAuthenticatedServices = async () => {
+        const validToken = await ensureValidAccessToken();
+        if (!validToken || disposed) return;
+
+        await startSignalR();
+
+        // SignalR may have refreshed a server-rejected token during negotiation.
+        const currentToken = await ensureValidAccessToken();
+        if (!currentToken || disposed) return;
+
+        useNotificationStore.getState().fetchUnreadCount(currentToken);
+      };
+
+      startAuthenticatedServices().catch(() => {});
 
       const appStateSub = AppState.addEventListener('change', (nextState) => {
         if (nextState === 'active') {
-          const currentToken = useAuthStore.getState().token;
-          if (currentToken) {
-            startSignalR().catch(() => {});
-            useNotificationStore.getState().fetchUnreadCount(currentToken);
-          }
+          startAuthenticatedServices().catch(() => {});
         }
       });
 
       return () => {
+        disposed = true;
         appStateSub.remove();
         cleanupListeners();
       };
