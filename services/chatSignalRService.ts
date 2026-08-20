@@ -177,7 +177,9 @@ class ChatSignalRService {
         try {
           listener(message);
         } catch (err) {
-          console.error('[ChatSignalR] Error in message listener', err);
+          if (__DEV__) {
+            console.warn('[ChatSignalR] Error in message listener', err);
+          }
         }
       });
     });
@@ -207,7 +209,9 @@ class ChatSignalRService {
         console.log(`[ChatSignalR] Joined order chat room: ${orderId}`);
       }
     } catch (err) {
-      console.error(`[ChatSignalR] Failed to JoinOrder ${orderId}:`, err);
+      if (__DEV__) {
+        console.warn(`[ChatSignalR] JoinOrder ${orderId} notice:`, err);
+      }
     }
   }
 
@@ -219,7 +223,9 @@ class ChatSignalRService {
         console.log(`[ChatSignalR] Left order chat room: ${orderId}`);
       }
     } catch (err) {
-      console.error(`[ChatSignalR] Failed to LeaveOrder ${orderId}:`, err);
+      if (__DEV__) {
+        console.warn(`[ChatSignalR] LeaveOrder ${orderId} notice:`, err);
+      }
     }
   }
 

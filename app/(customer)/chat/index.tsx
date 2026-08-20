@@ -71,10 +71,12 @@ export default function CustomerChatListScreen() {
       try {
         await chatSignalRService.start();
         if (active) {
-          await Promise.all(orderIds.map((id) => chatSignalRService.joinOrder(id)));
+          await Promise.allSettled(orderIds.map((id) => chatSignalRService.joinOrder(id)));
         }
       } catch (err) {
-        console.error('[CustomerChatList] SignalR list error:', err);
+        if (__DEV__) {
+          console.warn('[CustomerChatList] SignalR list notice:', err);
+        }
       }
     };
 
