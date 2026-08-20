@@ -564,9 +564,9 @@ export default function OrderDetailScreen() {
             <Pressable
               onPress={() =>
                 router.push({
-                  pathname: '/(customer)/tracking',
-                  params: { orderId: order.orderId },
-                })
+                  pathname: '/(customer)/tracking/[orderId]',
+                  params: { orderId: order.orderId, trackingCode: order.trackingCode },
+                } as never)
               }
               style={{ backgroundColor: colors.brand.primary }}
               className="flex-row items-center justify-center gap-2 rounded-xl px-4 py-3"

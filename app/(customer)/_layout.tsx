@@ -14,6 +14,8 @@ export default function CustomerLayout() {
             'create-order': 'Tạo đơn hàng',
             status: 'Đơn hàng',
             tracking: 'Giám sát',
+            'tracking/index': 'Giám sát',
+            'tracking/[orderId]': 'Chi tiết chuyến',
             claims: 'Khiếu nại',
             'chat/index': 'Hỗ trợ',
             'chat/[orderId]': 'Tin nhắn đơn hàng',
@@ -106,6 +108,13 @@ export default function CustomerLayout() {
       />
       <Tabs.Screen
         name="chat/[orderId]"
+        options={{
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
+      <Tabs.Screen
+        name="tracking/[orderId]"
         options={{
           href: null,
           tabBarStyle: { display: 'none' },
