@@ -116,12 +116,18 @@ export default function TrackingDetailScreen() {
       try {
         setRouteError(null);
         const response = await getTripRoute(accessToken, currentTripId);
-        if (!response.success || !response.data) {
+        if (response.success && response.data) {
+          setRoute(response.data);
+          setRouteError(null);
+        } else {
           setRoute(null);
-          setRouteError(response.message || 'Không có dữ liệu tuyến đường.');
-          return;
+          const rawMsg = response.message || '';
+          if (/goong|tối ưu|toi uu/i.test(rawMsg)) {
+            setRouteError('Lộ trình chi tiết đang được hệ thống cập nhật.');
+          } else {
+            setRouteError(rawMsg || 'Không có dữ liệu tuyến đường.');
+          }
         }
-        setRoute(response.data);
       } catch (err) {
         setRoute(null);
         setRouteError(getMonitoringErrorMessage(err));
@@ -131,6 +137,38 @@ export default function TrackingDetailScreen() {
     },
     [accessToken]
   );
+
+  const effectiveRoute = React.useMemo<TripRouteResponse | null>(() => {
+    if (route) return route;
+
+    const destLat = order?.destination?.latitude;
+    const destLon = order?.destination?.longitude;
+    const destAddr = order?.destination?.address;
+    const vehicleLat = tracking?.telemetry?.latitude;
+    const vehicleLon = tracking?.telemetry?.longitude;
+
+    if (
+      (destLat !== undefined && destLon !== undefined && destLat !== null && destLon !== null) ||
+      (vehicleLat !== undefined && vehicleLon !== undefined && vehicleLat !== null && vehicleLon !== null)
+    ) {
+      return {
+        tripId: tripId || '',
+        totalDistanceMeters: 0,
+        totalDurationSeconds: 0,
+        waypointOrder: [],
+        optimizedStops: [],
+        destination:
+          destLat && destLon
+            ? {
+                lat: destLat,
+                lon: destLon,
+                address: destAddr || 'Điểm giao hàng',
+              }
+            : null,
+      };
+    }
+    return null;
+  }, [order, route, tracking, tripId]);
 
   const loadChart = useCallback(
     async (currentTripId: string) => {
@@ -341,20 +379,20 @@ export default function TrackingDetailScreen() {
         <>
           {/* Map */}
           <SectionCard title="Bản đồ tuyến đường" icon="map-outline">
-            {isRouteLoading ? (
+            {isRouteLoading && !effectiveRoute ? (
               <SectionLoader />
-            ) : routeError ? (
-              <ErrorCard message={routeError} onRetry={() => loadRoute(tripId)} />
-            ) : route ? (
+            ) : effectiveRoute ? (
               <>
-                <RouteSummary route={route} />
-                <GoongRouteMap route={route} vehiclePosition={getVehiclePosition(tracking)} />
+                {route && route.totalDistanceMeters > 0 ? <RouteSummary route={route} /> : null}
+                <GoongRouteMap route={effectiveRoute} vehiclePosition={getVehiclePosition(tracking)} />
                 {!getVehiclePosition(tracking) ? (
                   <Text style={{ color: colors.text.secondary }} className="text-center text-sm font-medium">
                     Chưa nhận được vị trí từ thiết bị.
                   </Text>
                 ) : null}
               </>
+            ) : routeError ? (
+              <ErrorCard message={routeError} onRetry={() => loadRoute(tripId)} />
             ) : (
               <EmptyMessage message="Chưa có dữ liệu tuyến đường." />
             )}
@@ -478,13 +516,21 @@ function TelemetrySummary({ tracking }: { tracking: TripTracking }) {
 }
 
 function RouteSummary({ route }: { route: TripRouteResponse }) {
+  const hasOrigin = Boolean(route.origin?.address);
+  const hasDest = Boolean(route.destination?.address);
+  const hasDistance = Boolean(route.totalDistanceMeters && route.totalDistanceMeters > 0);
+  const hasDuration = Boolean(route.totalDurationSeconds && route.totalDurationSeconds > 0);
+  const hasStops = route.optimizedStops && route.optimizedStops.length > 0;
+
+  if (!hasOrigin && !hasDest && !hasDistance && !hasDuration && !hasStops) return null;
+
   return (
     <View style={{ backgroundColor: colors.surface.page }} className="gap-2 rounded-2xl p-4">
-      <InfoRow label="Điểm lấy hàng" value={route.origin?.address || '--'} />
-      <InfoRow label="Điểm giao" value={route.destination?.address || '--'} />
-      <InfoRow label="Điểm dừng" value={String(route.optimizedStops.length)} />
-      <InfoRow label="Khoảng cách" value={formatDistance(route.totalDistanceMeters)} />
-      <InfoRow label="Thời gian dự kiến" value={formatDuration(route.totalDurationSeconds)} />
+      {hasOrigin ? <InfoRow label="Điểm lấy hàng" value={route.origin?.address || '--'} /> : null}
+      {hasDest ? <InfoRow label="Điểm giao" value={route.destination?.address || '--'} /> : null}
+      {hasStops ? <InfoRow label="Điểm dừng" value={String(route.optimizedStops.length)} /> : null}
+      {hasDistance ? <InfoRow label="Khoảng cách" value={formatDistance(route.totalDistanceMeters)} /> : null}
+      {hasDuration ? <InfoRow label="Thời gian dự kiến" value={formatDuration(route.totalDurationSeconds)} /> : null}
     </View>
   );
 }
