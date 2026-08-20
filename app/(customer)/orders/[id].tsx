@@ -33,6 +33,7 @@ import {
   getCustomerOrderCategoryLabel,
   getCustomerOrderStatusPresentation,
   getPackagingLabel,
+  isCustomerClaimEligibleOrderStatus,
 } from '../../../constants/customerOrderPresentation';
 import {
   ContractInfoResponse,
@@ -592,7 +593,7 @@ export default function OrderDetailScreen() {
               <Ionicons name="document-text-outline" size={18} color={colors.brand.primary} />
               <Text style={{ color: colors.brand.primary }} className="font-bold">Xem khiếu nại</Text>
             </Pressable>
-          ) : ['DELIVERED', 'COMPLETED', 'PARTIALLY_DELIVERED', 'PARTIAL_DELIVER_OSD'].includes(order.status?.toUpperCase() ?? '') ? (
+          ) : isCustomerClaimEligibleOrderStatus(order.status) ? (
             <Pressable
               onPress={() =>
                 router.push({
@@ -604,7 +605,7 @@ export default function OrderDetailScreen() {
               className="mt-3 flex-row items-center justify-center gap-2 rounded-xl border px-4 py-3"
             >
               <Ionicons name="alert-circle-outline" size={18} color={colors.brand.primary} />
-              <Text style={{ color: colors.brand.primary }} className="font-bold">Khiếu nại</Text>
+              <Text style={{ color: colors.brand.primary }} className="font-bold">Tạo khiếu nại</Text>
             </Pressable>
           ) : null}
 
