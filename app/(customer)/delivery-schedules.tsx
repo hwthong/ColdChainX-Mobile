@@ -119,13 +119,13 @@ export default function DeliverySchedulesScreen() {
   return (
     <View style={{ backgroundColor: colors.surface.page }} className="flex-1">
       <View style={{ backgroundColor: colors.surface.card, borderBottomColor: colors.border.default }} className="border-b px-5 py-4">
-        <Text style={{ color: colors.text.primary }} className="text-lg font-extrabold">Lịch vận chuyển của bạn</Text>
+        <Text style={{ color: colors.text.primary }} className="text-lg font-extrabold">Lịch hẹn giao kho (ASN)</Text>
         <Text style={{ color: colors.text.secondary }} className="mt-1 text-xs font-medium">
-          Theo dõi toàn bộ ASN đã đặt lịch giao kho.
+          Danh sách phiếu hẹn giao hàng và mã QR tiếp nhận tại kho.
         </Text>
 
         <View className="mt-4 flex-row gap-3">
-          <SummaryChip icon="calendar-outline" label="Tổng lịch" value={String(schedules.length)} />
+          <SummaryChip icon="calendar-outline" label="Tổng phiếu hẹn" value={String(schedules.length)} />
           <SummaryChip icon="time-outline" label="Sắp giao" value={String(upcomingCount)} />
         </View>
       </View>
@@ -151,7 +151,7 @@ export default function DeliverySchedulesScreen() {
             <View className="items-center justify-center py-20">
               <Ionicons name="calendar-outline" size={64} color={colors.text.muted} />
               <Text style={{ color: colors.text.secondary }} className="mt-4 text-center font-medium">
-                Bạn chưa có lịch vận chuyển nào.
+                Bạn chưa có phiếu hẹn giao kho nào.
               </Text>
             </View>
           }
@@ -174,19 +174,62 @@ function DeliveryScheduleCard({
     <Pressable
       onPress={onPress}
       style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }}
-      className="mb-4 rounded-2xl border p-5 shadow-sm"
+      className="mb-4 overflow-hidden rounded-2xl border p-5 shadow-sm"
     >
-      <View className="flex-row items-start justify-between gap-3">
-        <View className="flex-1 gap-2">
-          <ScheduleInfoLine icon="document-text-outline" label="Order ID" value={asn.orderId} />
-          <ScheduleInfoLine icon="git-branch-outline" label="Route" value={asn.routeCode || asn.routeId || 'Chưa cập nhật'} />
-          <ScheduleInfoLine icon="business-outline" label="Kho nhận" value={warehouseName || 'Chưa xác định'} />
-          <ScheduleInfoLine icon="time-outline" label="Giờ giao kho" value={formatDateTime(asn.requestedDropoffTime)} />
+      <View className="mb-3 flex-row items-center justify-between border-b border-slate-100 pb-3">
+        <View className="flex-row items-center gap-2">
+          <Ionicons name="qr-code-outline" size={18} color={colors.brand.primary} />
+          <Text style={{ color: colors.brand.primary }} className="text-base font-bold">
+            {asn.asnCode}
+          </Text>
         </View>
-        <Ionicons name="chevron-forward" size={20} color={colors.brand.primary} />
+        <View className="rounded-full bg-blue-50 px-3 py-1">
+          <Text className="text-xs font-bold text-blue-700">
+            {translateScheduleStatus(asn.status)}
+          </Text>
+        </View>
+      </View>
+
+      <View className="flex-row items-center justify-between gap-3">
+        <View className="flex-1 gap-2">
+          <ScheduleInfoLine icon="business-outline" label="Kho tiếp nhận" value={warehouseName || 'Kho trung chuyển'} />
+          <ScheduleInfoLine icon="time-outline" label="Thời gian hẹn" value={formatDateTime(asn.requestedDropoffTime)} />
+          <ScheduleInfoLine icon="git-branch-outline" label="Tuyến" value={asn.routeCode || asn.routeId || 'Theo hợp đồng'} />
+          {asn.cutOffTime ? (
+            <ScheduleInfoLine icon="timer-outline" label="Giờ chót (Cut-off)" value={formatCutOffTime(asn.cutOffTime)} />
+          ) : null}
+        </View>
+        <View className="items-center justify-center rounded-xl bg-blue-50/80 p-2.5">
+          <Ionicons name="qr-code" size={24} color={colors.brand.primary} />
+          <Text style={{ color: colors.brand.primary }} className="mt-1 text-[10px] font-bold">
+            Mở QR
+          </Text>
+        </View>
       </View>
     </Pressable>
   );
+}
+
+function translateScheduleStatus(status?: string | null) {
+  switch ((status || '').toUpperCase()) {
+    case 'SCHEDULED':
+      return 'Đã đặt lịch';
+    case 'QC_PASSED':
+      return 'QC đạt chuẩn';
+    case 'QC_FAILED':
+      return 'QC không đạt';
+    case 'RECEIVED':
+    case 'COMPLETED':
+      return 'Đã nhập kho';
+    default:
+      return status || 'Đã đặt lịch';
+  }
+}
+
+function formatCutOffTime(value?: string | null) {
+  if (!value) return 'Chưa cập nhật';
+  if (/^\d{2}:\d{2}/.test(value)) return value;
+  return formatDateTime(value);
 }
 
 function ScheduleInfoLine({
@@ -200,9 +243,9 @@ function ScheduleInfoLine({
 }) {
   return (
     <View className="flex-row items-start gap-2">
-      <Ionicons name={icon} size={16} color={colors.brand.primary} />
-      <Text style={{ color: colors.text.secondary }} className="flex-1 text-sm leading-5" numberOfLines={2}>
-        <Text style={{ color: colors.text.primary }} className="font-bold">{label}: </Text>
+      <Ionicons name={icon} size={15} color={colors.brand.primary} />
+      <Text style={{ color: colors.text.secondary }} className="flex-1 text-xs leading-4" numberOfLines={2}>
+        <Text style={{ color: colors.text.primary }} className="font-semibold">{label}: </Text>
         {value || 'Chưa cập nhật'}
       </Text>
     </View>

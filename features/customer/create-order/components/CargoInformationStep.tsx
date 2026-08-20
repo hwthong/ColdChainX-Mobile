@@ -33,6 +33,7 @@ type CargoInformationStepProps = {
   onChangeQuantity: (value: string) => void;
   onChangeCategory: (value: GoodsType) => void;
   onChangeTemperature: (value: number) => void;
+  onFocusField?: (field: CreateOrderFieldKey) => void;
   onBlurField: (field: CreateOrderFieldKey) => void;
   onSubmitField: (field: CreateOrderFieldKey) => void;
 };
@@ -81,6 +82,7 @@ export function CargoInformationStep({
   onChangeQuantity,
   onChangeCategory,
   onChangeTemperature,
+  onFocusField,
   onBlurField,
   onSubmitField,
 }: CargoInformationStepProps) {
@@ -101,6 +103,7 @@ export function CargoInformationStep({
           registerField={registerField}
           registerInput={registerInput}
           onChangeText={onChangeItemName}
+          onFocus={() => onFocusField?.('itemName')}
           onBlur={() => onBlurField('itemName')}
           onSubmitEditing={() => onSubmitField('itemName')}
         />
@@ -118,6 +121,7 @@ export function CargoInformationStep({
               registerField={registerField}
               registerInput={registerInput}
               onChangeText={onChangeExpectedWeight}
+              onFocus={() => onFocusField?.('expectedWeightKg')}
               onBlur={() => onBlurField('expectedWeightKg')}
               onSubmitEditing={() => onSubmitField('expectedWeightKg')}
             />
@@ -135,6 +139,7 @@ export function CargoInformationStep({
               registerField={registerField}
               registerInput={registerInput}
               onChangeText={onChangeQuantity}
+              onFocus={() => onFocusField?.('quantity')}
               onBlur={() => onBlurField('quantity')}
               onSubmitEditing={() => onSubmitField('quantity')}
             />

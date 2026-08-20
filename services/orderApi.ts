@@ -24,6 +24,11 @@ export interface CreateOrderPayload {
     mimeType?: string;
     fileName?: string;
   };
+  legalDocument?: {
+    uri: string;
+    mimeType?: string;
+    fileName?: string;
+  } | null;
 }
 
 export interface UpdateOrderPayload {
@@ -44,6 +49,11 @@ export interface UpdateOrderPayload {
   hasStrongOdor?: boolean;
   isStackable?: boolean;
   cargoPhoto?: {
+    uri: string;
+    mimeType?: string;
+    fileName?: string;
+  } | null;
+  legalDocument?: {
     uri: string;
     mimeType?: string;
     fileName?: string;
@@ -203,11 +213,21 @@ export function createOrder(accessToken: string, data: CreateOrderPayload) {
   appendFormAliases(formData, 'Has_Strong_Odor', 'HasStrongOdor', data.hasStrongOdor ?? false);
   appendFormAliases(formData, 'Is_Stackable', 'IsStackable', data.isStackable ?? true);
 
-  formData.append('Cargo_Photos', {
+  const cargoFile = {
     uri: data.cargoPhoto.uri,
     name: data.cargoPhoto.fileName || 'cargo.jpg',
     type: data.cargoPhoto.mimeType || 'image/jpeg',
-  } as any);
+  };
+  formData.append('Cargo_Photos', cargoFile as unknown as Blob);
+
+  const legalFile = data.legalDocument
+    ? {
+        uri: data.legalDocument.uri,
+        name: data.legalDocument.fileName || 'legal_document.jpg',
+        type: data.legalDocument.mimeType || 'image/jpeg',
+      }
+    : cargoFile;
+  formData.append('Legal_Documents', legalFile as unknown as Blob);
 
   if (__DEV__) {
     console.log('[orderApi] create order payload', {
@@ -218,6 +238,7 @@ export function createOrder(accessToken: string, data: CreateOrderPayload) {
       Packaging_Type: data.packagingType,
       Quantity: data.quantity,
       HasCargoPhoto: Boolean(data.cargoPhoto.uri),
+      HasLegalDocument: Boolean(legalFile.uri),
     });
   }
 
@@ -265,11 +286,27 @@ export function updateOrder(accessToken: string, orderId: string, data: UpdateOr
   if (data.isStackable !== undefined && data.isStackable !== null) appendFormAliases(formData, 'Is_Stackable', 'IsStackable', data.isStackable);
 
   if (data.cargoPhoto?.uri) {
-    formData.append('Cargo_Photos', {
+    const cargoFile = {
       uri: data.cargoPhoto.uri,
       name: data.cargoPhoto.fileName || 'cargo.jpg',
       type: data.cargoPhoto.mimeType || 'image/jpeg',
-    } as any);
+    };
+    formData.append('Cargo_Photos', cargoFile as unknown as Blob);
+
+    const legalFile = data.legalDocument
+      ? {
+          uri: data.legalDocument.uri,
+          name: data.legalDocument.fileName || 'legal_document.jpg',
+          type: data.legalDocument.mimeType || 'image/jpeg',
+        }
+      : cargoFile;
+    formData.append('Legal_Documents', legalFile as unknown as Blob);
+  } else if (data.legalDocument?.uri) {
+    formData.append('Legal_Documents', {
+      uri: data.legalDocument.uri,
+      name: data.legalDocument.fileName || 'legal_document.jpg',
+      type: data.legalDocument.mimeType || 'image/jpeg',
+    } as unknown as Blob);
   }
 
   if (__DEV__) {

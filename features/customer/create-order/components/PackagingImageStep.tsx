@@ -58,6 +58,7 @@ type PackagingImageStepProps = {
   onChangeHeight: (value: string) => void;
   onPickImage: () => void;
   onRemoveImage: () => void;
+  onFocusField?: (field: CreateOrderFieldKey) => void;
   onBlurField: (field: CreateOrderFieldKey) => void;
   onSubmitField: (field: CreateOrderFieldKey) => void;
 };
@@ -80,6 +81,7 @@ export function PackagingImageStep({
   onChangeHeight,
   onPickImage,
   onRemoveImage,
+  onFocusField,
   onBlurField,
   onSubmitField,
 }: PackagingImageStepProps) {
@@ -176,6 +178,7 @@ export function PackagingImageStep({
                   touchField('lengthCm');
                   onChangeLength(val);
                 }}
+                onFocus={() => onFocusField?.('lengthCm')}
                 onBlur={() => handleFieldBlur('lengthCm')}
                 onSubmitEditing={() => onSubmitField('lengthCm')}
                 registerField={registerField}
@@ -195,6 +198,7 @@ export function PackagingImageStep({
                   touchField('widthCm');
                   onChangeWidth(val);
                 }}
+                onFocus={() => onFocusField?.('widthCm')}
                 onBlur={() => handleFieldBlur('widthCm')}
                 onSubmitEditing={() => onSubmitField('widthCm')}
                 registerField={registerField}
@@ -213,6 +217,7 @@ export function PackagingImageStep({
                   touchField('heightCm');
                   onChangeHeight(val);
                 }}
+                onFocus={() => onFocusField?.('heightCm')}
                 onBlur={() => handleFieldBlur('heightCm')}
                 onSubmitEditing={() => onSubmitField('heightCm')}
                 registerField={registerField}

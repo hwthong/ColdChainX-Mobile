@@ -234,7 +234,7 @@ export default function StatusScreen() {
                 </View>
               ) : null}
 
-              {/* Action Button for CONTRACT_SIGNED -> Tạo/Xem ASN */}
+              {/* Action Button for CONTRACT_SIGNED -> Đặt lịch hẹn / Xem phiếu QR tiếp nhận */}
               {isContractSigned ? (
                 <Pressable
                   onPress={(event) => {
@@ -246,12 +246,18 @@ export default function StatusScreen() {
                         : { orderId: item.orderId },
                     } as never);
                   }}
-                  style={{ backgroundColor: colors.brand.primary }}
-                  className="mt-2 flex-row items-center justify-center gap-2 rounded-xl px-4 py-3"
+                  style={{
+                    backgroundColor: existingAsn ? '#0284c7' : colors.brand.primary,
+                  }}
+                  className="mt-2 flex-row items-center justify-center gap-2 rounded-xl px-4 py-3 shadow-sm"
                 >
-                  <Ionicons name="document-text-outline" size={18} color={colors.text.onPrimary} />
+                  <Ionicons
+                    name={existingAsn ? 'qr-code-outline' : 'calendar-outline'}
+                    size={18}
+                    color={colors.text.onPrimary}
+                  />
                   <Text style={{ color: colors.text.onPrimary }} className="font-bold">
-                    {existingAsn ? 'Xem ASN' : 'Tạo ASN giao kho'}
+                    {existingAsn ? 'Xem phiếu hẹn & Mã QR giao kho' : 'Đặt lịch hẹn giao kho (Tạo ASN)'}
                   </Text>
                 </Pressable>
               ) : null}

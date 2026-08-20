@@ -102,6 +102,7 @@ type CreateOrderTextFieldProps = {
   keyboardType?: KeyboardTypeOptions;
   returnKeyType?: ReturnKeyTypeOptions;
   onChangeText: (value: string) => void;
+  onFocus?: () => void;
   onBlur?: () => void;
   onSubmitEditing?: () => void;
   registerField: RegisterCreateOrderField;
@@ -120,6 +121,7 @@ export function CreateOrderTextField({
   registerField,
   registerInput,
   onChangeText,
+  onFocus,
   onBlur,
   onSubmitEditing,
   keyboardType = 'default',
@@ -140,7 +142,10 @@ export function CreateOrderTextField({
         returnKeyType={returnKeyType}
         blurOnSubmit={returnKeyType !== 'next'}
         onSubmitEditing={onSubmitEditing}
-        onFocus={() => setIsFocused(true)}
+        onFocus={() => {
+          setIsFocused(true);
+          onFocus?.();
+        }}
         onBlur={() => {
           setIsFocused(false);
           onBlur?.();

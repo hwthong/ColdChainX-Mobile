@@ -43,6 +43,7 @@ type RouteScheduleStepProps = {
   onSelectAddress: (address: string) => void;
   onChangeReceiverName: (name: string) => void;
   onChangeReceiverPhone: (phone: string) => void;
+  onFocusField?: (field: 'destAddressText' | 'receiverName' | 'receiverPhone') => void;
   onBlurField?: (field: 'receiverName' | 'receiverPhone') => void;
   onSubmitField?: (field: 'receiverName' | 'receiverPhone') => void;
 };
@@ -72,6 +73,7 @@ export function RouteScheduleStep({
   onSelectAddress,
   onChangeReceiverName,
   onChangeReceiverPhone,
+  onFocusField,
   onBlurField,
   onSubmitField,
 }: RouteScheduleStepProps) {
@@ -158,6 +160,7 @@ export function RouteScheduleStep({
               label="Địa chỉ giao hàng"
               onChangeText={onChangeAddress}
               onSelectAddress={onSelectAddress}
+              onFocus={() => onFocusField?.('destAddressText')}
             />
           </View>
 
@@ -170,6 +173,7 @@ export function RouteScheduleStep({
             registerField={registerField}
             registerInput={registerInput}
             onChangeText={onChangeReceiverName}
+            onFocus={() => onFocusField?.('receiverName')}
             onBlur={() => onBlurField?.('receiverName')}
             onSubmitEditing={() => onSubmitField?.('receiverName')}
           />
@@ -184,6 +188,7 @@ export function RouteScheduleStep({
             registerField={registerField}
             registerInput={registerInput}
             onChangeText={onChangeReceiverPhone}
+            onFocus={() => onFocusField?.('receiverPhone')}
             onBlur={() => onBlurField?.('receiverPhone')}
             onSubmitEditing={() => onSubmitField?.('receiverPhone')}
           />

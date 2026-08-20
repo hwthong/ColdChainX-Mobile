@@ -439,6 +439,25 @@ export default function CreateOrderScreen() {
     };
   }, []);
 
+  const handleFocusField = useCallback((field: CreateOrderFieldKey) => {
+    const requestId = ++scrollRequestIdRef.current;
+    setTimeout(() => {
+      const fieldNode = fieldRefs.current[field];
+      const scrollView = scrollViewRef.current;
+      const scrollNode = scrollView?.getNativeScrollRef();
+      if (!fieldNode || !scrollView || !scrollNode) return;
+
+      fieldNode.measureInWindow((_fieldX, fieldY) => {
+        if (scrollRequestIdRef.current !== requestId) return;
+        scrollNode.measureInWindow((_scrollX, scrollY) => {
+          if (scrollRequestIdRef.current !== requestId) return;
+          const targetY = scrollOffsetYRef.current + fieldY - scrollY - 30;
+          scrollView.scrollTo({ y: Math.max(targetY, 0), animated: true });
+        });
+      });
+    }, 120);
+  }, []);
+
   useEffect(() => {
     const field = pendingErrorFieldRef.current;
     if (!field) return;
@@ -856,8 +875,9 @@ export default function CreateOrderScreen() {
       </View>
 
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        className="flex-1"
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 54 : 0}
+        style={{ flex: 1 }}
       >
         <ScrollView
           ref={scrollViewRef}
@@ -865,11 +885,12 @@ export default function CreateOrderScreen() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
+          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
           onScroll={(event) => {
             scrollOffsetYRef.current = event.nativeEvent.contentOffset.y;
           }}
           scrollEventThrottle={16}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 32, gap: 20 }}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 100, gap: 20 }}
         >
         <AppToast
           visible={toastVisible}
@@ -920,6 +941,7 @@ export default function CreateOrderScreen() {
             }}
             onChangeReceiverName={(value) => updateTextField('receiverName', value, setReceiverName)}
             onChangeReceiverPhone={(value) => updateTextField('receiverPhone', value, setReceiverPhone)}
+            onFocusField={handleFocusField}
             onBlurField={validateFieldOnBlur}
             onSubmitField={submitTextField}
           />
@@ -948,6 +970,7 @@ export default function CreateOrderScreen() {
               setTempCondition(value);
               setErrors((current) => ({ ...current, tempCondition: undefined }));
             }}
+            onFocusField={handleFocusField}
             onBlurField={validateFieldOnBlur}
             onSubmitField={submitTextField}
           />
@@ -976,6 +999,7 @@ export default function CreateOrderScreen() {
             onChangeHeight={(value) => updateTextField('heightCm', value, setHeightCm)}
             onPickImage={openImagePicker}
             onRemoveImage={removeDocumentImage}
+            onFocusField={handleFocusField}
             onBlurField={validateFieldOnBlur}
             onSubmitField={submitTextField}
           />
@@ -992,70 +1016,69 @@ export default function CreateOrderScreen() {
         ) : null}
         </ScrollView>
 
-      </KeyboardAvoidingView>
-
-      {(() => {
-        let isStepValid = true;
-        if (currentStep !== 4) {
-          const stepErrors = validateCreateOrderStep(currentStep, formValues, routeOptions, bookingOptions);
-          if (isEditMode) {
-            delete stepErrors.documentImage;
-            if (!formValues.lengthCm && !formValues.widthCm && !formValues.heightCm) {
-              delete stepErrors.lengthCm;
-              delete stepErrors.widthCm;
-              delete stepErrors.heightCm;
+        {(() => {
+          let isStepValid = true;
+          if (currentStep !== 4) {
+            const stepErrors = validateCreateOrderStep(currentStep, formValues, routeOptions, bookingOptions);
+            if (isEditMode) {
+              delete stepErrors.documentImage;
+              if (!formValues.lengthCm && !formValues.widthCm && !formValues.heightCm) {
+                delete stepErrors.lengthCm;
+                delete stepErrors.widthCm;
+                delete stepErrors.heightCm;
+              }
             }
+            isStepValid = Object.keys(stepErrors).length === 0;
           }
-          isStepValid = Object.keys(stepErrors).length === 0;
-        }
-        const primaryLabel = currentStep === 4 ? (isEditMode ? 'Lưu cập nhật' : 'Gửi đơn hàng') : 'Tiếp tục';
+          const primaryLabel = currentStep === 4 ? (isEditMode ? 'Lưu cập nhật' : 'Gửi đơn hàng') : 'Tiếp tục';
 
-        return (
-          <View style={[styles.localFooter, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-            {currentStep > 1 ? (
-              <View style={styles.localBackButtonVisual}>
-                <Text style={styles.localBackButtonText}>
-                  Quay lại
+          return (
+            <View style={[styles.localFooter, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+              {currentStep > 1 ? (
+                <View style={styles.localBackButtonVisual}>
+                  <Text style={styles.localBackButtonText}>
+                    Quay lại
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Quay lại"
+                    onPress={handleBack}
+                    style={StyleSheet.absoluteFillObject}
+                  />
+                </View>
+              ) : null}
+
+              <View
+                style={[
+                  styles.localNextButtonVisual,
+                  !isStepValid && styles.localNextButtonVisualDisabled,
+                ]}
+              >
+                {isLoading ? (
+                  <ActivityIndicator color={!isStepValid ? colors.text.secondary : '#FFFFFF'} />
+                ) : null}
+                <Text
+                  style={[
+                    styles.localNextButtonText,
+                    !isStepValid && styles.localNextButtonTextDisabled,
+                  ]}
+                >
+                  {primaryLabel}
                 </Text>
+
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel="Quay lại"
-                  onPress={handleBack}
+                  accessibilityLabel={primaryLabel}
+                  accessibilityState={{ disabled: !isStepValid }}
+                  disabled={!isStepValid}
+                  onPress={handleContinue}
                   style={StyleSheet.absoluteFillObject}
                 />
               </View>
-            ) : null}
-
-            <View
-              style={[
-                styles.localNextButtonVisual,
-                !isStepValid && styles.localNextButtonVisualDisabled,
-              ]}
-            >
-              {isLoading ? (
-                <ActivityIndicator color={!isStepValid ? colors.text.secondary : '#FFFFFF'} />
-              ) : null}
-              <Text
-                style={[
-                  styles.localNextButtonText,
-                  !isStepValid && styles.localNextButtonTextDisabled,
-                ]}
-              >
-                {primaryLabel}
-              </Text>
-
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={primaryLabel}
-                accessibilityState={{ disabled: !isStepValid }}
-                disabled={!isStepValid}
-                onPress={handleContinue}
-                style={StyleSheet.absoluteFillObject}
-              />
             </View>
-          </View>
-        );
-      })()}
+          );
+        })()}
+      </KeyboardAvoidingView>
 
       <CreateOrderSuccessModal
         data={successData}

@@ -16,6 +16,7 @@ type AddressAutocompleteFieldProps = {
   value: string;
   onChangeText: (value: string) => void;
   onSelectAddress: (address: string) => void;
+  onFocus?: () => void;
   destinationCity?: string;
   error?: string;
   label?: string;
@@ -31,6 +32,7 @@ export const AddressAutocompleteField = forwardRef<TextInput, AddressAutocomplet
     value,
     onChangeText,
     onSelectAddress,
+    onFocus,
     destinationCity,
     error,
     label = 'Địa chỉ giao hàng',
@@ -170,7 +172,10 @@ export const AddressAutocompleteField = forwardRef<TextInput, AddressAutocomplet
           style={{ minHeight: 54, color: colors.text.primary }}
           value={value}
           onChangeText={changeValue}
-          onFocus={() => setIsFocused(true)}
+          onFocus={() => {
+            setIsFocused(true);
+            onFocus?.();
+          }}
           onBlur={() => setIsFocused(false)}
           editable={!disabled}
           placeholder="Nhập số nhà, đường, phường/xã..."

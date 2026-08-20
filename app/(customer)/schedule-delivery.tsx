@@ -308,12 +308,14 @@ export default function ScheduleDeliveryScreen() {
         <View style={{ backgroundColor: colors.brand.primary }} className="rounded-3xl p-5">
           <View className="flex-row items-start justify-between gap-3">
             <View className="flex-1">
-              <Text style={{ color: colors.brand.primaryForeground }} className="text-xs font-bold uppercase tracking-wider">Đặt lịch giao kho</Text>
+              <Text style={{ color: colors.brand.primaryForeground }} className="text-xs font-bold uppercase tracking-wider">
+                Phiếu gửi hàng trước (ASN)
+              </Text>
               <Text className="mt-2 text-2xl font-extrabold text-white">
-                {order?.trackingCode || 'Đơn hàng'}
+                {order?.trackingCode || 'Đặt lịch giao kho'}
               </Text>
               <Text selectable className="mt-1 text-xs font-medium text-white/80">
-                {orderId}
+                {order?.itemName ? `${order.itemName} • ` : ''}Tạo mã QR tiếp nhận hàng tại kho
               </Text>
             </View>
             <Pressable onPress={() => router.back()} className="rounded-full bg-white/15 p-2">
@@ -330,11 +332,11 @@ export default function ScheduleDeliveryScreen() {
 
         {order ? (
           <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-3 rounded-3xl border p-5">
-            <Text style={{ color: colors.text.primary }} className="text-lg font-extrabold">Thông tin tuyến</Text>
+            <Text style={{ color: colors.text.primary }} className="text-lg font-extrabold">Thông tin đơn hàng & Tuyến</Text>
             <InfoRow label="Trạng thái" value={translateOrderStatus(order.status)} />
-            <InfoRow label="Tuyến" value={order.route ? `${order.route.originCity} → ${order.route.destCity}` : 'Chưa có tuyến'} />
-            <InfoRow label="Route code" value={order.route?.routeCode || 'Chưa có'} />
-            <InfoRow label="Cut-off" value={order.route?.cutOffTime || 'Chưa có'} />
+            <InfoRow label="Tuyến vận chuyển" value={order.route ? `${order.route.originCity} → ${order.route.destCity}` : 'Chưa có tuyến'} />
+            <InfoRow label="Mã tuyến" value={order.route?.routeCode || 'Chưa có'} />
+            <InfoRow label="Hạn chót giao kho (Cut-off)" value={order.route?.cutOffTime || 'Chưa có'} />
             <InfoRow label="Hàng hóa" value={`${order.itemName} • ${order.expectedWeightKg} kg`} />
           </View>
         ) : null}
@@ -343,13 +345,33 @@ export default function ScheduleDeliveryScreen() {
           <View className="gap-4">
             <View style={{ backgroundColor: colors.surface.muted }} className="rounded-2xl p-4">
               <Text style={{ color: colors.brand.primary }} className="text-sm font-semibold leading-5">
-                Đơn hàng này đã có lịch giao kho.
+                Đơn hàng này đã có phiếu hẹn giao kho & mã QR tiếp nhận.
               </Text>
             </View>
-            <AsnResultCard asn={displayedAsn} warehouseName={selectedWarehouse?.warehouseName} />
+            <AsnResultCard
+              asn={displayedAsn}
+              warehouseName={selectedWarehouse?.warehouseName}
+              trackingCode={order?.trackingCode}
+              itemName={order?.itemName}
+            />
           </View>
         ) : (
           <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-4 rounded-3xl border p-5">
+            {/* ── Business Context Guide ── */}
+            <View className="rounded-2xl border border-blue-200 bg-blue-50/80 p-4">
+              <View className="flex-row items-start gap-3">
+                <Ionicons name="information-circle" size={22} color={colors.brand.primary} />
+                <View className="flex-1">
+                  <Text className="text-sm font-bold text-blue-950">
+                    Quy trình tiếp nhận hàng tại kho (ASN)
+                  </Text>
+                  <Text className="mt-1 text-xs leading-5 text-blue-900">
+                    Quý khách vui lòng chọn kho đến và hẹn giờ mang hàng tới kho (trước tối thiểu 6 tiếng). Sau khi đặt lịch, hệ thống sẽ cấp mã QR để tài xế xuất trình khi bàn giao hàng.
+                  </Text>
+                </View>
+              </View>
+            </View>
+
             <Text style={{ color: colors.text.primary }} className="text-lg font-extrabold">Thông tin đặt lịch</Text>
 
             {warehouseMessage ? (
@@ -482,13 +504,13 @@ export default function ScheduleDeliveryScreen() {
                 <>
                   <ActivityIndicator size="small" color="#FFFFFF" />
                   <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700', includeFontPadding: false }}>
-                    Đang tạo ASN...
+                    Đang tạo phiếu tiếp nhận...
                   </Text>
                 </>
               ) : (
                 <>
                   <Ionicons
-                    name="calendar-outline"
+                    name="qr-code-outline"
                     size={20}
                     color={canSubmit ? '#FFFFFF' : colors.text.secondary}
                   />
@@ -500,14 +522,14 @@ export default function ScheduleDeliveryScreen() {
                       includeFontPadding: false,
                     }}
                   >
-                    Xác nhận đặt lịch giao
+                    Xác nhận đặt lịch & Nhận mã QR
                   </Text>
                 </>
               )}
 
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={isSubmitting ? 'Đang tạo ASN...' : 'Xác nhận đặt lịch giao'}
+                accessibilityLabel={isSubmitting ? 'Đang tạo phiếu tiếp nhận...' : 'Xác nhận đặt lịch và nhận mã QR'}
                 disabled={!canSubmit || isSubmitting}
                 onPress={handleCreateAsn}
                 style={StyleSheet.absoluteFillObject}

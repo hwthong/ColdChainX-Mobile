@@ -579,6 +579,24 @@ export default function OrderDetailScreen() {
             </Text>
           )}
 
+          {order.status?.toUpperCase() === 'CONTRACT_SIGNED' ? (
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname: '/(customer)/schedule-delivery',
+                  params: { orderId: order.orderId },
+                } as never)
+              }
+              style={{ backgroundColor: colors.brand.primary }}
+              className="mt-3 flex-row items-center justify-center gap-2 rounded-xl px-4 py-3 shadow-sm"
+            >
+              <Ionicons name="calendar-outline" size={18} color={colors.text.onPrimary} />
+              <Text style={{ color: colors.text.onPrimary }} className="font-bold">
+                Đặt lịch hẹn giao kho & Nhận mã QR
+              </Text>
+            </Pressable>
+          ) : null}
+
           {claims.length > 0 ? (
             <Pressable
               onPress={() =>
