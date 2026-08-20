@@ -58,13 +58,25 @@ export function markChatMessagesRead(token: string, orderId: string) {
   });
 }
 
-export function sendChatMessage(token: string, orderId: string, receiverId: string, messageContent: string) {
+export function sendChatMessage(
+  token: string,
+  orderId: string,
+  messageContent: string,
+  receiverId?: string
+) {
   const id = requireOrderId(orderId);
-  const receiver = requireOrderId(receiverId);
   const content = messageContent.trim();
   if (!content) return Promise.reject(new Error('Nội dung tin nhắn không được để trống.'));
+
+  const body: { messageContent: string; receiverId?: string } = { messageContent: content };
+  if (receiverId) {
+    body.receiverId = receiverId;
+  }
+
   return apiRequest<ApiResponse<ChatMessage>>(`/api/chat/${id}/messages`, {
-    method: 'POST', headers: auth(token), body: { receiverId: receiver, messageContent: content },
+    method: 'POST',
+    headers: auth(token),
+    body,
   });
 }
 

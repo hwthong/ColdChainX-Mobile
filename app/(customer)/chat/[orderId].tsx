@@ -87,17 +87,23 @@ export default function CustomerChatThreadScreen() {
 
   const send = useCallback(async () => {
     const content = draft.trim();
-    if (!token || !orderId || !counterpart || !content || sendingRef.current) return;
-    sendingRef.current = true; setSending(true); setSendError(null);
+    if (!token || !orderId || !content || sendingRef.current) return;
+    sendingRef.current = true;
+    setSending(true);
+    setSendError(null);
     try {
-      const response = await sendChatMessage(token, orderId, counterpart.userId, content);
+      const response = await sendChatMessage(token, orderId, content);
       if (!response.success || !response.data) throw new Error(response.message || 'Không thể gửi tin nhắn.');
       setDraft('');
       setMessages((current) => mergeMessages(current, [response.data!]));
       void load(true);
-    } catch (sendFailure) { setSendError(getApiErrorMessage(sendFailure)); }
-    finally { sendingRef.current = false; setSending(false); }
-  }, [counterpart, draft, load, orderId, token]);
+    } catch (sendFailure) {
+      setSendError(getApiErrorMessage(sendFailure));
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
+    }
+  }, [draft, load, orderId, token]);
 
   return (
     <KeyboardChatView
@@ -108,10 +114,10 @@ export default function CustomerChatThreadScreen() {
           <TextInput
             value={draft}
             onChangeText={setDraft}
-            editable={!sending && Boolean(counterpart)}
+            editable={!sending}
             multiline
             maxLength={2000}
-            placeholder={counterpart ? 'Nhập tin nhắn...' : 'Chưa xác định người phụ trách'}
+            placeholder="Nhập tin nhắn..."
             placeholderTextColor={colors.text.muted}
             style={{ backgroundColor: colors.surface.page, color: colors.text.primary }}
             className="max-h-28 min-h-11 flex-1 rounded-2xl px-4 py-3"
@@ -119,15 +125,15 @@ export default function CustomerChatThreadScreen() {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Gửi tin nhắn"
-            disabled={!draft.trim() || sending || !counterpart}
+            disabled={!draft.trim() || sending}
             onPress={() => void send()}
-            style={{ backgroundColor: draft.trim() && counterpart && !sending ? colors.brand.primary : colors.surface.muted }}
+            style={{ backgroundColor: draft.trim() && !sending ? colors.brand.primary : colors.surface.muted }}
             className="h-11 w-11 items-center justify-center rounded-full"
           >
             {sending ? (
               <ActivityIndicator size="small" color="white" />
             ) : (
-              <Ionicons name="send" size={19} color={draft.trim() && counterpart && !sending ? 'white' : colors.text.muted} />
+              <Ionicons name="send" size={19} color={draft.trim() && !sending ? 'white' : colors.text.muted} />
             )}
           </Pressable>
         </View>
@@ -173,11 +179,6 @@ export default function CustomerChatThreadScreen() {
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
         />
       )}
-      {!counterpart && !loading && !error ? (
-        <View className="border-t border-amber-200 bg-amber-50 px-4 py-3">
-          <Text className="text-xs leading-5 text-amber-900">Backend chưa cung cấp danh sách nhân viên nhận tin cho hội thoại mới. Bạn có thể gửi sau khi bộ phận phụ trách bắt đầu trao đổi.</Text>
-        </View>
-      ) : null}
       {sendError ? <Text className="bg-red-50 px-4 py-2 text-xs text-red-800">{sendError}</Text> : null}
     </KeyboardChatView>
   );
