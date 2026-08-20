@@ -26,9 +26,13 @@ export function CustomerHeader({ title, showBackButton = false }: CustomerHeader
   const displayName = fullName?.trim() || 'bạn';
 
   useEffect(() => {
-    if (accessToken) {
-      fetchUnreadCount(accessToken);
+    let active = true;
+    if (accessToken && active) {
+      void fetchUnreadCount(accessToken);
     }
+    return () => {
+      active = false;
+    };
   }, [accessToken, fetchUnreadCount]);
 
   return (

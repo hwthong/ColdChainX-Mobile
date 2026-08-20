@@ -21,6 +21,9 @@ interface NotificationStoreState {
   reset: () => void;
 }
 
+let inFlightUnreadPromise: Promise<number> | null = null;
+let lastUnreadFetchedAt = 0;
+
 export const useNotificationStore = create<NotificationStoreState>((set, get) => ({
   unreadCount: 0,
   connectionStatus: 'disconnected',
@@ -34,22 +37,36 @@ export const useNotificationStore = create<NotificationStoreState>((set, get) =>
       return 0;
     }
 
-    try {
-      set({ isLoadingUnreadCount: true });
-      const res = await getUnreadNotificationCount(token);
-      if (res.success && res.data) {
-        const count = res.data.unreadCount ?? 0;
-        set({ unreadCount: count });
-        return count;
-      }
-    } catch (err) {
-      if (__DEV__) {
-        console.warn('[useNotificationStore] fetchUnreadCount failed:', err);
-      }
-    } finally {
-      set({ isLoadingUnreadCount: false });
+    const now = Date.now();
+    if (inFlightUnreadPromise) {
+      return inFlightUnreadPromise;
     }
-    return get().unreadCount;
+    if (now - lastUnreadFetchedAt < 10_000) {
+      return get().unreadCount;
+    }
+
+    inFlightUnreadPromise = (async () => {
+      try {
+        set({ isLoadingUnreadCount: true });
+        const res = await getUnreadNotificationCount(token);
+        lastUnreadFetchedAt = Date.now();
+        if (res.success && res.data) {
+          const count = res.data.unreadCount ?? 0;
+          set({ unreadCount: count });
+          return count;
+        }
+      } catch (err) {
+        if (__DEV__) {
+          console.warn('[useNotificationStore] fetchUnreadCount failed:', err);
+        }
+      } finally {
+        set({ isLoadingUnreadCount: false });
+        inFlightUnreadPromise = null;
+      }
+      return get().unreadCount;
+    })();
+
+    return inFlightUnreadPromise;
   },
 
   setUnreadCount: (count: number) => {
