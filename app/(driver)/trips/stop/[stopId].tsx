@@ -65,6 +65,8 @@ type StopOrder = {
   itemName: string;
   category?: string | null;
   customerId?: string | null;
+  receiverName?: string | null;
+  receiverPhone?: string | null;
   originalQuantity: number;
   status: string;
   lpns: TripRouteLpnDto[];
@@ -287,6 +289,8 @@ export default function StopDetailScreen() {
           itemName: order.itemName || routeOrder?.itemName || 'Đơn hàng',
           category: order.category || routeOrder?.category,
           customerId: order.customerId,
+          receiverName: order.receiverName || null,
+          receiverPhone: order.receiverPhone || null,
           originalQuantity: firstLpnQuantity && firstLpnQuantity > 0
             ? firstLpnQuantity
             : order.quantity,
@@ -1463,16 +1467,43 @@ function OrderCard({
     >
       <View className="flex-row items-start justify-between gap-3">
         <View className="flex-1">
-          <Text className="font-bold text-amber-950">{order.trackingCode}</Text>
-          <Text className="mt-1 text-sm text-amber-800">{order.itemName}</Text>
-          <Text className="mt-2 text-xs text-amber-700">
-            {order.lpns.length} LPN
+          <Text className="font-bold text-amber-950">#{order.trackingCode}</Text>
+          <Text className="mt-1 text-sm font-bold text-amber-900">{order.itemName}</Text>
+          <Text className="mt-1 text-xs text-amber-700">
+            {order.lpns.length} LPN · {order.originalQuantity} kiện
           </Text>
         </View>
         <View className={`rounded-lg px-3 py-2 ${status.background}`}>
           <Text className={`text-xs font-bold ${status.text}`}>{status.label}</Text>
         </View>
       </View>
+
+      {/* Thông tin người nhận hàng và nút gọi điện */}
+      <View className="mt-3 border-t border-amber-100 pt-2.5 flex-row items-center justify-between">
+        <View className="flex-1 mr-2">
+          <Text className="text-[11px] text-amber-700">Người nhận:</Text>
+          <Text className="text-xs font-bold text-amber-950" numberOfLines={1}>
+            {order.receiverName || 'Chưa cập nhật'}
+          </Text>
+        </View>
+
+        {order.receiverPhone ? (
+          <Pressable
+            onPress={(e) => {
+              e.stopPropagation();
+              void Linking.openURL(`tel:${order.receiverPhone}`);
+            }}
+            style={{ backgroundColor: '#DCFCE7', borderColor: '#86EFAC' }}
+            className="flex-row items-center gap-1.5 rounded-xl border px-3 py-1.5 shadow-2xs"
+          >
+            <Ionicons name="call" size={13} color="#16A34A" />
+            <Text style={{ color: '#16A34A' }} className="text-xs font-bold">
+              {order.receiverPhone}
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
+
       {!confirmed ? (
         <Text className="mt-3 text-sm font-bold text-amber-800">
           {selected ? 'Đang chọn Order này' : 'Chọn để bàn giao'}

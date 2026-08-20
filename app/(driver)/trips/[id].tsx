@@ -44,9 +44,20 @@ const STATUS: Record<string, string> = {
 const STOP_STATUS: Record<string, string> = {
   PLANNED: 'Chờ check-in',
   ARRIVED: 'Đã check-in',
-  DEPARTED: 'Đã hoàn tất (dữ liệu cũ)',
-  FAILED_DELIVERY: 'Giao hàng thất bại',
+  DEPARTED: 'Đã hoàn tất',
+  COMPLETED: 'Đã hoàn tất',
+  FAILED_DELIVERY: 'Giao thất bại',
+  SKIPPED_NOSHOW: 'Bỏ qua (Khách vắng)',
 };
+
+export interface StopOrderDisplayInfo {
+  orderId: string;
+  trackingCode?: string;
+  itemName: string;
+  quantity?: number | null;
+  receiverName?: string | null;
+  receiverPhone?: string | null;
+}
 
 export default function DriverTripDetailScreen() {
   const insets = useSafeAreaInsets();
@@ -296,10 +307,92 @@ export default function DriverTripDetailScreen() {
   }, [trip?.stops, route?.optimizedStops, tracking?.orders]);
 
   const nextStopIndex = useMemo(() => {
+    const finishedStatuses = new Set(['DEPARTED', 'COMPLETED', 'SKIPPED_NOSHOW', 'FAILED_DELIVERY']);
     return displayStops.findIndex(
-      (stop) => (stop.status?.toUpperCase() || '') !== 'DEPARTED'
+      (stop) => !finishedStatuses.has(stop.status?.toUpperCase() || '')
     );
   }, [displayStops]);
+
+  const getOrdersForStop = useCallback(
+    (stop: DriverTripStopDto): StopOrderDisplayInfo[] => {
+      const result: StopOrderDisplayInfo[] = [];
+      const seen = new Set<string>();
+
+      // 1. Check route.optimizedStops
+      const routeStop = route?.optimizedStops?.find(
+        (s) =>
+          s.stopId === stop.stopId ||
+          (s.address &&
+            stop.address &&
+            s.address.trim().toLowerCase() === stop.address.trim().toLowerCase())
+      );
+      if (routeStop?.orders?.length) {
+        for (const o of routeStop.orders) {
+          if (o.orderId && !seen.has(o.orderId.toLowerCase())) {
+            seen.add(o.orderId.toLowerCase());
+            const full =
+              orderDetailsMap[o.orderId] ||
+              orderDetailsMap[o.orderId.toLowerCase()] ||
+              (o.trackingCode ? orderDetailsMap[o.trackingCode] : undefined);
+            result.push({
+              orderId: o.orderId,
+              trackingCode: o.trackingCode || full?.trackingCode,
+              itemName: o.itemName || full?.itemName || 'Hàng đông lạnh',
+              quantity: o.quantity ?? full?.quantity ?? 1,
+              receiverName: full?.receiverName || null,
+              receiverPhone: full?.receiverPhone || null,
+            });
+          }
+        }
+      }
+
+      // 2. Check orderDetailsMap by dropoffStopId
+      Object.values(orderDetailsMap).forEach((full) => {
+        if (
+          full.dropoffStopId === stop.stopId &&
+          full.orderId &&
+          !seen.has(full.orderId.toLowerCase())
+        ) {
+          seen.add(full.orderId.toLowerCase());
+          result.push({
+            orderId: full.orderId,
+            trackingCode: full.trackingCode,
+            itemName: full.itemName || 'Hàng đông lạnh',
+            quantity: full.quantity ?? 1,
+            receiverName: full.receiverName || null,
+            receiverPhone: full.receiverPhone || null,
+          });
+        }
+      });
+
+      // 3. Fallback from tracking.orders
+      if (result.length === 0 && tracking?.orders?.length) {
+        for (const o of tracking.orders) {
+          if (
+            (o.orderId === stop.stopId || o.trackingCode === stop.stopId) &&
+            !seen.has(o.orderId.toLowerCase())
+          ) {
+            seen.add(o.orderId.toLowerCase());
+            const full =
+              orderDetailsMap[o.orderId] ||
+              orderDetailsMap[o.orderId.toLowerCase()] ||
+              (o.trackingCode ? orderDetailsMap[o.trackingCode] : undefined);
+            result.push({
+              orderId: o.orderId,
+              trackingCode: o.trackingCode || full?.trackingCode,
+              itemName: o.itemName || full?.itemName || 'Hàng đông lạnh',
+              quantity: full?.quantity ?? 1,
+              receiverName: full?.receiverName || null,
+              receiverPhone: full?.receiverPhone || null,
+            });
+          }
+        }
+      }
+
+      return result;
+    },
+    [route?.optimizedStops, orderDetailsMap, tracking?.orders]
+  );
 
   const vehiclePosition = useMemo(() => getVehiclePosition(tracking), [tracking]);
 
@@ -678,6 +771,7 @@ export default function DriverTripDetailScreen() {
           <StopRow 
             key={stop.stopId || index}
             stop={stop}
+            orders={getOrdersForStop(stop)}
             index={index} 
             isNextStop={index === nextStopIndex}
             onPress={() => router.push({
@@ -841,11 +935,13 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 function StopRow({
   stop,
+  orders = [],
   index,
   isNextStop = false,
   onPress,
 }: {
   stop: DriverTripStopDto;
+  orders?: StopOrderDisplayInfo[];
   index: number;
   isNextStop?: boolean;
   onPress: () => void;
@@ -885,6 +981,64 @@ function StopRow({
           {stop.address || 'Chưa có địa chỉ'}
         </Text>
 
+        {/* Danh sách đơn hàng & Người nhận tại điểm dừng */}
+        {orders && orders.length > 0 ? (
+          <View className="mt-3 gap-2 border-t border-emerald-100/80 pt-2.5">
+            {orders.map((ord, oIdx) => (
+              <View
+                key={ord.orderId || oIdx}
+                style={{ backgroundColor: '#FFFFFF', borderColor: '#BBF7D0' }}
+                className="rounded-xl border p-2.5 gap-1.5 shadow-2xs"
+              >
+                <View className="flex-row items-center justify-between">
+                  <View className="flex-row items-center gap-1.5 flex-1 mr-2">
+                    <Ionicons name="cube-outline" size={14} color="#16A34A" />
+                    <Text style={{ color: colors.text.primary }} className="text-xs font-bold" numberOfLines={1}>
+                      {ord.itemName}
+                    </Text>
+                    {ord.quantity ? (
+                      <Text style={{ color: colors.text.secondary }} className="text-[11px]">
+                        ({ord.quantity} kiện)
+                      </Text>
+                    ) : null}
+                  </View>
+                  {ord.trackingCode ? (
+                    <Text style={{ color: '#15803D' }} className="text-[11px] font-bold">
+                      #{ord.trackingCode}
+                    </Text>
+                  ) : null}
+                </View>
+
+                {/* Thông tin người nhận và số điện thoại gọi được */}
+                <View className="flex-row items-center justify-between pt-0.5 border-t border-slate-100">
+                  <View className="flex-row items-center gap-1 flex-1 mr-2">
+                    <Ionicons name="person-outline" size={12} color={colors.text.secondary} />
+                    <Text style={{ color: colors.text.secondary }} className="text-[11px]" numberOfLines={1}>
+                      Người nhận: <Text style={{ color: colors.text.primary, fontWeight: '700' }}>{ord.receiverName || 'Chưa cập nhật'}</Text>
+                    </Text>
+                  </View>
+
+                  {ord.receiverPhone ? (
+                    <Pressable
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        void Linking.openURL(`tel:${ord.receiverPhone}`);
+                      }}
+                      style={{ backgroundColor: '#DCFCE7', borderColor: '#86EFAC' }}
+                      className="flex-row items-center gap-1 rounded-lg border px-2 py-1"
+                    >
+                      <Ionicons name="call" size={11} color="#16A34A" />
+                      <Text style={{ color: '#16A34A' }} className="text-[11px] font-bold">
+                        {ord.receiverPhone}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
         <View className="mt-3 flex-row items-center justify-between border-t border-emerald-100 pt-2.5">
           <Text style={{ color: colors.text.secondary }} className="text-[11px]">
             Chạm để mở Check-in & Giao hàng
@@ -902,32 +1056,77 @@ function StopRow({
     <Pressable
       disabled={disabled}
       onPress={onPress}
-      className={`flex-row items-center gap-3 rounded-xl p-2.5 ${isDeparted ? 'bg-slate-50' : 'bg-transparent'}`}
-      style={({ pressed }) => ({ opacity: disabled ? 0.5 : pressed ? 0.7 : 1 })}
+      className={`rounded-2xl border p-3.5 mb-2.5 ${isDeparted ? 'bg-slate-50 border-slate-200' : 'bg-white border-slate-200 shadow-xs'}`}
+      style={({ pressed }) => ({ opacity: disabled ? 0.6 : pressed ? 0.75 : 1 })}
     >
-      <View
-        style={{ backgroundColor: isDeparted ? colors.text.muted : colors.brand.primary }}
-        className="h-7 w-7 items-center justify-center rounded-full"
-      >
-        <Text style={{ color: colors.text.onPrimary }} className="text-xs font-bold">
-          {isDeparted ? '✓' : stop.stopSequence ?? index + 1}
-        </Text>
-      </View>
-      <View className="flex-1">
-        <Text
-          style={{
-            color: isDeparted ? colors.text.muted : colors.text.primary,
-            textDecorationLine: isDeparted ? 'line-through' : 'none',
-          }}
-          className="text-xs font-semibold"
+      <View className="flex-row items-start gap-3">
+        <View
+          style={{ backgroundColor: isDeparted ? colors.text.muted : colors.brand.primary }}
+          className="h-6 w-6 items-center justify-center rounded-full mt-0.5"
         >
-          {stop.address || 'Chưa có địa chỉ'}
-        </Text>
-        <Text style={{ color: isDeparted ? colors.text.muted : colors.brand.primary }} className="mt-0.5 text-[11px] font-medium">
-          {STOP_STATUS[status] || 'Chưa xác định'}
-        </Text>
+          <Text style={{ color: colors.text.onPrimary }} className="text-xs font-bold">
+            {isDeparted ? '✓' : stop.stopSequence ?? index + 1}
+          </Text>
+        </View>
+        <View className="flex-1">
+          <View className="flex-row items-center justify-between">
+            <Text
+              style={{
+                color: isDeparted ? colors.text.muted : colors.text.primary,
+                textDecorationLine: isDeparted ? 'line-through' : 'none',
+              }}
+              className="text-xs font-bold flex-1 mr-2"
+            >
+              {stop.address || 'Chưa có địa chỉ'}
+            </Text>
+            <Text style={{ color: isDeparted ? colors.text.muted : colors.brand.primary }} className="text-[11px] font-semibold">
+              {STOP_STATUS[status] || 'Chưa xác định'}
+            </Text>
+          </View>
+
+          {/* Đơn hàng & Người nhận */}
+          {orders && orders.length > 0 ? (
+            <View className="mt-2 gap-1.5 border-t border-slate-100 pt-2">
+              {orders.map((ord, oIdx) => (
+                <View key={ord.orderId || oIdx} className="gap-1">
+                  <View className="flex-row items-center justify-between">
+                    <Text style={{ color: colors.text.primary }} className="text-[11px] font-semibold flex-1 mr-1" numberOfLines={1}>
+                      📦 {ord.itemName} {ord.quantity ? `(${ord.quantity} kiện)` : ''}
+                    </Text>
+                    {ord.trackingCode ? (
+                      <Text style={{ color: colors.brand.primary }} className="text-[10px] font-bold">
+                        #{ord.trackingCode}
+                      </Text>
+                    ) : null}
+                  </View>
+
+                  <View className="flex-row items-center justify-between">
+                    <Text style={{ color: colors.text.secondary }} className="text-[11px] flex-1 mr-2" numberOfLines={1}>
+                      Người nhận: <Text style={{ color: colors.text.primary, fontWeight: '600' }}>{ord.receiverName || 'Chưa cập nhật'}</Text>
+                    </Text>
+                    {ord.receiverPhone ? (
+                      <Pressable
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          void Linking.openURL(`tel:${ord.receiverPhone}`);
+                        }}
+                        style={{ backgroundColor: '#DCFCE7', borderColor: '#86EFAC' }}
+                        className="flex-row items-center gap-1 rounded-md border px-2 py-0.5"
+                      >
+                        <Ionicons name="call" size={10} color="#16A34A" />
+                        <Text style={{ color: '#16A34A' }} className="text-[10px] font-bold">
+                          {ord.receiverPhone}
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </View>
+        {!disabled ? <Ionicons name="chevron-forward" size={16} color={colors.brand.primary} className="mt-1" /> : null}
       </View>
-      {!disabled ? <Ionicons name="chevron-forward" size={18} color={colors.brand.primary} /> : null}
     </Pressable>
   );
 }
