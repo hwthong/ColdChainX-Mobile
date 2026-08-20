@@ -15,6 +15,7 @@ export default function CustomerLayout() {
             status: 'Đơn hàng',
             'tracking/index': 'Giám sát',
             'tracking/[orderId]': 'Chi tiết giám sát',
+            'orders/[id]': 'Chi tiết đơn hàng',
             claims: 'Khiếu nại',
             'chat/index': 'Hỗ trợ',
             'chat/[orderId]': 'Tin nhắn đơn hàng',
