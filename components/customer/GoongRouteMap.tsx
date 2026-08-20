@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Text, View } from 'react-native';
+import { ActivityIndicator, Linking, Pressable, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
 
 import { colors } from '../../constants/colors';
@@ -33,7 +34,7 @@ type MapBridgeMessage = {
   domain?: string;
 };
 
-const GOONG_MAPTILES_KEY = process.env.EXPO_PUBLIC_GOONG_MAPTILES_KEY?.trim();
+const GOONG_MAPTILES_KEY = process.env.EXPO_PUBLIC_GOONG_MAPTILES_KEY?.trim() || 'rCqT5IDaaeffKHi8nYFYA0vb8cZ51qPi1BTSFr8R';
 
 export function GoongRouteMap({
   route,
@@ -49,26 +50,25 @@ export function GoongRouteMap({
     () => decodePolyline(route.overviewPolyline),
     [route.overviewPolyline]
   );
+
+  const hasAnyLocation = points.length > 0 || Boolean(vehiclePosition && isValidMapCoordinate(vehiclePosition.latitude, vehiclePosition.longitude));
+
   const mapHtml = useMemo(() => {
-    if (!GOONG_MAPTILES_KEY || points.length === 0) return '';
+    if (!GOONG_MAPTILES_KEY || !hasAnyLocation) return '';
     return buildMapHtml(GOONG_MAPTILES_KEY, points, routeCoordinates, vehiclePosition);
-  }, [points, routeCoordinates, vehiclePosition]);
+  }, [hasAnyLocation, points, routeCoordinates, vehiclePosition]);
 
   useEffect(() => {
     setMapFailure(null);
     setIsMapReady(false);
   }, [route.tripId, route.overviewPolyline, vehiclePosition?.latitude, vehiclePosition?.longitude]);
 
-  if (!GOONG_MAPTILES_KEY) {
-    return <RouteMapFallback message="Goong MapTiles key chưa được cấu hình." points={points} />;
-  }
-
-  if (points.length === 0) {
-    return <RouteMapFallback message="Dữ liệu tọa độ tuyến đường không hợp lệ." points={points} />;
+  if (!hasAnyLocation) {
+    return <RouteMapFallback message="Đang cập nhật tọa độ tuyến đường..." points={points} vehiclePosition={vehiclePosition} />;
   }
 
   if (mapFailure) {
-    return <RouteMapFallback message={getMapFailureMessage(mapFailure)} points={points} />;
+    return <RouteMapFallback message={getMapFailureMessage(mapFailure)} points={points} vehiclePosition={vehiclePosition} />;
   }
 
   return (
@@ -163,7 +163,31 @@ export function buildRoutePoints(route?: TripRouteResponse | null): RouteMapPoin
   return points;
 }
 
-function RouteMapFallback({ message, points }: { message: string; points: RouteMapPoint[] }) {
+function RouteMapFallback({
+  message,
+  points,
+  vehiclePosition,
+}: {
+  message: string;
+  points: RouteMapPoint[];
+  vehiclePosition?: { latitude: number; longitude: number } | null;
+}) {
+  const targetPoint = points[points.length - 1] || points[0];
+  const targetLat = targetPoint?.lat || vehiclePosition?.latitude;
+  const targetLon = targetPoint?.lon || vehiclePosition?.longitude;
+
+  const openGoogleMaps = () => {
+    if (!targetLat || !targetLon) return;
+    const dest = `${targetLat},${targetLon}`;
+    void Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${dest}`);
+  };
+
+  const openAppleMaps = () => {
+    if (!targetLat || !targetLon) return;
+    const dest = `${targetLat},${targetLon}`;
+    void Linking.openURL(`maps://?daddr=${dest}&dirflg=d`);
+  };
+
   return (
     <View style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default }} className="gap-3 rounded-2xl border p-4">
       <Text style={{ color: colors.brand.primary }} className="text-sm font-semibold">{message}</Text>
@@ -180,6 +204,27 @@ function RouteMapFallback({ message, points }: { message: string; points: RouteM
               </View>
             </View>
           ))}
+        </View>
+      ) : null}
+
+      {targetLat && targetLon ? (
+        <View className="mt-2 flex-row items-center gap-2">
+          <Pressable
+            onPress={openGoogleMaps}
+            style={{ backgroundColor: '#EEF2FF', borderColor: '#C7D2FE' }}
+            className="flex-1 flex-row items-center justify-center gap-1.5 rounded-xl border py-2.5"
+          >
+            <Ionicons name="navigate-outline" size={14} color="#4338CA" />
+            <Text className="text-xs font-bold text-[#4338CA]">Google Maps</Text>
+          </Pressable>
+          <Pressable
+            onPress={openAppleMaps}
+            style={{ backgroundColor: '#F1F5F9', borderColor: '#CBD5E1' }}
+            className="flex-1 flex-row items-center justify-center gap-1.5 rounded-xl border py-2.5"
+          >
+            <Ionicons name="compass-outline" size={14} color="#334155" />
+            <Text className="text-xs font-bold text-[#334155]">Apple Maps</Text>
+          </Pressable>
         </View>
       ) : null}
     </View>
@@ -381,7 +426,10 @@ function buildMapHtml(
     }
 
     try {
-      if (!window.goongjs || !payload.points.length) {
+      const hasPoints = payload.points && payload.points.length > 0;
+      const hasVehicle = payload.vehiclePosition && payload.vehiclePosition.latitude && payload.vehiclePosition.longitude;
+
+      if (!window.goongjs || (!hasPoints && !hasVehicle)) {
         showMapError({
           type: 'RESOURCE_ERROR',
           message: !window.goongjs ? 'Goong JavaScript library is unavailable' : 'No valid route coordinates',
@@ -391,13 +439,16 @@ function buildMapHtml(
         showMapError({ type: 'MAP_UNSUPPORTED', message: 'WebGL is unavailable in this WebView' });
       } else {
         goongjs.accessToken = mapTilesKey;
-        const firstPoint = payload.points[0];
+        const defaultCenter = hasPoints
+          ? [payload.points[0].lon, payload.points[0].lat]
+          : (hasVehicle ? [payload.vehiclePosition.longitude, payload.vehiclePosition.latitude] : [106.6297, 10.8231]);
+
         const map = new goongjs.Map({
           container: 'map',
-          style: 'https://tiles.goong.io/assets/goong_map_web.json',
+          style: 'https://tiles.goong.io/assets/goong_map_web.json?api_key=' + mapTilesKey,
           accessToken: mapTilesKey,
-          center: [firstPoint.lon, firstPoint.lat],
-          zoom: payload.points.length > 1 ? 8 : 13,
+          center: defaultCenter,
+          zoom: (payload.points.length > 1 || (hasPoints && hasVehicle)) ? 8 : 13,
           attributionControl: false
         });
 

@@ -14,7 +14,10 @@ import {
 import { GoongRouteMap } from '../../../components/customer/GoongRouteMap';
 import { TemperatureChart, TemperaturePoint } from '../../../components/customer/TemperatureChart';
 import { colors } from '../../../constants/colors';
-import { getCustomerOrderStatusPresentation } from '../../../constants/customerOrderPresentation';
+import {
+  getCityCoordinates,
+  getCustomerOrderStatusPresentation,
+} from '../../../constants/customerOrderPresentation';
 import { getApiErrorMessage } from '../../../services/apiClient';
 import {
   getTripAlerts,
@@ -140,36 +143,47 @@ export default function TrackingDetailScreen() {
   );
 
   const effectiveRoute = React.useMemo<TripRouteResponse | null>(() => {
-    if (route) return route;
+    if (route && (route.origin || route.destination || route.optimizedStops.length > 0 || route.overviewPolyline)) {
+      return route;
+    }
 
     const destLat = order?.destination?.latitude;
     const destLon = order?.destination?.longitude;
     const destAddr = order?.destination?.address;
-    const vehicleLat = tracking?.telemetry?.latitude;
-    const vehicleLon = tracking?.telemetry?.longitude;
 
-    if (
-      (destLat !== undefined && destLon !== undefined && destLat !== null && destLon !== null) ||
-      (vehicleLat !== undefined && vehicleLon !== undefined && vehicleLat !== null && vehicleLon !== null)
-    ) {
-      return {
-        tripId: tripId || '',
-        totalDistanceMeters: 0,
-        totalDurationSeconds: 0,
-        waypointOrder: [],
-        optimizedStops: [],
-        destination:
-          destLat && destLon
-            ? {
-                lat: destLat,
-                lon: destLon,
-                address: destAddr || 'Điểm giao hàng',
-              }
-            : null,
-      };
-    }
-    return null;
-  }, [order, route, tracking, tripId]);
+    const destCityCoords = getCityCoordinates(order?.route?.destCity);
+    const originCityCoords = getCityCoordinates(order?.route?.originCity);
+
+    const finalDestLat = destLat && destLat !== 0 ? destLat : destCityCoords?.lat;
+    const finalDestLon = destLon && destLon !== 0 ? destLon : destCityCoords?.lon;
+
+    const origin = originCityCoords
+      ? {
+          lat: originCityCoords.lat,
+          lon: originCityCoords.lon,
+          address: order?.route?.originCity || 'Điểm xuất phát',
+        }
+      : null;
+
+    const destination =
+      finalDestLat && finalDestLon
+        ? {
+            lat: finalDestLat,
+            lon: finalDestLon,
+            address: destAddr || order?.route?.destCity || 'Điểm giao hàng',
+          }
+        : null;
+
+    return {
+      tripId: tripId || '',
+      totalDistanceMeters: route?.totalDistanceMeters || 0,
+      totalDurationSeconds: route?.totalDurationSeconds || 0,
+      waypointOrder: [],
+      optimizedStops: [],
+      origin,
+      destination,
+    };
+  }, [order, route, tripId]);
 
   const effectiveChartPoints = React.useMemo<TemperaturePoint[]>(() => {
     if (chart?.points && chart.points.length > 0) {

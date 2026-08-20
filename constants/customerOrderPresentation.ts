@@ -87,6 +87,28 @@ const CITY_LABELS: Record<string, string> = {
   'CANTHO': 'Cần Thơ',
 };
 
+export const KNOWN_CITY_COORDINATES: Record<string, { lat: number; lon: number }> = {
+  'HO CHI MINH CITY': { lat: 10.8231, lon: 106.6297 },
+  'HO CHI MINH': { lat: 10.8231, lon: 106.6297 },
+  'HOCHIMINH': { lat: 10.8231, lon: 106.6297 },
+  'TP.HCM': { lat: 10.8231, lon: 106.6297 },
+  'TP HCM': { lat: 10.8231, lon: 106.6297 },
+  'CAN THO': { lat: 10.0452, lon: 105.7469 },
+  'CANTHO': { lat: 10.0452, lon: 105.7469 },
+  'DA NANG': { lat: 16.0544, lon: 108.2022 },
+  'DANANG': { lat: 16.0544, lon: 108.2022 },
+  'HA NOI': { lat: 21.0285, lon: 105.8542 },
+  'HANOI': { lat: 21.0285, lon: 105.8542 },
+  'DAK LAK': { lat: 12.6675, lon: 108.0383 },
+  'DAKLAK': { lat: 12.6675, lon: 108.0383 },
+};
+
+export function getCityCoordinates(cityName?: string | null): { lat: number; lon: number } | null {
+  if (!cityName) return null;
+  const key = cityName.trim().toUpperCase();
+  return KNOWN_CITY_COORDINATES[key] ?? null;
+}
+
 const CATEGORY_LABELS: Record<string, string> = {
   FROZEN_FRUITS_VEGGIES: 'Rau củ, trái cây đông lạnh',
   PHARMACEUTICALS: 'Dược phẩm',
