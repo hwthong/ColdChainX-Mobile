@@ -107,11 +107,6 @@ export default function ProfileScreen() {
             <InfoRow label="Họ tên" value={displayName} />
             <InfoRow label="Email" value={displayEmail} />
             <InfoRow label="Vai trò" value={displayRole} />
-            <InfoRow 
-              label="Mã khách hàng" 
-              value={customerId || 'Chưa có'} 
-              valueProps={{ numberOfLines: 1, ellipsizeMode: 'middle' }}
-            />
             <InfoRow label="Công ty" value={customer?.companyName || 'Chưa cập nhật'} />
             <InfoRow label="Mã số thuế" value={customer?.taxCode || 'Chưa cập nhật'} />
           </View>

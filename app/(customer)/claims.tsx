@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 
 import { colors } from '../../constants/colors';
+import { isCustomerClaimEligibleOrderStatus } from '../../constants/customerOrderPresentation';
 import { API_BASE_URL, getApiErrorMessage, getCustomerDataErrorMessage } from '../../services/apiClient';
 import {
   ClaimCategory,
@@ -32,12 +33,6 @@ import { useAuthStore } from '../../store/useAuthStore';
 
 const ORDER_PAGE_SIZE = 100;
 const MAX_EVIDENCE_IMAGES = 5;
-const CLAIMABLE_DELIVERY_STATUSES = new Set([
-  'DELIVERED',
-  'COMPLETED',
-  'PARTIALLY_DELIVERED',
-  'PARTIAL_DELIVER_OSD',
-]);
 
 const CLAIM_CATEGORIES: {
   value: ClaimCategory;
@@ -81,14 +76,6 @@ export default function CustomerClaimsScreen() {
   const [claimsError, setClaimsError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-
-  const claimedOrderIdSet = useMemo(() => new Set(Object.keys(claimsByOrderId)), [claimsByOrderId]);
-
-  // Delivered orders without claims (eligible for creating a new claim)
-  const claimableOrdersWithoutClaims = useMemo(
-    () => orders.filter((order) => isClaimableDeliveryOrder(order) && !claimedOrderIdSet.has(order.orderId)),
-    [claimedOrderIdSet, orders]
-  );
 
   const selectedOrder = useMemo(
     () =>
@@ -143,17 +130,18 @@ export default function CustomerClaimsScreen() {
       setClaimedOrders(claimedList);
       setClaimsByOrderId(newClaimsMap);
 
-      // Decide target selected order & mode
+      // Decide target selected order & mode. Create mode is only honored for a concrete eligible order.
       let targetOrderId: string | null = null;
-      let shouldBeCreateMode = requestedMode === 'create';
+      let shouldBeCreateMode = false;
 
       if (requestedOrderId && myOrderIds.has(requestedOrderId)) {
         targetOrderId = requestedOrderId;
-        if (newClaimsMap[requestedOrderId]?.length > 0) {
-          shouldBeCreateMode = requestedMode === 'create';
-        } else {
-          shouldBeCreateMode = true;
-        }
+        const requestedOrder = allOrders.find((order) => order.orderId === requestedOrderId) ?? null;
+        const requestedOrderHasClaim = (newClaimsMap[requestedOrderId]?.length ?? 0) > 0;
+        shouldBeCreateMode =
+          requestedMode === 'create' &&
+          !requestedOrderHasClaim &&
+          Boolean(requestedOrder && isClaimableDeliveryOrder(requestedOrder));
       } else {
         targetOrderId = claimedList[0]?.orderId ?? null;
       }
@@ -327,6 +315,16 @@ export default function CustomerClaimsScreen() {
       return;
     }
 
+    if (!selectedOrder || !isClaimableDeliveryOrder(selectedOrder)) {
+      setFormError('Chỉ có thể tạo khiếu nại sau khi đơn hàng đã giao thành công.');
+      return;
+    }
+
+    if ((claimsByOrderId[selectedOrderId]?.length ?? 0) > 0) {
+      setFormError('Đơn hàng này đã có khiếu nại.');
+      return;
+    }
+
     if (trimmedDescription.length < 10) {
       setFormError('Vui lòng mô tả sự cố ít nhất 10 ký tự.');
       return;
@@ -383,31 +381,23 @@ export default function CustomerClaimsScreen() {
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void refreshScreen()} tintColor={colors.brand.primary} />}
         showsVerticalScrollIndicator={false}
       >
-        {/* ── Top Header Banner ── */}
-        <View style={{ backgroundColor: colors.text.primary }} className="rounded-3xl p-5">
-          <View className="flex-row items-start justify-between gap-4">
-            <View className="flex-1">
-              <Text style={{ color: colors.brand.primaryForeground }} className="text-xl font-bold">
-                {isCreateMode ? 'Tạo khiếu nại mới' : 'Khiếu nại vận chuyển'}
-              </Text>
-              <Text className="mt-2 text-sm leading-5 text-white/70">
-                {isCreateMode
-                  ? 'Gửi thông tin sự cố hàng hóa hoặc vận chuyển để bộ phận vận hành tiếp nhận xử lý.'
-                  : 'Danh sách các đơn hàng đã có khiếu nại và tiến độ xử lý giải quyết bồi thường.'}
-              </Text>
+        {isCreateMode ? (
+          <View style={{ backgroundColor: colors.text.primary }} className="rounded-3xl p-5">
+            <View className="flex-row items-start justify-between gap-4">
+              <View className="flex-1">
+                <Text style={{ color: colors.brand.primaryForeground }} className="text-xl font-bold">
+                  Tạo khiếu nại
+                </Text>
+                <Text className="mt-2 text-sm leading-5 text-white/70">
+                  Gửi thông tin sự cố hàng hóa hoặc vận chuyển cho đơn hàng đã giao thành công.
+                </Text>
+              </View>
+              <View className="h-11 w-11 items-center justify-center rounded-2xl bg-white/10">
+                <Ionicons name="create-outline" size={24} color={colors.brand.primaryForeground} />
+              </View>
             </View>
-            <View className="h-11 w-11 items-center justify-center rounded-2xl bg-white/10">
-              <Ionicons
-                name={isCreateMode ? 'create-outline' : 'alert-circle-outline'}
-                size={24}
-                color={colors.brand.primaryForeground}
-              />
-            </View>
-          </View>
 
-          {/* Banner Action Buttons */}
-          <View className="mt-4 flex-row items-center gap-3">
-            {isCreateMode ? (
+            <View className="mt-4 flex-row items-center gap-3">
               <Pressable
                 onPress={() => {
                   setIsCreateMode(false);
@@ -423,22 +413,9 @@ export default function CustomerClaimsScreen() {
                 <Ionicons name="arrow-back" size={16} color="#FFFFFF" />
                 <Text className="text-sm font-bold text-white">Xem danh sách khiếu nại</Text>
               </Pressable>
-            ) : claimableOrdersWithoutClaims.length > 0 ? (
-              <Pressable
-                onPress={() => {
-                  setIsCreateMode(true);
-                  setFormError(null);
-                  setSelectedOrderId(claimableOrdersWithoutClaims[0].orderId);
-                }}
-                style={{ backgroundColor: colors.brand.primary }}
-                className="flex-row items-center gap-2 rounded-xl px-4 py-2.5"
-              >
-                <Ionicons name="add-circle-outline" size={16} color={colors.text.onPrimary} />
-                <Text style={{ color: colors.text.onPrimary }} className="text-sm font-bold">Tạo khiếu nại mới</Text>
-              </Pressable>
-            ) : null}
+            </View>
           </View>
-        </View>
+        ) : null}
 
         {ordersError ? <ErrorBlock message={ordersError} onRetry={loadData} /> : null}
         {successMessage ? <SuccessBlock message={successMessage} /> : null}
@@ -446,42 +423,6 @@ export default function CustomerClaimsScreen() {
         {/* ── CREATE MODE ── */}
         {isCreateMode ? (
           <View className="gap-4">
-            {claimableOrdersWithoutClaims.length > 1 && !requestedOrderId ? (
-              <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="rounded-2xl border p-5">
-                <View className="mb-3 flex-row items-center gap-2">
-                  <Ionicons name="receipt-outline" size={18} color={colors.brand.primary} />
-                  <Text style={{ color: colors.text.primary }} className="text-base font-bold">Chọn đơn hàng cần khiếu nại</Text>
-                </View>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 4 }}>
-                  {claimableOrdersWithoutClaims.map((order) => {
-                    const selected = order.orderId === selectedOrderId;
-                    return (
-                      <Pressable
-                        key={order.orderId}
-                        onPress={() => {
-                          setSelectedOrderId(order.orderId);
-                          setFormError(null);
-                        }}
-                        style={{
-                          backgroundColor: selected ? colors.surface.selected : colors.surface.page,
-                          borderColor: selected ? colors.border.selected : colors.border.default,
-                          width: 220,
-                        }}
-                        className="rounded-2xl border p-4"
-                      >
-                        <Text style={{ color: selected ? colors.text.brand : colors.text.primary }} className="font-bold" numberOfLines={1}>
-                          {order.trackingCode}
-                        </Text>
-                        <Text style={{ color: colors.text.secondary }} className="mt-1 text-sm" numberOfLines={2}>
-                          {order.itemName}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </ScrollView>
-              </View>
-            ) : null}
-
             <ClaimForm
               selectedOrderLabel={selectedOrderLabel}
               claimType={claimType}
@@ -509,15 +450,8 @@ export default function CustomerClaimsScreen() {
                 icon="chatbox-ellipses-outline"
                 title="Chưa có khiếu nại nào"
                 message="Trang này chỉ hiển thị các đơn hàng đã có khiếu nại. Khi có sự cố về hàng hóa hoặc thời gian giao, bạn có thể tạo khiếu nại từ chi tiết đơn hàng."
-                actionLabel={claimableOrdersWithoutClaims.length > 0 ? 'Tạo khiếu nại mới' : 'Xem danh sách đơn hàng'}
-                onAction={() => {
-                  if (claimableOrdersWithoutClaims.length > 0) {
-                    setIsCreateMode(true);
-                    setSelectedOrderId(claimableOrdersWithoutClaims[0].orderId);
-                  } else {
-                    router.push('/(customer)/status' as never);
-                  }
-                }}
+                actionLabel="Xem danh sách đơn hàng"
+                onAction={() => router.push('/(customer)/status' as never)}
               />
             ) : (
               <>
@@ -936,7 +870,7 @@ async function fetchAllCustomerOrders(): Promise<CustomerOrderSummaryResponse[]>
 }
 
 function isClaimableDeliveryOrder(order: CustomerOrderSummaryResponse) {
-  return CLAIMABLE_DELIVERY_STATUSES.has(order.status?.trim().toUpperCase());
+  return isCustomerClaimEligibleOrderStatus(order.status);
 }
 
 function getClaimCategoryLabel(value?: string | null) {

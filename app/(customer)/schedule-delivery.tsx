@@ -51,8 +51,9 @@ export default function ScheduleDeliveryScreen() {
   const [error, setError] = useState<string | null>(null);
   const [warehouseMessage, setWarehouseMessage] = useState<string | null>(null);
   const submitLockRef = useRef(false);
+  const loadRequestIdRef = useRef(0);
 
-  const displayedAsn = createdAsn ?? existingAsn;
+  const displayedAsn = getAsnForOrder(createdAsn, orderId) ?? getAsnForOrder(existingAsn, orderId);
   const routeCutOffTime = order?.route?.cutOffTime ?? null;
   const firstSelectableDropoffDateTime = getFirstSelectableDropoffDateTime(routeCutOffTime);
   const latestSelectableDropoffDateTime = getLatestAllowedDropoffDateTime(dropoffDateTime, routeCutOffTime);
@@ -66,12 +67,35 @@ export default function ScheduleDeliveryScreen() {
   const canSubmit =
     !isSubmitting &&
     hasVerifiedAsnState &&
-    !existingAsn &&
+    !displayedAsn &&
     Boolean(selectedWarehouseId) &&
     Boolean(order && isContractSigned(order.status)) &&
     isDropoffDateTimeValid;
 
+  const resetOrderScopedState = useCallback(() => {
+    setOrder(null);
+    setExistingAsn(null);
+    setCreatedAsn(null);
+    setWarehouses([]);
+    setSelectedWarehouseId('');
+    setPhone('');
+    setDropoffDateTime(getDefaultDropoffDateTime());
+    setVisiblePicker(null);
+    setHasVerifiedAsnState(false);
+    setError(null);
+    setWarehouseMessage(null);
+    submitLockRef.current = false;
+  }, []);
+
   const loadScheduleContext = useCallback(async () => {
+    const requestId = loadRequestIdRef.current + 1;
+    loadRequestIdRef.current = requestId;
+
+    const isStaleRequest = () => loadRequestIdRef.current !== requestId;
+
+    setIsLoading(true);
+    resetOrderScopedState();
+
     if (!accessToken || !orderId || !customerId) {
       setHasVerifiedAsnState(false);
       setError('Không tìm thấy phiên đăng nhập, mã khách hàng hoặc mã đơn hàng.');
@@ -80,12 +104,9 @@ export default function ScheduleDeliveryScreen() {
     }
 
     try {
-      setIsLoading(true);
-      setHasVerifiedAsnState(false);
-      setError(null);
-      setWarehouseMessage(null);
-
       const orderResponse = await getOrderById(accessToken, orderId);
+      if (isStaleRequest()) return;
+
       if (!orderResponse.success || !orderResponse.data) {
         throw new Error(orderResponse.message || 'Không thể lấy thông tin đơn hàng.');
       }
@@ -99,11 +120,13 @@ export default function ScheduleDeliveryScreen() {
       }
 
       const asnResponse = await getCustomerAsns(accessToken, customerId);
+      if (isStaleRequest()) return;
+
       if (!asnResponse.success) {
         throw new Error(asnResponse.message || 'Không thể kiểm tra lịch giao kho hiện có.');
       }
 
-      const orderAsns = (asnResponse.data ?? []).filter((asn) => asn.orderId === orderId);
+      const orderAsns = (asnResponse.data ?? []).filter((asn) => isSameOrderId(asn.orderId, orderId));
       const matchedAsn =
         (asnId ? orderAsns.find((asn) => asn.asnId === asnId) : null) ?? orderAsns[0] ?? null;
 
@@ -119,6 +142,8 @@ export default function ScheduleDeliveryScreen() {
       }
 
       const warehouseResponse = await searchWarehousesByOrigin(accessToken, originCity);
+      if (isStaleRequest()) return;
+
       const activeWarehouses = (warehouseResponse.data?.data ?? []).filter(
         (warehouse) => warehouse.status.toUpperCase() === 'ACTIVE'
       );
@@ -140,9 +165,11 @@ export default function ScheduleDeliveryScreen() {
     } catch (loadError) {
       setError(getApiErrorMessage(loadError));
     } finally {
-      setIsLoading(false);
+      if (!isStaleRequest()) {
+        setIsLoading(false);
+      }
     }
-  }, [accessToken, asnId, customerId, orderId]);
+  }, [accessToken, asnId, customerId, orderId, resetOrderScopedState]);
 
   useEffect(() => {
     loadScheduleContext();
@@ -183,7 +210,7 @@ export default function ScheduleDeliveryScreen() {
       return;
     }
 
-    if (existingAsn) {
+    if (displayedAsn) {
       setError('Đơn hàng này đã có lịch giao kho.');
       return;
     }
@@ -231,7 +258,7 @@ export default function ScheduleDeliveryScreen() {
         throw new Error(refreshedAsnResponse.message || 'ASN đã được tạo nhưng không thể tải lại dữ liệu từ máy chủ.');
       }
 
-      const serverAsn = (refreshedAsnResponse.data ?? []).find((asn) => asn.orderId === orderId);
+      const serverAsn = findAsnForOrder(refreshedAsnResponse.data ?? [], orderId);
       if (!serverAsn) {
         throw new Error('ASN đã được tạo nhưng máy chủ chưa trả về lịch giao kho của đơn hàng.');
       }
@@ -248,7 +275,7 @@ export default function ScheduleDeliveryScreen() {
             throw new Error(refreshedAsnResponse.message || 'Không thể tải lại lịch giao kho hiện có.');
           }
 
-          const serverAsn = (refreshedAsnResponse.data ?? []).find((asn) => asn.orderId === orderId);
+          const serverAsn = findAsnForOrder(refreshedAsnResponse.data ?? [], orderId);
           if (serverAsn) {
             setCreatedAsn(null);
             setExistingAsn(serverAsn);
@@ -749,6 +776,18 @@ function isSameCalendarDate(left: Date, right: Date) {
 
 function getSingleParam(value?: string | string[]) {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function getAsnForOrder(asn: AsnResponse | null, orderId?: string | null) {
+  return isSameOrderId(asn?.orderId, orderId) ? asn : null;
+}
+
+function findAsnForOrder(asns: AsnResponse[], orderId?: string | null) {
+  return asns.find((asn) => isSameOrderId(asn.orderId, orderId)) ?? null;
+}
+
+function isSameOrderId(left?: string | null, right?: string | null) {
+  return Boolean(left && right && left.trim().toLowerCase() === right.trim().toLowerCase());
 }
 
 function isContractSigned(status: string) {
