@@ -215,10 +215,22 @@ export async function getIncidentDetail(token: string, incidentId: string) {
 }
 
 // 4. Driver tiếp tục chuyến không cần cứu hộ
-export async function continueTrip(token: string, incidentId: string, note?: string) {
+export async function continueTrip(
+  token: string,
+  incidentId: string,
+  handlingNote?: string,
+  expectedDelayMinutes = 0
+) {
   return apiRequest<ApiResponse<any>>(
     `/api/v1/incidents/${incidentId}/continue-trip`,
-    { method: 'POST', body: { note }, headers: { Authorization: `Bearer ${token}` } }
+    {
+      method: 'POST',
+      body: {
+        handlingNote: handlingNote?.trim() || 'Đã tự xử lý tại chỗ, tiếp tục hành trình.',
+        expectedDelayMinutes,
+      },
+      headers: { Authorization: `Bearer ${token}` },
+    }
   );
 }
 
