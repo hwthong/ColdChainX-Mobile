@@ -779,13 +779,14 @@ function getVehiclePosition(tracking: TripTracking | null) {
   return isValidLatitude(latitude) && isValidLongitude(longitude) ? { latitude, longitude } : null;
 }
 
-function getDeviceState(tracking: TripTracking) {
+function getDeviceState(tracking: TripTracking | null | undefined) {
+  if (!tracking) return 'Chưa kết nối';
   if (tracking.device?.isOnline === true) return 'Trực tuyến';
   if (tracking.device?.isOnline === false) return 'Ngoại tuyến';
   const status = tracking.device?.status?.toUpperCase();
   if (status === 'ONLINE') return 'Trực tuyến';
   if (status === 'OFFLINE') return 'Ngoại tuyến';
-  return tracking.device?.status ? `Không xác định (${tracking.device.status})` : 'Không xác định';
+  return tracking.device?.status ? `Không xác định (${tracking.device.status})` : 'Chưa kết nối';
 }
 
 function formatDoorState(value: boolean | null) {
