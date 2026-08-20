@@ -885,7 +885,6 @@ export default function CreateOrderScreen() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
-          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
           onScroll={(event) => {
             scrollOffsetYRef.current = event.nativeEvent.contentOffset.y;
           }}
