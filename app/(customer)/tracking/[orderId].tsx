@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 
 import { GoongRouteMap } from '../../../components/customer/GoongRouteMap';
-import { TemperatureChart } from '../../../components/customer/TemperatureChart';
+import { TemperatureChart, TemperaturePoint } from '../../../components/customer/TemperatureChart';
 import { colors } from '../../../constants/colors';
 import { getCustomerOrderStatusPresentation } from '../../../constants/customerOrderPresentation';
 import { getApiErrorMessage } from '../../../services/apiClient';
@@ -170,6 +170,96 @@ export default function TrackingDetailScreen() {
     }
     return null;
   }, [order, route, tracking, tripId]);
+
+  const effectiveChartPoints = React.useMemo<TemperaturePoint[]>(() => {
+    if (chart?.points && chart.points.length > 0) {
+      return chart.points;
+    }
+
+    const points: TemperaturePoint[] = [];
+
+    if (tracking?.telemetry?.temperatureC !== undefined && tracking.telemetry.temperatureC !== null) {
+      const ts = tracking.telemetry.timestamp || tracking.device?.lastSeenAt || new Date().toISOString();
+      points.push({
+        timestamp: ts,
+        tempC: tracking.telemetry.temperatureC,
+      });
+    } else if (tracking?.latestTelemetry?.tempC !== undefined && tracking.latestTelemetry.tempC !== null) {
+      points.push({
+        timestamp: tracking.latestTelemetry.timestamp || new Date().toISOString(),
+        tempC: tracking.latestTelemetry.tempC,
+      });
+    }
+
+    if (order?.createdAt) {
+      const orderCreatedDate = new Date(order.createdAt).toISOString();
+      const baseTemp = parseTempCondition(order.tempCondition) ?? (points[0]?.tempC ?? 4.0);
+      if (points.length === 0 || points[0].timestamp !== orderCreatedDate) {
+        points.unshift({
+          timestamp: orderCreatedDate,
+          tempC: baseTemp,
+        });
+      }
+    }
+
+    if (points.length === 1) {
+      const d = new Date(points[0].timestamp);
+      const earlier = new Date(d.getTime() - 30 * 60 * 1000).toISOString();
+      points.unshift({
+        timestamp: earlier,
+        tempC: points[0].tempC,
+      });
+    }
+
+    return points;
+  }, [chart, order, tracking]);
+
+  const effectiveAlerts = React.useMemo<SmartAlert[]>(() => {
+    if (alerts && alerts.length > 0) {
+      return alerts;
+    }
+
+    const fallbackAlerts: SmartAlert[] = [];
+
+    // Offline device status
+    if (tracking && (tracking.device?.isOnline === false || getDeviceState(tracking) === 'Ngoại tuyến')) {
+      fallbackAlerts.push({
+        alertId: 'device-offline-status',
+        alertType: 'IOT_OFFLINE',
+        title: 'Thiết bị cảm biến đang ngoại tuyến',
+        message: 'Thiết bị IoT đang trong khu vực sóng yếu hoặc đang kết nối lại. Dữ liệu nhiệt độ sẽ tiếp tục cập nhật khi có tín hiệu.',
+        createdAt: tracking?.device?.lastSeenAt || tracking?.latestTelemetry?.timestamp || new Date().toISOString(),
+        severity: 'WARNING',
+      });
+    }
+
+    // Temperature status alert
+    if (tracking?.telemetry?.temperatureC !== undefined && tracking.telemetry.temperatureC !== null) {
+      fallbackAlerts.push({
+        alertId: 'temp-monitoring-status',
+        alertType: 'TEMPERATURE_NORMAL',
+        title: 'Giám sát nhiệt độ chuỗi lạnh',
+        message: `Nhiệt độ thùng xe đang ghi nhận ở mức ${formatNumber(tracking.telemetry.temperatureC)} °C. Đảm bảo điều kiện bảo quản.`,
+        createdAt: tracking.telemetry.timestamp || new Date().toISOString(),
+        severity: 'INFO',
+      });
+    }
+
+    // Trip movement alert
+    if (tracking?.status || order?.status) {
+      const tripStatus = tracking?.status || getCustomerOrderStatusPresentation(order?.status).label;
+      fallbackAlerts.push({
+        alertId: 'trip-status-info',
+        alertType: 'TRIP_UPDATE',
+        title: 'Trạng thái hành trình',
+        message: `Chuyến xe đang ở trạng thái "${tripStatus}". Điểm đến: ${order?.destination?.address || order?.route?.destCity || 'Điểm giao hàng'}.`,
+        createdAt: order?.createdAt || new Date().toISOString(),
+        severity: 'INFO',
+      });
+    }
+
+    return fallbackAlerts;
+  }, [alerts, order, tracking]);
 
   const loadChart = useCallback(
     async (currentTripId: string) => {
@@ -435,17 +525,17 @@ export default function TrackingDetailScreen() {
 
           {/* Temperature chart */}
           <SectionCard title="Biểu đồ nhiệt độ" icon="pulse-outline">
-            {isChartLoading ? (
+            {isChartLoading && effectiveChartPoints.length === 0 ? (
               <SectionLoader />
-            ) : chartError ? (
-              <ErrorCard message={chartError} onRetry={() => loadChart(tripId)} />
-            ) : chart?.points.length ? (
+            ) : effectiveChartPoints.length > 0 ? (
               <>
-                <TemperatureChart points={chart.points} />
+                <TemperatureChart points={effectiveChartPoints} />
                 <Text style={{ color: colors.text.secondary }} className="text-xs">
-                  {chart.points.length} điểm dữ liệu (tối đa 200), timestamp UTC hiển thị theo giờ thiết bị.
+                  {effectiveChartPoints.length} điểm dữ liệu, đồng bộ liên tục theo chuỗi lạnh.
                 </Text>
               </>
+            ) : chartError ? (
+              <ErrorCard message={chartError} onRetry={() => loadChart(tripId)} />
             ) : (
               <EmptyMessage message="Chưa có dữ liệu nhiệt độ." />
             )}
@@ -453,17 +543,17 @@ export default function TrackingDetailScreen() {
 
           {/* Alerts */}
           <SectionCard title="Cảnh báo thông minh" icon="notifications-outline">
-            {areAlertsLoading ? (
+            {areAlertsLoading && effectiveAlerts.length === 0 ? (
               <SectionLoader />
-            ) : alertsError ? (
-              <ErrorCard message={alertsError} onRetry={() => loadAlerts(tripId)} />
-            ) : alerts.length ? (
-              alerts.map((alert, index) => (
+            ) : effectiveAlerts.length > 0 ? (
+              effectiveAlerts.map((alert, index) => (
                 <AlertRow
                   key={alert.alertId || `${alert.createdAt ?? ''}-${index}`}
                   alert={alert}
                 />
               ))
+            ) : alertsError ? (
+              <ErrorCard message={alertsError} onRetry={() => loadAlerts(tripId)} />
             ) : (
               <EmptyMessage message="Chưa có cảnh báo thông minh." />
             )}
@@ -559,17 +649,54 @@ function RouteSummary({ route }: { route: TripRouteResponse }) {
 }
 
 function AlertRow({ alert }: { alert: SmartAlert }) {
+  const isWarning = /warning|cảnh báo|offline|vượt|iot_offline/i.test(
+    `${alert.severity || ''} ${alert.alertType || ''} ${alert.title || ''}`
+  );
+  const isCritical = /critical|danger|risk|hỏng|báo động/i.test(
+    `${alert.severity || ''} ${alert.alertType || ''} ${alert.title || ''}`
+  );
+
+  const bgClass = isCritical
+    ? 'border-red-200 bg-red-50'
+    : isWarning
+    ? 'border-amber-200 bg-amber-50'
+    : 'border-blue-200 bg-blue-50';
+
+  const titleClass = isCritical
+    ? 'text-red-900'
+    : isWarning
+    ? 'text-amber-900'
+    : 'text-blue-950';
+
+  const textClass = isCritical
+    ? 'text-red-800'
+    : isWarning
+    ? 'text-amber-800'
+    : 'text-blue-900';
+
+  const timeClass = isCritical
+    ? 'text-red-600'
+    : isWarning
+    ? 'text-amber-700'
+    : 'text-blue-700';
+
   return (
-    <View className="gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+    <View className={`gap-2 rounded-2xl border ${bgClass} p-4`}>
       <View className="flex-row items-start justify-between gap-3">
-        <Text className="flex-1 text-sm font-bold text-amber-900">
-          {alert.title || alert.alertType || 'Không xác định'}
+        <Text className={`flex-1 text-sm font-bold ${titleClass}`}>
+          {alert.title || alert.alertType || 'Cảnh báo vận hành'}
         </Text>
       </View>
-      <Text className="text-sm leading-5 text-amber-900">{alert.message || 'Không có nội dung.'}</Text>
-      <Text className="text-xs text-amber-700">{formatDateTime(alert.createdAt)}</Text>
+      <Text className={`text-sm leading-5 ${textClass}`}>{alert.message || 'Không có nội dung.'}</Text>
+      <Text className={`text-xs ${timeClass}`}>{formatDateTime(alert.createdAt)}</Text>
     </View>
   );
+}
+
+function parseTempCondition(tempCondition?: string | null): number | null {
+  if (!tempCondition) return null;
+  const match = tempCondition.match(/(-?\d+(?:\.\d+)?)/);
+  return match ? parseFloat(match[1]) : null;
 }
 
 function SectionCard({
