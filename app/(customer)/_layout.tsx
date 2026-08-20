@@ -108,6 +108,7 @@ export default function CustomerLayout() {
         name="chat/[orderId]"
         options={{
           href: null,
+          tabBarStyle: { display: 'none' },
         }}
       />
       <Tabs.Screen

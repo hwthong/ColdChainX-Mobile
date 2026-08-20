@@ -93,9 +93,16 @@ const CATEGORY_LABELS: Record<string, string> = {
   MEAT_SEAFOOD: 'Thịt, hải sản',
 };
 
+const CUSTOMER_CLAIM_ELIGIBLE_ORDER_STATUSES = new Set(['DELIVERED']);
+
 export function getCustomerOrderStatusPresentation(status?: string | null): StatusPresentation {
   const normalizedStatus = status?.trim().toUpperCase();
   return normalizedStatus ? STATUS_PRESENTATIONS[normalizedStatus] ?? DEFAULT_STATUS_PRESENTATION : DEFAULT_STATUS_PRESENTATION;
+}
+
+export function isCustomerClaimEligibleOrderStatus(status?: string | null): boolean {
+  const normalizedStatus = status?.trim().toUpperCase();
+  return normalizedStatus ? CUSTOMER_CLAIM_ELIGIBLE_ORDER_STATUSES.has(normalizedStatus) : false;
 }
 
 export function getContractStatusPresentation(status?: string | null): StatusPresentation {
