@@ -13,7 +13,9 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { colors } from '../../constants/colors';
 import { getApiErrorMessage } from '../../services/apiClient';
+import { getCustomerAsns, type AsnResponse } from '../../services/asnApi';
 import { customerApi, CustomerOrderSummaryResponse } from '../../services/customerApi';
+import { getCustomerIdFromToken } from '../../services/jwt';
 import { useAuthStore } from '../../store/useAuthStore';
 import {
   CUSTOMER_ORDER_TABS,
@@ -30,9 +32,12 @@ export default function StatusScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ tab?: string }>();
   const accessToken = useAuthStore((state) => state.token);
+  const storedCustomerId = useAuthStore((state) => state.customerId ?? state.user?.customerId ?? null);
+  const customerId = storedCustomerId ?? (accessToken ? getCustomerIdFromToken(accessToken) : null);
 
   const [activeTab, setActiveTab] = useState<CustomerOrderTabGroupKey>('ALL');
   const [allOrders, setAllOrders] = useState<CustomerOrderSummaryResponse[]>([]);
+  const [asnsByOrderId, setAsnsByOrderId] = useState<Record<string, AsnResponse>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +59,7 @@ export default function StatusScreen() {
     if (!accessToken) {
       setError('Phiên đăng nhập đã hết hạn.');
       setAllOrders([]);
+      setAsnsByOrderId({});
       setIsLoading(false);
       setIsRefreshing(false);
       return;
@@ -61,16 +67,30 @@ export default function StatusScreen() {
 
     try {
       setError(null);
-      const orders = await fetchAllCustomerOrders();
+      if (!customerId) {
+        throw new Error('Không tìm thấy mã khách hàng để kiểm tra ASN hiện có.');
+      }
+
+      const [orders, asnResponse] = await Promise.all([
+        fetchAllCustomerOrders(),
+        getCustomerAsns(accessToken, customerId),
+      ]);
+
+      if (!asnResponse.success) {
+        throw new Error(asnResponse.message || 'Không thể kiểm tra ASN hiện có.');
+      }
+
       setAllOrders(orders);
+      setAsnsByOrderId(buildAsnsByOrderId(asnResponse.data ?? []));
     } catch (err) {
       setError(getApiErrorMessage(err));
       setAllOrders([]);
+      setAsnsByOrderId({});
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [accessToken]);
+  }, [accessToken, customerId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -127,6 +147,7 @@ export default function StatusScreen() {
     const categoryLabel = getCustomerOrderCategoryLabel(item.category);
     const isNeedsUpdate = item.status?.trim().toUpperCase() === 'NEEDS_UPDATE';
     const isContractSigned = item.status?.trim().toUpperCase() === 'CONTRACT_SIGNED';
+    const existingAsn = asnsByOrderId[getOrderIdKey(item.orderId)];
 
     return (
       <Pressable
@@ -213,14 +234,16 @@ export default function StatusScreen() {
                 </View>
               ) : null}
 
-              {/* Action Button for CONTRACT_SIGNED -> Tạo ASN */}
+              {/* Action Button for CONTRACT_SIGNED -> Tạo/Xem ASN */}
               {isContractSigned ? (
                 <Pressable
                   onPress={(event) => {
                     event.stopPropagation();
                     router.push({
                       pathname: '/(customer)/schedule-delivery',
-                      params: { orderId: item.orderId },
+                      params: existingAsn
+                        ? { orderId: item.orderId, asnId: existingAsn.asnId }
+                        : { orderId: item.orderId },
                     } as never);
                   }}
                   style={{ backgroundColor: colors.brand.primary }}
@@ -228,7 +251,7 @@ export default function StatusScreen() {
                 >
                   <Ionicons name="document-text-outline" size={18} color={colors.text.onPrimary} />
                   <Text style={{ color: colors.text.onPrimary }} className="font-bold">
-                    Tạo ASN giao kho
+                    {existingAsn ? 'Xem ASN' : 'Tạo ASN giao kho'}
                   </Text>
                 </Pressable>
               ) : null}
@@ -367,6 +390,21 @@ async function fetchAllCustomerOrders(): Promise<CustomerOrderSummaryResponse[]>
     ...(firstPage.data ?? []),
     ...remainingPages.flatMap((page) => page.data ?? []),
   ];
+}
+
+function buildAsnsByOrderId(asns: AsnResponse[]) {
+  return asns.reduce<Record<string, AsnResponse>>((byOrderId, asn) => {
+    const orderIdKey = getOrderIdKey(asn.orderId);
+    if (orderIdKey) {
+      byOrderId[orderIdKey] = asn;
+    }
+
+    return byOrderId;
+  }, {});
+}
+
+function getOrderIdKey(orderId?: string | null) {
+  return orderId?.trim().toLowerCase() ?? '';
 }
 
 function StatusBadge({ status }: { status: string }) {
