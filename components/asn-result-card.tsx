@@ -242,4 +242,3 @@ function translateAsnStatus(status?: string | null): { label: string; color: str
       return { label: status || 'Đã đặt lịch', color: 'text-slate-700', bg: 'bg-slate-100' };
   }
 }
-
