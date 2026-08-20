@@ -3,8 +3,14 @@ import { ActivityIndicator, Keyboard, Pressable, Text, TextInput, View } from 'r
 import { Ionicons } from '@expo/vector-icons';
 
 import { colors } from '../../../../constants/colors';
-import { customerControl, customerRadius } from '../../../../constants/customerTheme';
-import { searchGoongAddressSuggestions, type GoongAddressSuggestion } from '../../../../services/goongPlacesApi';
+import { customerRadius } from '../../../../constants/customerTheme';
+import {
+  getGoongPlaceDetail,
+  searchGoongAddressSuggestions,
+  type GoongAddressSuggestion,
+  type GoongPlaceDetail,
+} from '../../../../services/goongPlacesApi';
+import { DeliveryLocationPreview } from './DeliveryLocationPreview';
 
 type AddressAutocompleteFieldProps = {
   value: string;
@@ -18,6 +24,7 @@ type AddressAutocompleteFieldProps = {
 };
 
 type SearchState = 'idle' | 'loading' | 'empty' | 'error';
+type LocationState = 'idle' | 'loading' | 'ready' | 'error';
 
 export const AddressAutocompleteField = forwardRef<TextInput, AddressAutocompleteFieldProps>(function AddressAutocompleteField(
   {
@@ -35,12 +42,20 @@ export const AddressAutocompleteField = forwardRef<TextInput, AddressAutocomplet
   const [isFocused, setIsFocused] = useState(false);
   const [suggestions, setSuggestions] = useState<GoongAddressSuggestion[]>([]);
   const [searchState, setSearchState] = useState<SearchState>('idle');
+  const [locationState, setLocationState] = useState<LocationState>('idle');
+  const [selectedSuggestion, setSelectedSuggestion] = useState<GoongAddressSuggestion | null>(null);
+  const [selectedLocation, setSelectedLocation] = useState<GoongPlaceDetail | null>(null);
   const requestIdRef = useRef(0);
+  const locationRequestIdRef = useRef(0);
   const selectedAddressRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (selectedAddressRef.current && value === selectedAddressRef.current) return;
+    locationRequestIdRef.current += 1;
     selectedAddressRef.current = null;
+    setSelectedSuggestion(null);
+    setSelectedLocation(null);
+    setLocationState('idle');
 
     const rawQuery = value.trim();
     if (rawQuery.length < 3) {
@@ -77,19 +92,52 @@ export const AddressAutocompleteField = forwardRef<TextInput, AddressAutocomplet
 
   const clearValue = () => {
     requestIdRef.current += 1;
+    locationRequestIdRef.current += 1;
     selectedAddressRef.current = null;
     setSuggestions([]);
     setSearchState('idle');
+    setSelectedSuggestion(null);
+    setSelectedLocation(null);
+    setLocationState('idle');
     onChangeText('');
+  };
+
+  const resolveSelectedLocation = async (suggestion: GoongAddressSuggestion) => {
+    const currentRequestId = locationRequestIdRef.current + 1;
+    locationRequestIdRef.current = currentRequestId;
+    setLocationState('loading');
+    setSelectedLocation(null);
+
+    try {
+      const location = await getGoongPlaceDetail(suggestion.placeId);
+      if (locationRequestIdRef.current !== currentRequestId) return;
+      setSelectedLocation(location);
+      setLocationState('ready');
+    } catch {
+      if (locationRequestIdRef.current !== currentRequestId) return;
+      setSelectedLocation(null);
+      setLocationState('error');
+    }
   };
 
   const selectSuggestion = (suggestion: GoongAddressSuggestion) => {
     requestIdRef.current += 1;
     selectedAddressRef.current = suggestion.address.trim();
+    setSelectedSuggestion(suggestion);
     setSuggestions([]);
     setSearchState('idle');
     Keyboard.dismiss();
     onSelectAddress(suggestion.address);
+    void resolveSelectedLocation(suggestion);
+  };
+
+  const changeValue = (nextValue: string) => {
+    locationRequestIdRef.current += 1;
+    selectedAddressRef.current = null;
+    setSelectedSuggestion(null);
+    setSelectedLocation(null);
+    setLocationState('idle');
+    onChangeText(nextValue);
   };
 
   const showSuggestions = value.trim().length >= 3 && !disabled;
@@ -121,7 +169,7 @@ export const AddressAutocompleteField = forwardRef<TextInput, AddressAutocomplet
           className="flex-1 px-3 text-[14px] font-medium"
           style={{ minHeight: 54, color: colors.text.primary }}
           value={value}
-          onChangeText={onChangeText}
+          onChangeText={changeValue}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
           editable={!disabled}
@@ -180,6 +228,61 @@ export const AddressAutocompleteField = forwardRef<TextInput, AddressAutocomplet
       ) : null}
       {showSuggestions && searchState === 'empty' ? <Text style={{ color: colors.text.secondary }} className="text-xs leading-5">Không tìm thấy địa chỉ phù hợp.</Text> : null}
       {showSuggestions && searchState === 'error' ? <Text accessibilityLiveRegion="polite" style={{ color: colors.text.secondary }} className="text-xs leading-5">Không thể tải gợi ý địa chỉ. Bạn vẫn có thể nhập địa chỉ thủ công.</Text> : null}
+      {!selectedSuggestion && searchState !== 'error' ? (
+        <View className="flex-row items-start gap-2 px-1 pt-1">
+          <Ionicons name="map-outline" size={15} color={colors.text.muted} />
+          <Text style={{ color: colors.text.muted }} className="flex-1 text-[11px] leading-4">
+            Chọn một địa chỉ trong danh sách gợi ý để kiểm tra vị trí trên bản đồ.
+          </Text>
+        </View>
+      ) : null}
+      {locationState === 'loading' ? (
+        <View
+          accessibilityLiveRegion="polite"
+          className="flex-row items-center gap-3 px-4 py-3.5"
+          style={{
+            backgroundColor: colors.surface.page,
+            borderColor: colors.border.default,
+            borderRadius: customerRadius.control,
+            borderWidth: 1,
+          }}
+        >
+          <ActivityIndicator size="small" color={colors.brand.primary} />
+          <Text style={{ color: colors.text.secondary }} className="flex-1 text-xs font-medium">
+            Đang xác định chính xác vị trí giao hàng...
+          </Text>
+        </View>
+      ) : null}
+      {locationState === 'error' && selectedSuggestion ? (
+        <View
+          accessibilityLiveRegion="polite"
+          className="gap-3 px-4 py-3.5"
+          style={{
+            backgroundColor: '#FFF7ED',
+            borderColor: '#FED7AA',
+            borderRadius: customerRadius.control,
+            borderWidth: 1,
+          }}
+        >
+          <View className="flex-row items-start gap-2.5">
+            <Ionicons name="warning-outline" size={18} color="#C2410C" />
+            <Text className="flex-1 text-xs font-medium leading-5 text-orange-800">
+              Chưa thể tải vị trí trên bản đồ. Hãy thử lại hoặc chọn một địa chỉ khác.
+            </Text>
+          </View>
+          <Pressable
+            onPress={() => void resolveSelectedLocation(selectedSuggestion)}
+            accessibilityRole="button"
+            accessibilityLabel="Thử tải lại vị trí giao hàng"
+            className="min-h-10 self-start justify-center rounded-xl border border-orange-300 px-3"
+          >
+            <Text className="text-xs font-bold text-orange-800">Thử lại</Text>
+          </Pressable>
+        </View>
+      ) : null}
+      {locationState === 'ready' && selectedLocation ? (
+        <DeliveryLocationPreview location={selectedLocation} />
+      ) : null}
     </View>
   );
 });

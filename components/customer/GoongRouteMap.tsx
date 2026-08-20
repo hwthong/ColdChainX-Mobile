@@ -19,6 +19,7 @@ type GoongRouteMapProps = {
   route: TripRouteResponse;
   height?: number;
   isFullScreen?: boolean;
+  showRouteDataNotice?: boolean;
   vehiclePosition?: {
     latitude: number;
     longitude: number;
@@ -38,6 +39,7 @@ export function GoongRouteMap({
   route,
   height = 300,
   isFullScreen = false,
+  showRouteDataNotice = true,
   vehiclePosition = null,
 }: GoongRouteMapProps) {
   const [mapFailure, setMapFailure] = useState<MapBridgeMessage | null>(null);
@@ -117,7 +119,7 @@ export function GoongRouteMap({
             : { height, backgroundColor: colors.surface.page }
         }
       />
-      {!isFullScreen && routeCoordinates.length < 2 ? (
+      {showRouteDataNotice && !isFullScreen && routeCoordinates.length < 2 ? (
         <View style={{ borderTopColor: colors.border.default }} className="border-t bg-amber-50 px-4 py-3">
           <Text className="text-xs font-medium leading-5 text-amber-800">
             API chưa trả polyline; bản đồ hiện chỉ hiển thị các điểm tuyến dự kiến.
