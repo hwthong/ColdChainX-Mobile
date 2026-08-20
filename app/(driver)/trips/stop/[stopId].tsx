@@ -1190,6 +1190,17 @@ export default function StopDetailScreen() {
               </View>
             ) : null}
 
+            {!allOrdersHandedOver && stopStatus !== 'SKIPPED_NOSHOW' ? (
+              <View className="mt-4">
+                <AppButton
+                  label="Báo khách hàng không có mặt (No-Show)"
+                  variant="secondary"
+                  disabled={isProcessing}
+                  onPress={startNoShow}
+                />
+              </View>
+            ) : null}
+
             {hasUnresolvedEpod ? (
               <View className="mt-4">
                 <AppButton

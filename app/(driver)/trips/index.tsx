@@ -118,8 +118,8 @@ export default function DriverTripsScreen() {
 
       const activeList: TripListDto[] = activeTripsRes.value;
       const historyList: TripListDto[] =
-        historyRes.status === 'fulfilled' && historyRes.value?.data
-          ? historyRes.value.data
+        historyRes.status === 'fulfilled' && Array.isArray(historyRes.value)
+          ? historyRes.value
           : [];
 
       // Khử trùng lặp theo tripId

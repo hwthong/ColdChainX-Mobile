@@ -40,6 +40,15 @@ export interface TripListDto {
   distanceKm?: number | null; // For history
 }
 
+export interface TripHistoryPagedPayload {
+  items?: TripListDto[];
+  data?: TripListDto[];
+  totalRecords?: number;
+  totalPages?: number;
+  pageNumber?: number;
+  pageSize?: number;
+}
+
 export interface DriverTripVehicleDto {
   vehicleId: string;
   truckPlate: string;
@@ -137,11 +146,11 @@ export const driverApi = {
    * Fetch history of completed trips
    * Route: GET /api/drivers/my/trip-history
    */
-  getMyTripHistory: async (pageNumber = 1, pageSize = 10): Promise<PagedResult<TripListDto>> => {
+  getMyTripHistory: async (pageNumber = 1, pageSize = 20): Promise<TripListDto[]> => {
     const endpoint = `/api/drivers/my/trip-history?pageNumber=${pageNumber}&pageSize=${pageSize}`;
 
     const response = await authenticatedDriverRequest((token) =>
-      apiRequest<ApiResponse<PagedResult<TripListDto>>>(endpoint, {
+      apiRequest<ApiResponse<TripHistoryPagedPayload | TripListDto[]>>(endpoint, {
         method: 'GET',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -153,7 +162,11 @@ export const driverApi = {
       throw new Error(response.message || 'Không thể tải lịch sử chuyến.');
     }
 
-    return response.data;
+    const payload = response.data;
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload.items)) return payload.items;
+    if (Array.isArray(payload.data)) return payload.data;
+    return [];
   },
 
   /**

@@ -24,11 +24,18 @@ export default function DriverLayout() {
           const titleMap: Record<string, string> = {
             home: 'ColdChainX Driver',
             trips: 'Chuyến xe',
+            history: 'Lịch sử chuyến đi',
             profile: 'Hồ sơ cá nhân',
           };
 
           const title = titleMap[route.name] || 'Tài xế';
-          return <DriverHeader title={title} showBackButton={false} />;
+          const showBackButton =
+            route.name !== 'home' &&
+            route.name !== 'trips' &&
+            route.name !== 'history' &&
+            route.name !== 'profile';
+
+          return <DriverHeader title={title} showBackButton={showBackButton} />;
         },
         headerShown: !isFullScreenRoute,
         tabBarActiveTintColor: colors.brand.primary,
@@ -65,6 +72,13 @@ export default function DriverLayout() {
             navigation.navigate('trips', { screen: 'index' });
           },
         })}
+      />
+      <Tabs.Screen
+        name="history"
+        options={{
+          title: 'Lịch sử',
+          tabBarIcon: ({ color }) => <Ionicons name="time-outline" size={24} color={color} />,
+        }}
       />
       <Tabs.Screen
         name="profile"
