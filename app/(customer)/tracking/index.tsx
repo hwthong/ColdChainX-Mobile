@@ -128,8 +128,13 @@ export default function TrackingListScreen() {
       ) : (
         <>
           <View
-            style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }}
-            className="flex-row items-center gap-3 rounded-2xl border p-4 shadow-sm"
+            style={{
+              backgroundColor: colors.surface.card,
+              borderColor: colors.border.default,
+              borderWidth: 1,
+              borderRadius: 16,
+            }}
+            className="flex-row items-center gap-3 p-4"
           >
             <View
               style={{ backgroundColor: colors.brand.primarySoft }}
@@ -181,66 +186,66 @@ function TrackableOrderCard({
       style={({ pressed }) => ({
         backgroundColor: colors.surface.card,
         borderColor: colors.border.default,
-        opacity: pressed ? 0.85 : 1,
+        borderWidth: 1,
+        borderRadius: 16,
+        opacity: pressed ? 0.75 : 1,
       })}
-      className="overflow-hidden rounded-2xl border shadow-sm"
+      className="p-5"
     >
-      <View className="p-5">
-        <View className="mb-3 flex-row items-start justify-between gap-3">
-          <View className="flex-1">
-            <Text style={{ color: colors.brand.primary }} className="text-lg font-bold">
-              {order.trackingCode}
-            </Text>
-            <Text style={{ color: colors.text.muted }} className="mt-1 text-xs">
-              {formatDate(order.createdAt)}
-            </Text>
-          </View>
-          <StatusBadge status={order.status} />
-        </View>
-
-        <View className="flex-row gap-3">
-          <View
-            style={{ backgroundColor: colors.brand.primarySoft }}
-            className="h-20 w-20 items-center justify-center rounded-xl"
-          >
-            <Ionicons name="cube-outline" size={26} color={colors.brand.primary} />
-          </View>
-
-          <View className="flex-1 gap-1.5">
-            <Text style={{ color: colors.text.primary }} className="text-base font-semibold" numberOfLines={1}>
-              {order.itemName}
-            </Text>
-
-            {order.route?.routeCode ? (
-              <View className="flex-row items-center gap-1.5">
-                <Ionicons name="git-branch-outline" size={15} color={colors.brand.primary} />
-                <Text style={{ color: colors.brand.primary }} className="text-xs font-semibold">
-                  Tuyến {order.route.routeCode}
-                </Text>
-              </View>
-            ) : null}
-
-            {order.destination?.address ? (
-              <View className="flex-row items-start gap-1.5">
-                <Ionicons name="location-outline" size={15} color={colors.text.secondary} />
-                <Text style={{ color: colors.text.secondary }} className="flex-1 text-xs leading-4" numberOfLines={2}>
-                  {order.destination.address}
-                </Text>
-              </View>
-            ) : null}
-          </View>
-        </View>
-
-        <View
-          style={{ backgroundColor: colors.brand.primary }}
-          className="mt-4 flex-row items-center justify-center gap-2 rounded-xl py-2.5 shadow-sm"
-        >
-          <Ionicons name="navigate-circle-outline" size={18} color={colors.text.onPrimary} />
-          <Text style={{ color: colors.text.onPrimary }} className="text-sm font-bold">
-            Xem bản đồ & dữ liệu giám sát
+      <View className="mb-3 flex-row items-start justify-between gap-3">
+        <View className="flex-1">
+          <Text style={{ color: colors.brand.primary }} className="text-lg font-bold">
+            {order.trackingCode}
           </Text>
-          <Ionicons name="chevron-forward" size={16} color={colors.text.onPrimary} />
+          <Text style={{ color: colors.text.muted }} className="mt-1 text-xs">
+            {formatDate(order.createdAt)}
+          </Text>
         </View>
+        <StatusBadge status={order.status} />
+      </View>
+
+      <View className="flex-row gap-3">
+        <View
+          style={{ backgroundColor: colors.brand.primarySoft }}
+          className="h-20 w-20 items-center justify-center rounded-xl"
+        >
+          <Ionicons name="cube-outline" size={26} color={colors.brand.primary} />
+        </View>
+
+        <View className="flex-1 gap-1.5">
+          <Text style={{ color: colors.text.primary }} className="text-base font-semibold" numberOfLines={1}>
+            {order.itemName}
+          </Text>
+
+          {order.route?.routeCode ? (
+            <View className="flex-row items-center gap-1.5">
+              <Ionicons name="git-branch-outline" size={15} color={colors.brand.primary} />
+              <Text style={{ color: colors.brand.primary }} className="text-xs font-semibold">
+                Tuyến {order.route.routeCode}
+              </Text>
+            </View>
+          ) : null}
+
+          {order.destination?.address ? (
+            <View className="flex-row items-start gap-1.5">
+              <Ionicons name="location-outline" size={15} color={colors.text.secondary} />
+              <Text style={{ color: colors.text.secondary }} className="flex-1 text-xs leading-4" numberOfLines={2}>
+                {order.destination.address}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      </View>
+
+      <View
+        style={{ backgroundColor: colors.brand.primary }}
+        className="mt-4 flex-row items-center justify-center gap-2 rounded-xl py-2.5"
+      >
+        <Ionicons name="navigate-circle-outline" size={18} color={colors.text.onPrimary} />
+        <Text style={{ color: colors.text.onPrimary }} className="text-sm font-bold">
+          Xem bản đồ & dữ liệu giám sát
+        </Text>
+        <Ionicons name="chevron-forward" size={16} color={colors.text.onPrimary} />
       </View>
     </Pressable>
   );
