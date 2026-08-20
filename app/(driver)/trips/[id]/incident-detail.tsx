@@ -397,33 +397,14 @@ export default function DriverIncidentDetailScreen() {
   };
 
   // ── CRITICAL: Xác nhận tiếp tục đi từ Bước 4 qua Bước 5 ──────────────────
-  const handleConfirmContinueFromStep4 = async () => {
-    setActionLoading(true);
-    try {
-      await loadIncident();
-      setStep4ManuallyConfirmed(true);
-      setSelectedStep(5);
-      Alert.alert(
-        'Bắt đầu giao khách (Bước 5)',
-        `Đã xác nhận xe thay thế ${replacementVehicle?.truckPlate || ''} tiếp tục lộ trình giao hàng cho các điểm dừng!`,
-        [
-          { text: 'Xem Bước 5', style: 'cancel' },
-          {
-            text: 'Mở trang giao hàng',
-            style: 'default',
-            onPress: () => {
-              const targetTripId = incident?.tripId || currentTripId;
-              if (targetTripId) {
-                router.push(`/trips/${targetTripId}` as never);
-              }
-            },
-          },
-        ]
-      );
-    } catch (e: unknown) {
-      Alert.alert('Lỗi', getApiErrorMessage(e));
-    } finally {
-      setActionLoading(false);
+  const handleConfirmContinueFromStep4 = () => {
+    const targetTripId = incident?.tripId || currentTripId;
+    setStep4ManuallyConfirmed(true);
+    setSelectedStep(null);
+    if (targetTripId) {
+      router.replace(`/trips/${targetTripId}` as never);
+    } else {
+      router.back();
     }
   };
 
@@ -1378,35 +1359,18 @@ export default function DriverIncidentDetailScreen() {
               </Pressable>
             ) : null}
 
-            {/* CTA: Bước 4 Xác nhận tiếp tục đi để qua Bước 5 */}
-            {currentStep === 4 ? (
+            {/* CTA: Bước 4 & Bước 5: Tiếp tục chuyến xe & Giao hàng các điểm dừng */}
+            {(currentStep === 4 || currentStep === 5) && incident.status !== 'RESOLVED' ? (
               <Pressable
                 onPress={handleConfirmContinueFromStep4}
                 style={{ backgroundColor: colors.brand.primary, minHeight: 48 }}
-                className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm"
+                className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm px-4"
               >
                 <Ionicons name="navigate" size={18} color="#ffffff" />
-                <Text className="text-base font-bold text-white">Xác nhận tiếp tục đi (Chuyển sang Bước 5)</Text>
+                <Text className="text-base font-bold text-white">
+                  Tiếp tục chuyến xe & Giao hàng
+                </Text>
               </Pressable>
-            ) : null}
-
-            {/* CTA: Bước 5 Mở chuyến xe để giao hàng các điểm dừng */}
-            {currentStep === 5 && incident.status !== 'RESOLVED' ? (
-              <View className="gap-2.5">
-                <Pressable
-                  onPress={() => router.push(`/trips/${incident.tripId || currentTripId}` as never)}
-                  style={{
-                    backgroundColor: colors.brand.primary,
-                    minHeight: 48,
-                  }}
-                  className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm"
-                >
-                  <Ionicons name="navigate" size={18} color="#ffffff" />
-                  <Text className="text-base font-bold text-white">
-                    Mở chuyến xe để giao hàng các điểm dừng
-                  </Text>
-                </Pressable>
-              </View>
             ) : null}
           </>
         )}
