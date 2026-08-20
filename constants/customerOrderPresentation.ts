@@ -237,3 +237,26 @@ export function getCustomerOrderActionPriority(status?: string | null): number {
   if (normalized === 'NEEDS_UPDATE') return 0;
   return 1;
 }
+
+/**
+ * Set of order statuses where real-time trip monitoring is relevant.
+ * Only orders with these statuses AND a masterTripId should appear in the "Giám sát" tab.
+ * Once an order reaches DELIVERED / COMPLETED / CANCELLED etc., there is nothing to monitor.
+ */
+export const ACTIVE_TRACKING_STATUSES = new Set([
+  'ASSIGNED',
+  'DISPATCHED_PENDING',
+  'DISPATCHED',
+  'LOADING',
+  'SEALED',
+  'IN_TRANSIT',
+  'DELAYED',
+]);
+
+/**
+ * Returns true when real-time trip tracking is applicable for the given order status.
+ */
+export function isActiveTrackingStatus(status?: string | null): boolean {
+  const normalized = status?.trim().toUpperCase();
+  return Boolean(normalized && ACTIVE_TRACKING_STATUSES.has(normalized));
+}

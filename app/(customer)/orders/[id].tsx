@@ -33,6 +33,7 @@ import {
   getCustomerOrderCategoryLabel,
   getCustomerOrderStatusPresentation,
   getPackagingLabel,
+  isActiveTrackingStatus,
   isCustomerClaimEligibleOrderStatus,
 } from '../../../constants/customerOrderPresentation';
 import {
@@ -559,7 +560,7 @@ export default function OrderDetailScreen() {
             <StatusBadge status={order.status} />
           </View>
 
-          {order.masterTripId ? (
+          {order.masterTripId && isActiveTrackingStatus(order.status) ? (
             <Pressable
               onPress={() =>
                 router.push({

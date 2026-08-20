@@ -6,7 +6,7 @@ import { ActivityIndicator, AppState, Pressable, RefreshControl, ScrollView, Tex
 import { colors } from '../../constants/colors';
 import { GoongRouteMap } from '../../components/customer/GoongRouteMap';
 import { TemperatureChart } from '../../components/customer/TemperatureChart';
-import { getCustomerOrderStatusPresentation } from '../../constants/customerOrderPresentation';
+import { getCustomerOrderStatusPresentation, isActiveTrackingStatus } from '../../constants/customerOrderPresentation';
 import { getApiErrorMessage, getCustomerDataErrorMessage } from '../../services/apiClient';
 import {
   getTripRoute,
@@ -50,7 +50,9 @@ export default function TrackingScreen() {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
 
   const trackableOrders = useMemo(
-    () => orders.filter((order) => Boolean(order.masterTripId?.trim())),
+    () => orders.filter(
+      (order) => Boolean(order.masterTripId?.trim()) && isActiveTrackingStatus(order.status)
+    ),
     [orders]
   );
   const explicitOrder = useMemo(
@@ -186,10 +188,6 @@ export default function TrackingScreen() {
   }, [accessToken]);
 
   useFocusEffect(useCallback(() => {
-    if (!explicitOrderId) setSelectedOrderId(null);
-  }, [explicitOrderId]));
-
-  useFocusEffect(useCallback(() => {
     setIsLoading(true);
     void loadOrders();
   }, [loadOrders]));
@@ -282,7 +280,7 @@ export default function TrackingScreen() {
       {!orderError && !activeOrder && !explicitOrderMissing && trackableOrders.length === 0 ? (
         orders.length === 0
           ? <EmptyOrder onCreateOrder={() => router.push('/(customer)/create-order')} />
-          : <EmptyMessage message="Chưa có đơn hàng nào được điều phối vào chuyến để giám sát." />
+          : <EmptyTransit onViewOrders={() => router.push('/(customer)/status' as never)} />
       ) : null}
       {activeOrder ? (
         <>
@@ -435,7 +433,31 @@ function OrderHeader({ order }: { order: OrderResponse }) {
 }
 
 function EmptyOrder({ onCreateOrder }: { onCreateOrder: () => void }) {
-  return <View style={{ backgroundColor: colors.surface.card }} className="items-center rounded-3xl p-8"><Ionicons name="locate-outline" size={56} color={colors.text.secondary} /><Text style={{ color: colors.text.primary }} className="mt-4 text-center text-base font-bold">Chưa có đơn để giám sát</Text><Pressable onPress={onCreateOrder} style={{ backgroundColor: colors.brand.primary }} className="mt-5 rounded-xl px-5 py-3"><Text style={{ color: colors.text.onPrimary }} className="font-bold">Tạo đơn mới</Text></Pressable></View>;
+  return (
+    <View style={{ backgroundColor: colors.surface.card }} className="items-center rounded-3xl p-8">
+      <Ionicons name="locate-outline" size={56} color={colors.text.secondary} />
+      <Text style={{ color: colors.text.primary }} className="mt-4 text-center text-base font-bold">Chưa có đơn hàng</Text>
+      <Text style={{ color: colors.text.secondary }} className="mt-2 text-center text-sm leading-5">Tạo đơn hàng và chờ được điều phối vào chuyến để bắt đầu giám sát.</Text>
+      <Pressable onPress={onCreateOrder} style={{ backgroundColor: colors.brand.primary }} className="mt-5 rounded-xl px-5 py-3">
+        <Text style={{ color: colors.text.onPrimary }} className="font-bold">Tạo đơn mới</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function EmptyTransit({ onViewOrders }: { onViewOrders: () => void }) {
+  return (
+    <View style={{ backgroundColor: colors.surface.card }} className="items-center rounded-3xl p-8">
+      <Ionicons name="time-outline" size={56} color={colors.text.secondary} />
+      <Text style={{ color: colors.text.primary }} className="mt-4 text-center text-base font-bold">Chưa có chuyến nào đang chạy</Text>
+      <Text style={{ color: colors.text.secondary }} className="mt-2 text-center text-sm leading-5">
+        Đơn hàng đang chờ điều phối xe. Bạn có thể theo dõi tiến độ tại tab Đơn hàng.
+      </Text>
+      <Pressable onPress={onViewOrders} style={{ backgroundColor: colors.brand.primary }} className="mt-5 rounded-xl px-5 py-3">
+        <Text style={{ color: colors.text.onPrimary }} className="font-bold">Xem tab Đơn hàng</Text>
+      </Pressable>
+    </View>
+  );
 }
 
 function SectionCard({ title, icon, children }: { title: string; icon: React.ComponentProps<typeof Ionicons>['name']; children: React.ReactNode }) {
