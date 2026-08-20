@@ -275,10 +275,29 @@ export const ACTIVE_TRACKING_STATUSES = new Set([
   'DELAYED',
 ]);
 
+export const DELIVERED_STATUSES = new Set([
+  'DELIVERED',
+  'COMPLETED',
+  'PARTIALLY_DELIVERED',
+]);
+
+export function isDeliveredStatus(status?: string | null): boolean {
+  const normalized = status?.trim().toUpperCase();
+  return Boolean(normalized && DELIVERED_STATUSES.has(normalized));
+}
+
 /**
  * Returns true when real-time trip tracking is applicable for the given order status.
  */
 export function isActiveTrackingStatus(status?: string | null): boolean {
   const normalized = status?.trim().toUpperCase();
   return Boolean(normalized && ACTIVE_TRACKING_STATUSES.has(normalized));
+}
+
+/**
+ * Returns true when an order with a masterTripId should appear in the "Giám sát" tab (active or delivered).
+ */
+export function isMonitoringEligibleStatus(status?: string | null): boolean {
+  const normalized = status?.trim().toUpperCase();
+  return Boolean(normalized && (ACTIVE_TRACKING_STATUSES.has(normalized) || DELIVERED_STATUSES.has(normalized)));
 }

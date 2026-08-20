@@ -3,6 +3,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   AppState,
   Pressable,
   RefreshControl,
@@ -14,7 +15,8 @@ import {
 import { colors } from '../../../constants/colors';
 import {
   getCustomerOrderStatusPresentation,
-  isActiveTrackingStatus,
+  isDeliveredStatus,
+  isMonitoringEligibleStatus,
 } from '../../../constants/customerOrderPresentation';
 import { getCustomerDataErrorMessage } from '../../../services/apiClient';
 import { getMyCustomerOrders, OrderResponse } from '../../../services/orderApi';
@@ -31,7 +33,7 @@ export default function TrackingListScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const trackableOrders = orders.filter(
-    (order) => Boolean(order.masterTripId?.trim()) && isActiveTrackingStatus(order.status)
+    (order) => Boolean(order.masterTripId?.trim()) && isMonitoringEligibleStatus(order.status)
   );
 
   const loadOrders = useCallback(
@@ -179,15 +181,29 @@ export default function TrackingListScreen() {
             <TrackableOrderCard
               key={order.orderId}
               order={order}
-              onPress={() =>
+              onPress={() => {
+                if (isDeliveredStatus(order.status)) {
+                  Alert.alert(
+                    'Thông báo',
+                    'Đơn hàng của bạn đã được giao rồi',
+                    [
+                      { text: 'Đóng', style: 'cancel' },
+                      {
+                        text: 'Xem chi tiết đơn hàng',
+                        onPress: () => router.push(`/(customer)/orders/${order.orderId}` as never),
+                      },
+                    ]
+                  );
+                  return;
+                }
                 router.push({
                   pathname: '/(customer)/tracking/[orderId]',
                   params: {
                     orderId: order.orderId,
                     trackingCode: order.trackingCode,
                   },
-                } as never)
-              }
+                } as never);
+              }}
             />
           ))}
         </>
@@ -203,12 +219,14 @@ function TrackableOrderCard({
   order: OrderResponse;
   onPress: () => void;
 }) {
+  const isDelivered = isDeliveredStatus(order.status);
+
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => ({
         backgroundColor: colors.surface.card,
-        borderColor: colors.border.default,
+        borderColor: isDelivered ? 'rgba(22, 163, 74, 0.3)' : colors.border.default,
         borderWidth: 1,
         borderRadius: 16,
         opacity: pressed ? 0.75 : 1,
@@ -217,7 +235,7 @@ function TrackableOrderCard({
     >
       <View className="mb-3 flex-row items-start justify-between gap-3">
         <View className="flex-1">
-          <Text style={{ color: colors.brand.primary }} className="text-lg font-bold">
+          <Text style={{ color: isDelivered ? '#15803D' : colors.brand.primary }} className="text-lg font-bold">
             {order.trackingCode}
           </Text>
           <Text style={{ color: colors.text.muted }} className="mt-1 text-xs">
@@ -229,10 +247,14 @@ function TrackableOrderCard({
 
       <View className="flex-row gap-3">
         <View
-          style={{ backgroundColor: colors.brand.primarySoft }}
+          style={{ backgroundColor: isDelivered ? '#F0FDF4' : colors.brand.primarySoft }}
           className="h-20 w-20 items-center justify-center rounded-xl"
         >
-          <Ionicons name="cube-outline" size={26} color={colors.brand.primary} />
+          <Ionicons
+            name={isDelivered ? 'checkmark-done-circle-outline' : 'cube-outline'}
+            size={26}
+            color={isDelivered ? '#16A34A' : colors.brand.primary}
+          />
         </View>
 
         <View className="flex-1 gap-1.5">
@@ -242,8 +264,8 @@ function TrackableOrderCard({
 
           {order.route?.routeCode ? (
             <View className="flex-row items-center gap-1.5">
-              <Ionicons name="git-branch-outline" size={15} color={colors.brand.primary} />
-              <Text style={{ color: colors.brand.primary }} className="text-xs font-semibold">
+              <Ionicons name="git-branch-outline" size={15} color={isDelivered ? '#16A34A' : colors.brand.primary} />
+              <Text style={{ color: isDelivered ? '#16A34A' : colors.brand.primary }} className="text-xs font-semibold">
                 Tuyến {order.route.routeCode}
               </Text>
             </View>
@@ -261,12 +283,16 @@ function TrackableOrderCard({
       </View>
 
       <View
-        style={{ backgroundColor: colors.brand.primary }}
+        style={{ backgroundColor: isDelivered ? '#16A34A' : colors.brand.primary }}
         className="mt-4 flex-row items-center justify-center gap-2 rounded-xl py-2.5"
       >
-        <Ionicons name="navigate-circle-outline" size={18} color={colors.text.onPrimary} />
+        <Ionicons
+          name={isDelivered ? 'checkmark-circle-outline' : 'navigate-circle-outline'}
+          size={18}
+          color={colors.text.onPrimary}
+        />
         <Text style={{ color: colors.text.onPrimary }} className="text-sm font-bold">
-          Xem bản đồ & dữ liệu giám sát
+          {isDelivered ? 'Đã giao hàng' : 'Xem bản đồ & dữ liệu giám sát'}
         </Text>
         <Ionicons name="chevron-forward" size={16} color={colors.text.onPrimary} />
       </View>
