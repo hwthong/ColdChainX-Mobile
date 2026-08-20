@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   BackHandler,
+  Dimensions,
   Keyboard,
   KeyboardAvoidingView,
   Linking,
@@ -125,6 +126,31 @@ export default function CreateOrderScreen() {
   const [successData, setSuccessData] = useState<CreateOrderSuccessData | null>(null);
   const [currentStep, setCurrentStep] = useState<CreateOrderStep>(1);
   const [hasUserEditedForm, setHasUserEditedForm] = useState(false);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    console.log('[CreateOrderLayout] screenHeight:', Dimensions.get('window').height, 'safeArea:', { top: insets.top, bottom: insets.bottom });
+  }, [insets.top, insets.bottom]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+
+    const showSubscription = Keyboard.addListener('keyboardWillShow', () => {
+      console.log('[CreateOrderLayout] keyboardVisible: true');
+      setIsKeyboardVisible(true);
+    });
+    const hideSubscription = Keyboard.addListener('keyboardWillHide', () => {
+      console.log('[CreateOrderLayout] keyboardVisible: false');
+      setIsKeyboardVisible(false);
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
+
+  const shouldHideFooter = Platform.OS === 'ios' && isKeyboardVisible;
 
   const effectiveDocumentImage = documentImage || (existingPhotoUrl ? { uri: existingPhotoUrl, mimeType: 'image/jpeg', fileName: 'cargo.jpg' } : null);
   const selectedRoute = routeOptions.find((r) => r.routeId === selectedRouteId) ?? null;
@@ -452,6 +478,7 @@ export default function CreateOrderScreen() {
         scrollNode.measureInWindow((_scrollX, scrollY) => {
           if (scrollRequestIdRef.current !== requestId) return;
           const targetY = scrollOffsetYRef.current + fieldY - scrollY - 30;
+          console.log('[CreateOrderLayout] focusField:', field, { fieldY, scrollY, targetY, scrollOffsetY: scrollOffsetYRef.current });
           scrollView.scrollTo({ y: Math.max(targetY, 0), animated: true });
         });
       });
@@ -870,7 +897,10 @@ export default function CreateOrderScreen() {
 
   return (
     <View className="flex-1" style={{ backgroundColor: colors.surface.page }}>
-      <View className="px-5 pb-2 pt-4">
+      <View
+        className="px-5 pb-2 pt-4"
+        onLayout={(e) => console.log('[CreateOrderLayout] progress:', e.nativeEvent.layout)}
+      >
         <CreateOrderStepProgress currentStep={currentStep} totalSteps={4} {...STEP_DETAILS[currentStep]} />
       </View>
 
@@ -878,6 +908,7 @@ export default function CreateOrderScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 54 : 0}
         style={{ flex: 1 }}
+        onLayout={(e) => console.log('[CreateOrderLayout] KAV:', e.nativeEvent.layout)}
       >
         <ScrollView
           ref={scrollViewRef}
@@ -885,6 +916,7 @@ export default function CreateOrderScreen() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
+          onLayout={(e) => console.log('[CreateOrderLayout] scrollViewport:', e.nativeEvent.layout)}
           onScroll={(event) => {
             scrollOffsetYRef.current = event.nativeEvent.contentOffset.y;
           }}
@@ -1015,7 +1047,7 @@ export default function CreateOrderScreen() {
         ) : null}
         </ScrollView>
 
-        {(() => {
+        {!shouldHideFooter && (() => {
           let isStepValid = true;
           if (currentStep !== 4) {
             const stepErrors = validateCreateOrderStep(currentStep, formValues, routeOptions, bookingOptions);

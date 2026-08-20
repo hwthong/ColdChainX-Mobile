@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, FlatList, Image, KeyboardAvoidingView, Platform, Pressable, Text, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, AppState, FlatList, Image, Pressable, Text, TextInput, View } from 'react-native';
 
+import { CUSTOMER_HEADER_HEIGHT } from '../../../components/CustomerHeader';
+import { KeyboardChatView } from '../../../components/keyboard/KeyboardChatView';
 import { colors } from '../../../constants/colors';
 import { getApiErrorMessage } from '../../../services/apiClient';
 import { ChatMessage, findChatCounterpart, getChatMessages, markChatMessagesRead, sendChatMessage } from '../../../services/chatApi';
@@ -99,54 +100,10 @@ export default function CustomerChatThreadScreen() {
   }, [counterpart, draft, load, orderId, token]);
 
   return (
-    <SafeAreaView edges={['bottom']} style={{ backgroundColor: colors.surface.page }} className="flex-1">
-      <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={88}>
-        <View style={{ backgroundColor: colors.surface.card, borderBottomColor: colors.border.default }} className="flex-row items-center gap-3 border-b px-5 py-3">
-          {imageUrl ? (
-            <Image source={{ uri: imageUrl }} style={{ width: 38, height: 38, borderRadius: 8, backgroundColor: colors.surface.muted }} />
-          ) : (
-            <View style={{ backgroundColor: colors.brand.primarySoft, width: 38, height: 38, borderRadius: 8, alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name="cube-outline" size={20} color={colors.brand.primary} />
-            </View>
-          )}
-          <View className="flex-1">
-            <Text style={{ color: colors.text.primary }} className="font-bold">Đơn {trackingCode || orderId?.slice(0, 8).toUpperCase() || '--'}</Text>
-            <Text style={{ color: colors.text.secondary }} className="mt-1 text-xs">{counterpart?.name || 'Bộ phận phụ trách đơn hàng'}</Text>
-          </View>
-        </View>
-        {loading ? (
-          <View className="flex-1 items-center justify-center">
-            <ActivityIndicator size="large" color={colors.brand.primary} />
-          </View>
-        ) : error ? (
-          <View className="flex-1 items-center justify-center p-6">
-            <Text className="text-center text-red-800">{error}</Text>
-            <Pressable onPress={() => void load()} style={{ backgroundColor: colors.brand.primary }} className="mt-4 rounded-xl px-5 py-3">
-              <Text style={{ color: colors.text.onPrimary }} className="font-bold">Thử lại</Text>
-            </Pressable>
-          </View>
-        ) : (
-          <FlatList
-            ref={listRef}
-            data={messages}
-            keyExtractor={(message) => message.id}
-            contentContainerStyle={{ padding: 16, gap: 10, flexGrow: 1, justifyContent: messages.length ? 'flex-start' : 'center' }}
-            renderItem={({ item }) => <MessageBubble message={item} mine={item.senderId.toLowerCase() === currentUserId?.toLowerCase()} />}
-            ListEmptyComponent={
-              <View className="items-center">
-                <Ionicons name="chatbubble-outline" size={44} color={colors.text.muted} />
-                <Text style={{ color: colors.text.secondary }} className="mt-3 text-center">Chưa có tin nhắn cho đơn hàng này.</Text>
-              </View>
-            }
-            onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
-          />
-        )}
-        {!counterpart && !loading && !error ? (
-          <View className="border-t border-amber-200 bg-amber-50 px-4 py-3">
-            <Text className="text-xs leading-5 text-amber-900">Backend chưa cung cấp danh sách nhân viên nhận tin cho hội thoại mới. Bạn có thể gửi sau khi bộ phận phụ trách bắt đầu trao đổi.</Text>
-          </View>
-        ) : null}
-        {sendError ? <Text className="bg-red-50 px-4 py-2 text-xs text-red-800">{sendError}</Text> : null}
+    <KeyboardChatView
+      backgroundColor={colors.surface.page}
+      headerHeight={CUSTOMER_HEADER_HEIGHT}
+      composer={
         <View style={{ backgroundColor: colors.surface.card, borderTopColor: colors.border.default }} className="flex-row items-end gap-2 border-t p-3">
           <TextInput
             value={draft}
@@ -174,8 +131,55 @@ export default function CustomerChatThreadScreen() {
             )}
           </Pressable>
         </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+      }
+    >
+      <View style={{ backgroundColor: colors.surface.card, borderBottomColor: colors.border.default }} className="flex-row items-center gap-3 border-b px-5 py-3">
+        {imageUrl ? (
+          <Image source={{ uri: imageUrl }} style={{ width: 38, height: 38, borderRadius: 8, backgroundColor: colors.surface.muted }} />
+        ) : (
+          <View style={{ backgroundColor: colors.brand.primarySoft, width: 38, height: 38, borderRadius: 8, alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="cube-outline" size={20} color={colors.brand.primary} />
+          </View>
+        )}
+        <View className="flex-1">
+          <Text style={{ color: colors.text.primary }} className="font-bold">Đơn {trackingCode || orderId?.slice(0, 8).toUpperCase() || '--'}</Text>
+          <Text style={{ color: colors.text.secondary }} className="mt-1 text-xs">{counterpart?.name || 'Bộ phận phụ trách đơn hàng'}</Text>
+        </View>
+      </View>
+      {loading ? (
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator size="large" color={colors.brand.primary} />
+        </View>
+      ) : error ? (
+        <View className="flex-1 items-center justify-center p-6">
+          <Text className="text-center text-red-800">{error}</Text>
+          <Pressable onPress={() => void load()} style={{ backgroundColor: colors.brand.primary }} className="mt-4 rounded-xl px-5 py-3">
+            <Text style={{ color: colors.text.onPrimary }} className="font-bold">Thử lại</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <FlatList
+          ref={listRef}
+          data={messages}
+          keyExtractor={(message) => message.id}
+          contentContainerStyle={{ padding: 16, gap: 10, flexGrow: 1, justifyContent: messages.length ? 'flex-start' : 'center' }}
+          renderItem={({ item }) => <MessageBubble message={item} mine={item.senderId.toLowerCase() === currentUserId?.toLowerCase()} />}
+          ListEmptyComponent={
+            <View className="items-center">
+              <Ionicons name="chatbubble-outline" size={44} color={colors.text.muted} />
+              <Text style={{ color: colors.text.secondary }} className="mt-3 text-center">Chưa có tin nhắn cho đơn hàng này.</Text>
+            </View>
+          }
+          onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+        />
+      )}
+      {!counterpart && !loading && !error ? (
+        <View className="border-t border-amber-200 bg-amber-50 px-4 py-3">
+          <Text className="text-xs leading-5 text-amber-900">Backend chưa cung cấp danh sách nhân viên nhận tin cho hội thoại mới. Bạn có thể gửi sau khi bộ phận phụ trách bắt đầu trao đổi.</Text>
+        </View>
+      ) : null}
+      {sendError ? <Text className="bg-red-50 px-4 py-2 text-xs text-red-800">{sendError}</Text> : null}
+    </KeyboardChatView>
   );
 }
 

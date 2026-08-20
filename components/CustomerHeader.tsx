@@ -8,6 +8,8 @@ import { colors } from '../constants/colors';
 import { useAuthStore } from '../store/useAuthStore';
 import { useNotificationStore } from '../store/useNotificationStore';
 
+export const CUSTOMER_HEADER_HEIGHT = 64;
+
 interface CustomerHeaderProps {
   title: string;
   showBackButton?: boolean;
