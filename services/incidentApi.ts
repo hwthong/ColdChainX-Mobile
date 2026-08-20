@@ -97,6 +97,7 @@ export interface IncidentResponse {
   remainingSafeTimeMinutes?: number;
   safeTimeCalculation?: string;
   directDeliveryLocked?: boolean;
+  temperatureThresholdBreached?: boolean;
   
   rescuePlanType?: string;
   rescuePlanDetails?: string;
@@ -104,7 +105,9 @@ export interface IncidentResponse {
   redispatchPlan?: string | null;
 
   reportedAt: string;
-  resolvedAt?: string;
+  handledAt?: string | null;
+  handlingNote?: string | null;
+  resolvedAt?: string | null;
   resolutionNote?: string | null;
   evidences: IncidentEvidence[];
 }

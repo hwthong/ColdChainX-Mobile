@@ -96,6 +96,7 @@ export default function DriverIncidentDetailScreen() {
   // ── Nhánh LOW: Continue trip modal ────────────────────────────────────────
   const [isContinueTripModalVisible, setIsContinueTripModalVisible] = useState(false);
   const [continueTripNote, setContinueTripNote] = useState('');
+  const [expectedDelayMinutesText, setExpectedDelayMinutesText] = useState('0');
   const [isContinueTripSubmitting, setIsContinueTripSubmitting] = useState(false);
 
   // ── Nhánh CRITICAL: Transload confirmation modal (Bước 3) ───────────────────
@@ -299,20 +300,47 @@ export default function DriverIncidentDetailScreen() {
     }
   };
 
-  // ── LOW: Xác nhận tiếp tục chuyến ─────────────────────────────────────────
+  // ── Nhánh 1: Tự xử lý tại chỗ, không cần cứu hộ (requiresRescue == false) ──
   const handleSubmitContinueTrip = async () => {
-    if (!token || !incidentId) return;
+    if (!token || !incidentId || isContinueTripSubmitting) return;
     setIsContinueTripSubmitting(true);
+    const parsedDelay = parseInt(expectedDelayMinutesText.trim() || '0', 10);
+    const delayMinutes = Number.isFinite(parsedDelay) && parsedDelay >= 0 ? parsedDelay : 0;
+    const note = continueTripNote.trim();
+
     try {
       const res = await continueTrip(
         token,
         incidentId,
-        continueTripNote.trim() || 'Đã tự xử lý tại chỗ, tiếp tục hành trình.'
+        note,
+        delayMinutes
       );
       if (res.success) {
         setIsContinueTripModalVisible(false);
-        Alert.alert('Thành công', 'Đã xác nhận tiếp tục chuyến. Hành trình được tiếp tục bình thường.');
-        await loadIncident();
+        if (incident) {
+          setIncident({
+            ...incident,
+            status: 'CONTINUED',
+            handlingNote: note || 'Đã tự xử lý tại chỗ, tiếp tục hành trình.',
+          });
+        }
+        Alert.alert(
+          'Thành công',
+          res.message || 'Tài xế đã ghi nhận xử lý tại chỗ và tiếp tục chuyến.',
+          [
+            {
+              text: 'Mở màn hình chuyến xe',
+              onPress: () => {
+                const targetTripId = incident?.tripId || currentTripId;
+                if (targetTripId) {
+                  router.replace(`/trips/${targetTripId}` as never);
+                } else {
+                  router.back();
+                }
+              },
+            },
+          ]
+        );
       } else {
         Alert.alert('Lỗi', res.message || 'Không thể xác nhận tiếp tục chuyến.');
       }
@@ -323,23 +351,41 @@ export default function DriverIncidentDetailScreen() {
     }
   };
 
-  // ── CRITICAL: Xác nhận đã sang hàng cứu hộ (Bước 3) ──────────────────────
+  // ── Nhánh 2: Sự cố có xe cứu hộ (requiresRescue == true) — Xác nhận đã sang hàng và tiếp tục chuyến ──
   const handleConfirmTransload = async () => {
-    if (!token || !incidentId) return;
+    if (!token || !incidentId || isTransloadSubmitting) return;
     setIsTransloadSubmitting(true);
     try {
       const res = await confirmTransload(
         token,
         incidentId,
-        transloadNote.trim() || 'Đã hoàn thành sang hàng và chuyển thiết bị IoT sang xe cứu hộ.'
+        transloadNote.trim() || 'Đã sang đủ hàng sang xe cứu hộ và kiểm tra seal.'
       );
       if (res.success) {
         setIsTransloadModalVisible(false);
+        if (incident) {
+          setIncident({
+            ...incident,
+            status: 'TRANSLOAD_COMPLETED',
+          });
+        }
         Alert.alert(
           'Thành công',
-          'Đã xác nhận sang hàng sang xe mới thành công! Chuyển sang Bước 4: Tiếp tục vận chuyển.'
+          'Đã xác nhận sang hàng sang xe mới thành công! Chuyến xe tiếp tục hành trình.',
+          [
+            {
+              text: 'Tiếp tục giao hàng',
+              onPress: () => {
+                const targetTripId = incident?.tripId || currentTripId;
+                if (targetTripId) {
+                  router.replace(`/trips/${targetTripId}` as never);
+                } else {
+                  void loadIncident();
+                }
+              },
+            },
+          ]
         );
-        await loadIncident();
       } else {
         Alert.alert('Lỗi', res.message || 'Không thể xác nhận sang hàng.');
       }
@@ -436,6 +482,16 @@ export default function DriverIncidentDetailScreen() {
   const isWarning = incident.severity === 'MEDIUM' || incident.severity === 'HIGH';
   const isLow = incident.severity === 'LOW';
   const isNonBreakdownReported = !isBreakdown && incident.status === 'REPORTED';
+
+  // Nhánh 1: Tự xử lý tại chỗ, không cần cứu hộ
+  const canDriverSelfContinue = Boolean(
+    incident &&
+    incident.requiresRescue === false &&
+    ['REPORTED', 'TRIAGED', 'MONITORING'].includes(incident.status) &&
+    incident.riskLevel !== 'CRITICAL' &&
+    !incident.temperatureThresholdBreached &&
+    !incident.directDeliveryLocked
+  );
 
   // Phân biệt Xe ngoài (External Reefer) vs Xe nội bộ (Internal Fleet)
   const isExternalReefer = Boolean(
@@ -1255,21 +1311,23 @@ export default function DriverIncidentDetailScreen() {
               </View>
             )}
 
-            {/* CTA: LOW — Xác nhận tiếp tục chuyến (từ TRIAGED) */}
-            {incident.status === 'TRIAGED' && (
+            {/* CTA: 1. Sự cố tự xử lý, không cần cứu hộ */}
+            {canDriverSelfContinue && (
               <Pressable
                 onPress={() => setIsContinueTripModalVisible(true)}
+                disabled={isContinueTripSubmitting}
                 style={{ backgroundColor: colors.status.success.main, minHeight: 48 }}
-                className="items-center justify-center rounded-2xl shadow-sm"
+                className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm"
               >
+                <Ionicons name="checkmark-circle-outline" size={20} color="#ffffff" />
                 <Text style={{ color: '#ffffff' }} className="text-base font-bold">
-                  Xác nhận tiếp tục chuyến
+                  Tiếp tục chuyến (Tự xử lý tại chỗ)
                 </Text>
               </Pressable>
             )}
 
             {/* CTA: Bước 1 Containment Required */}
-            {currentStep === 1 && (incident.status === 'REPORTED' || incident.status === 'CONTAINMENT_REQUIRED') ? (
+            {currentStep === 1 && (incident.status === 'REPORTED' || incident.status === 'CONTAINMENT_REQUIRED') && incident.requiresRescue ? (
               <Pressable
                 onPress={handleAssessContainment}
                 disabled={!containmentConfirmed || actionLoading}
@@ -1292,16 +1350,17 @@ export default function DriverIncidentDetailScreen() {
               </Pressable>
             ) : null}
 
-            {/* CTA: Bước 3 Xác nhận đã sang hàng sang xe mới */}
+            {/* CTA: 2. Sự cố có xe cứu hộ — Xác nhận đã sang hàng và tiếp tục chuyến */}
             {currentStep === 3 && incident.status === 'RESCUE_DISPATCHED' ? (
               <Pressable
                 onPress={() => setIsTransloadModalVisible(true)}
+                disabled={isTransloadSubmitting}
                 style={{ backgroundColor: colors.brand.primary, minHeight: 48 }}
                 className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm"
               >
                 <Ionicons name="swap-horizontal" size={20} color="#ffffff" />
                 <Text className="text-base font-bold text-white">
-                  Xác nhận đã sang hàng (Chuyển sang Bước 4)
+                  Xác nhận đã sang hàng và tiếp tục chuyến
                 </Text>
               </Pressable>
             ) : null}
@@ -1340,7 +1399,7 @@ export default function DriverIncidentDetailScreen() {
         )}
       </View>
 
-      {/* ── CONTINUE TRIP MODAL (LOW) ── */}
+      {/* ── CONTINUE TRIP MODAL (NHÁNH 1: TỰ XỬ LÝ TẠI CHỖ) ── */}
       <Modal
         visible={isContinueTripModalVisible}
         transparent
@@ -1349,19 +1408,49 @@ export default function DriverIncidentDetailScreen() {
       >
         <View style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} className="flex-1 justify-end">
           <View style={{ backgroundColor: colors.surface.card }} className="gap-4 rounded-t-3xl p-6">
-            <Text style={{ color: colors.text.primary }} className="text-lg font-bold">Xác nhận tiếp tục chuyến đi</Text>
-            <TextInput
-              value={continueTripNote}
-              onChangeText={setContinueTripNote}
-              placeholder="Ghi chú xử lý sự cố tại chỗ..."
-              multiline
-              numberOfLines={3}
-              style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default, color: colors.text.primary }}
-              className="rounded-2xl border p-4 text-sm"
-            />
-            <View className="flex-row gap-3">
+            <View className="flex-row items-center gap-2 border-b border-slate-100 pb-3">
+              <Ionicons name="navigate-circle" size={24} color={colors.status.success.main} />
+              <Text style={{ color: colors.text.primary }} className="text-lg font-bold">
+                Xác nhận tiếp tục chuyến xe
+              </Text>
+            </View>
+            <Text style={{ color: colors.text.secondary }} className="text-xs leading-5">
+              Sự cố đã được kiểm tra và xử lý tại chỗ an toàn. Vui lòng nhập ghi chú và số phút dự kiến trễ (nếu có).
+            </Text>
+
+            <View className="gap-1.5">
+              <Text style={{ color: colors.text.primary }} className="text-xs font-bold">
+                Ghi chú cách đã xử lý (tùy chọn):
+              </Text>
+              <TextInput
+                value={continueTripNote}
+                onChangeText={setContinueTripNote}
+                placeholder="Ví dụ: Đã kiểm tra và siết lại dây điện, nhiệt độ đã ổn định..."
+                multiline
+                numberOfLines={3}
+                style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default, color: colors.text.primary }}
+                className="rounded-2xl border p-3.5 text-sm"
+              />
+            </View>
+
+            <View className="gap-1.5">
+              <Text style={{ color: colors.text.primary }} className="text-xs font-bold">
+                Số phút dự kiến bị trễ:
+              </Text>
+              <TextInput
+                value={expectedDelayMinutesText}
+                onChangeText={setExpectedDelayMinutesText}
+                placeholder="0"
+                keyboardType="number-pad"
+                style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default, color: colors.text.primary }}
+                className="rounded-2xl border px-4 py-3 text-sm font-bold"
+              />
+            </View>
+
+            <View className="flex-row gap-3 mt-2">
               <Pressable
                 onPress={() => setIsContinueTripModalVisible(false)}
+                disabled={isContinueTripSubmitting}
                 style={{ borderColor: colors.border.default }}
                 className="flex-1 items-center rounded-2xl border p-3.5"
               >
@@ -1370,13 +1459,16 @@ export default function DriverIncidentDetailScreen() {
               <Pressable
                 onPress={handleSubmitContinueTrip}
                 disabled={isContinueTripSubmitting}
-                style={{ backgroundColor: colors.brand.primary, minHeight: 48 }}
+                style={{
+                  backgroundColor: isContinueTripSubmitting ? colors.surface.muted : colors.status.success.main,
+                  minHeight: 48,
+                }}
                 className="flex-1 items-center justify-center rounded-2xl shadow-sm"
               >
                 {isContinueTripSubmitting ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text className="font-bold text-white">Xác nhận</Text>
+                  <Text className="font-bold text-white">Xác nhận tiếp tục</Text>
                 )}
               </Pressable>
             </View>
