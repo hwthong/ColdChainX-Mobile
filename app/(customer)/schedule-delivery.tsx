@@ -328,16 +328,7 @@ export default function ScheduleDeliveryScreen() {
           </View>
         ) : null}
 
-        {order ? (
-          <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-3 rounded-3xl border p-5">
-            <Text style={{ color: colors.text.primary }} className="text-lg font-extrabold">Thông tin tuyến</Text>
-            <InfoRow label="Trạng thái" value={translateOrderStatus(order.status)} />
-            <InfoRow label="Tuyến" value={order.route ? `${order.route.originCity} → ${order.route.destCity}` : 'Chưa có tuyến'} />
-            <InfoRow label="Route code" value={order.route?.routeCode || 'Chưa có'} />
-            <InfoRow label="Cut-off" value={order.route?.cutOffTime || 'Chưa có'} />
-            <InfoRow label="Hàng hóa" value={`${order.itemName} • ${order.expectedWeightKg} kg`} />
-          </View>
-        ) : null}
+        {order ? <TripInfoCard order={order} /> : null}
 
         {displayedAsn ? (
           <View className="gap-4">
@@ -520,11 +511,39 @@ export default function ScheduleDeliveryScreen() {
   );
 }
 
-function InfoRow({ label, value }: { label: string; value?: string | null }) {
+function TripInfoCard({ order }: { order: OrderResponse }) {
+  const routeText = order.route ? `${order.route.originCity} → ${order.route.destCity}` : 'Chưa có tuyến';
+
   return (
-    <View style={{ backgroundColor: colors.surface.muted }} className="rounded-2xl px-4 py-3">
-      <Text style={{ color: colors.text.secondary }} className="text-[11px] font-bold uppercase tracking-wider">{label}</Text>
-      <Text selectable style={{ color: colors.text.primary }} className="mt-1 text-sm font-semibold leading-5">
+    <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-4 rounded-3xl border p-5">
+      <View className="gap-1">
+        <Text style={{ color: colors.text.secondary }} className="text-xs font-bold uppercase tracking-wider">
+          Thông tin chuyến
+        </Text>
+        <Text selectable style={{ color: colors.text.primary }} className="text-lg font-extrabold leading-6">
+          {routeText}
+        </Text>
+      </View>
+
+      <View style={{ backgroundColor: colors.border.default, height: 1 }} />
+
+      <View className="gap-1">
+        <TripInfoLine label="Trạng thái" value={translateOrderStatus(order.status)} />
+        <TripInfoLine label="Route code" value={order.route?.routeCode || 'Chưa có'} />
+        <TripInfoLine label="Cut-off" value={order.route?.cutOffTime || 'Chưa có'} />
+        <TripInfoLine label="Hàng hóa" value={`${order.itemName} • ${order.expectedWeightKg} kg`} />
+      </View>
+    </View>
+  );
+}
+
+function TripInfoLine({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <View className="flex-row items-start justify-between gap-4 py-2">
+      <Text style={{ color: colors.text.secondary }} className="text-sm font-semibold">
+        {label}
+      </Text>
+      <Text selectable style={{ color: colors.text.primary }} className="flex-1 text-right text-sm font-bold leading-5">
         {value || 'Chưa cập nhật'}
       </Text>
     </View>
