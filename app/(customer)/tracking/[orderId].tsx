@@ -26,11 +26,12 @@ import {
   TripTracking,
 } from '../../../services/monitoringApi';
 import { getOrderById, OrderResponse } from '../../../services/orderApi';
+import { signalRService } from '../../../services/signalrService';
 import { TripRouteResponse } from '../../../services/trackingApi';
 import { useAuthStore } from '../../../store/useAuthStore';
 
-const POLLING_INTERVAL_MS = 15_000;
-const MAX_POLLING_INTERVAL_MS = 60_000;
+const POLLING_INTERVAL_MS = 3_000;
+const MAX_POLLING_INTERVAL_MS = 10_000;
 const TERMINAL_TRIP_STATUSES = new Set(['COMPLETED', 'CANCELLED']);
 
 export default function TrackingDetailScreen() {
@@ -224,7 +225,7 @@ export default function TrackingDetailScreen() {
     }, [loadOrder])
   );
 
-  // ── Polling — runs once tripId becomes available ───────────────────────────
+  // ── Polling & Real-time Live Updates — 3s interval + SignalR push ───────────
   useFocusEffect(
     useCallback(() => {
       if (!tripId || !accessToken) {
@@ -251,6 +252,7 @@ export default function TrackingDetailScreen() {
         if (pollingTimer) clearTimeout(pollingTimer);
         pollingTimer = null;
       };
+
       const poll = async (showLoading = false) => {
         if (disposed || pollingInFlight || currentAppState !== 'active') return;
         pollingInFlight = true;
@@ -261,7 +263,8 @@ export default function TrackingDetailScreen() {
         if (nextTracking) {
           consecutiveFailures = 0;
           successfulPolls += 1;
-          if (successfulPolls % 3 === 0) {
+          // Refresh chart and alerts every 2 polls (~6s)
+          if (successfulPolls % 2 === 0) {
             void Promise.all([loadChart(tripId), loadAlerts(tripId)]);
           }
         } else {
@@ -278,6 +281,23 @@ export default function TrackingDetailScreen() {
       void Promise.all([loadRoute(tripId), loadChart(tripId), loadAlerts(tripId)]);
       void poll(true);
 
+      // Listen to real-time SignalR events for instant live push
+      const unsubNotification = signalRService.onNotification(() => {
+        if (!disposed && tripId) {
+          void Promise.all([loadTracking(tripId, false), loadAlerts(tripId), loadChart(tripId)]);
+        }
+      });
+      const unsubAlert = signalRService.on('ReceiveColdChainAlert', () => {
+        if (!disposed && tripId) {
+          void Promise.all([loadTracking(tripId, false), loadAlerts(tripId), loadChart(tripId)]);
+        }
+      });
+      const unsubGenericAlert = signalRService.on('ReceiveAlert', () => {
+        if (!disposed && tripId) {
+          void Promise.all([loadTracking(tripId, false), loadAlerts(tripId)]);
+        }
+      });
+
       const subscription = AppState.addEventListener('change', (nextState) => {
         currentAppState = nextState;
         if (nextState !== 'active') clearTimer();
@@ -288,6 +308,9 @@ export default function TrackingDetailScreen() {
         disposed = true;
         clearTimer();
         subscription.remove();
+        unsubNotification();
+        unsubAlert();
+        unsubGenericAlert();
       };
     }, [accessToken, loadAlerts, loadChart, loadRoute, loadTracking, tripId])
   );

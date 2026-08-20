@@ -18,6 +18,7 @@ import {
 } from '../../../constants/customerOrderPresentation';
 import { getCustomerDataErrorMessage } from '../../../services/apiClient';
 import { getMyCustomerOrders, OrderResponse } from '../../../services/orderApi';
+import { signalRService } from '../../../services/signalrService';
 import { useAuthStore } from '../../../store/useAuthStore';
 
 export default function TrackingListScreen() {
@@ -65,6 +66,21 @@ export default function TrackingListScreen() {
       setIsLoading(true);
       void loadOrders();
 
+      let active = true;
+      const interval = setInterval(() => {
+        if (active && AppState.currentState === 'active') {
+          void loadOrders(true);
+        }
+      }, 8_000);
+
+      // Listen to real-time SignalR events for instant list updates
+      const unsubNotification = signalRService.onNotification(() => {
+        if (active) void loadOrders(true);
+      });
+      const unsubAlert = signalRService.on('ReceiveColdChainAlert', () => {
+        if (active) void loadOrders(true);
+      });
+
       let appState = AppState.currentState;
       const subscription = AppState.addEventListener('change', (nextState) => {
         if (appState !== 'active' && nextState === 'active') {
@@ -72,7 +88,14 @@ export default function TrackingListScreen() {
         }
         appState = nextState;
       });
-      return () => subscription.remove();
+
+      return () => {
+        active = false;
+        clearInterval(interval);
+        subscription.remove();
+        unsubNotification();
+        unsubAlert();
+      };
     }, [loadOrders])
   );
 
