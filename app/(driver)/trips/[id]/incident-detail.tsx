@@ -397,21 +397,34 @@ export default function DriverIncidentDetailScreen() {
   };
 
   // ── CRITICAL: Xác nhận tiếp tục đi từ Bước 4 qua Bước 5 ──────────────────
-  const handleConfirmContinueFromStep4 = () => {
-    setStep4ManuallyConfirmed(true);
-    setSelectedStep(5);
-    Alert.alert(
-      'Tiếp tục hành trình',
-      `Đã xác nhận xe thay thế ${replacementVehicle?.truckPlate || ''} bắt đầu lăn bánh tiếp tục hành trình giao hàng!`,
-      [
-        { text: 'Xem Bước 5: Giao khách', style: 'cancel' },
-        {
-          text: 'Mở trang giao hàng',
-          style: 'default',
-          onPress: () => router.push(`/trips/${incident?.tripId || currentTripId}` as never),
-        },
-      ]
-    );
+  const handleConfirmContinueFromStep4 = async () => {
+    setActionLoading(true);
+    try {
+      await loadIncident();
+      setStep4ManuallyConfirmed(true);
+      setSelectedStep(5);
+      Alert.alert(
+        'Bắt đầu giao khách (Bước 5)',
+        `Đã xác nhận xe thay thế ${replacementVehicle?.truckPlate || ''} tiếp tục lộ trình giao hàng cho các điểm dừng!`,
+        [
+          { text: 'Xem Bước 5', style: 'cancel' },
+          {
+            text: 'Mở trang giao hàng',
+            style: 'default',
+            onPress: () => {
+              const targetTripId = incident?.tripId || currentTripId;
+              if (targetTripId) {
+                router.push(`/trips/${targetTripId}` as never);
+              }
+            },
+          },
+        ]
+      );
+    } catch (e: unknown) {
+      Alert.alert('Lỗi', getApiErrorMessage(e));
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   // ── Resolve sự cố ─────────────────────────────────────────────────────────
