@@ -13,9 +13,8 @@ export default function CustomerLayout() {
             home: 'ColdChainX',
             'create-order': 'Tạo đơn hàng',
             status: 'Đơn hàng',
-            tracking: 'Giám sát',
             'tracking/index': 'Giám sát',
-            'tracking/[orderId]': 'Chi tiết chuyến',
+            'tracking/[orderId]': 'Chi tiết giám sát',
             claims: 'Khiếu nại',
             'chat/index': 'Hỗ trợ',
             'chat/[orderId]': 'Tin nhắn đơn hàng',
@@ -26,7 +25,8 @@ export default function CustomerLayout() {
             'change-password': 'Đổi mật khẩu',
           };
           const title = titleMap[route.name] || 'ColdChainX';
-          const showBackButton = route.name !== 'home' && route.name !== 'profile';
+          const mainTabs = ['home', 'status', 'tracking/index', 'claims', 'profile'];
+          const showBackButton = !mainTabs.includes(route.name);
 
           return <CustomerHeader title={title} showBackButton={showBackButton} />;
         },
@@ -77,7 +77,7 @@ export default function CustomerLayout() {
         }}
       />
       <Tabs.Screen
-        name="tracking"
+        name="tracking/index"
         options={{
           title: 'Giám sát',
           tabBarAccessibilityLabel: 'Giám sát',
@@ -98,19 +98,6 @@ export default function CustomerLayout() {
           title: 'Cá nhân',
           tabBarAccessibilityLabel: 'Cá nhân',
           tabBarIcon: ({ color }) => <Ionicons name="person-outline" size={22} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="chat/index"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="chat/[orderId]"
-        options={{
-          href: null,
-          tabBarStyle: { display: 'none' },
         }}
       />
       <Tabs.Screen
