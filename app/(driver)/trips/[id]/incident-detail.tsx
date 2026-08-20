@@ -1020,6 +1020,15 @@ export default function DriverIncidentDetailScreen() {
                 : 'Chuyến xe đang trong quá trình giao hàng đến tay khách hàng.'}
             </Text>
 
+            {incident.status !== 'RESOLVED' ? (
+              <View style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default }} className="flex-row items-center gap-2.5 rounded-2xl border p-3">
+                <Ionicons name="information-circle-outline" size={18} color={colors.text.secondary} />
+                <Text style={{ color: colors.text.secondary }} className="flex-1 text-xs leading-4">
+                  Sự cố sẽ do Điều phối viên (Dispatcher) kiểm tra và đóng hoàn tất sau khi kết ca.
+                </Text>
+              </View>
+            ) : null}
+
             <View style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default }} className="gap-2.5 rounded-2xl border p-4">
               {incident.brokenVehicleId ? (
                 <InfoRow
@@ -1309,30 +1318,19 @@ export default function DriverIncidentDetailScreen() {
               </Pressable>
             ) : null}
 
-            {/* CTA: Bước 5 Hoàn tất & Đóng sự cố + Mở chuyến xe */}
+            {/* CTA: Bước 5 Mở chuyến xe để giao hàng các điểm dừng */}
             {currentStep === 5 && incident.status !== 'RESOLVED' ? (
               <View className="gap-2.5">
                 <Pressable
-                  onPress={() => setIsResolveModalVisible(true)}
-                  style={{ backgroundColor: colors.status.success.main, minHeight: 48 }}
-                  className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm"
-                >
-                  <Ionicons name="checkmark-circle" size={18} color="#ffffff" />
-                  <Text className="text-base font-bold text-white">
-                    Hoàn tất & Đóng sự cố (Resolve)
-                  </Text>
-                </Pressable>
-                <Pressable
                   onPress={() => router.push(`/trips/${incident.tripId || currentTripId}` as never)}
                   style={{
-                    backgroundColor: colors.surface.page,
-                    borderColor: colors.border.default,
-                    minHeight: 44,
+                    backgroundColor: colors.brand.primary,
+                    minHeight: 48,
                   }}
-                  className="flex-row items-center justify-center gap-2 rounded-2xl border"
+                  className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm"
                 >
-                  <Ionicons name="navigate-outline" size={16} color={colors.brand.primary} />
-                  <Text style={{ color: colors.brand.primary }} className="text-sm font-bold">
+                  <Ionicons name="navigate" size={18} color="#ffffff" />
+                  <Text className="text-base font-bold text-white">
                     Mở chuyến xe để giao hàng các điểm dừng
                   </Text>
                 </Pressable>

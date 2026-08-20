@@ -76,8 +76,7 @@ export default function DriverLayout() {
       <Tabs.Screen
         name="history"
         options={{
-          title: 'Lịch sử',
-          tabBarIcon: ({ color }) => <Ionicons name="time-outline" size={24} color={color} />,
+          href: null,
         }}
       />
       <Tabs.Screen
