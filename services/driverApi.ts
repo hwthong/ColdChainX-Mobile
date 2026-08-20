@@ -112,13 +112,13 @@ export const driverApi = {
    * Fetch history of completed trips
    * Route: GET /api/drivers/my/trip-history
    */
-  getMyTripHistory: async (pageNumber = 1, pageSize = 10): Promise<PagedResult<TripListDto>> => {
+  getMyTripHistory: async (pageNumber = 1, pageSize = 20): Promise<TripListDto[]> => {
     const token = useAuthStore.getState().token;
     if (!token) throw new Error('Not authenticated');
 
     const endpoint = `/api/drivers/my/trip-history?pageNumber=${pageNumber}&pageSize=${pageSize}`;
 
-    const response = await apiRequest<ApiResponse<PagedResult<TripListDto>>>(endpoint, {
+    const response = await apiRequest<any>(endpoint, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -129,7 +129,11 @@ export const driverApi = {
       throw new Error(response.message || 'Không thể tải lịch sử chuyến.');
     }
 
-    return response.data;
+    const payload = response.data;
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload.items)) return payload.items;
+    if (Array.isArray(payload.data)) return payload.data;
+    return [];
   },
 
   /**

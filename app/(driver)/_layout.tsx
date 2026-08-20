@@ -12,6 +12,7 @@ export default function DriverLayout() {
           const titleMap: Record<string, string> = {
             home: 'Trang chủ Tài xế',
             trips: 'Chuyến xe',
+            history: 'Lịch sử chuyến đi',
             profile: 'Hồ sơ cá nhân',
           };
           
@@ -24,7 +25,7 @@ export default function DriverLayout() {
           
           if (!title) title = 'Tài xế';
 
-          const showBackButton = route.name !== 'home' && route.name !== 'trips' && route.name !== 'profile';
+          const showBackButton = route.name !== 'home' && route.name !== 'trips' && route.name !== 'history' && route.name !== 'profile';
 
           return <WarehouseHeader title={title} showBackButton={showBackButton} />;
         },
@@ -53,6 +54,13 @@ export default function DriverLayout() {
         options={{
           title: 'Chuyến xe',
           tabBarIcon: ({ color }) => <Ionicons name="map-outline" size={24} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="history"
+        options={{
+          title: 'Lịch sử',
+          tabBarIcon: ({ color }) => <Ionicons name="time-outline" size={24} color={color} />,
         }}
       />
       <Tabs.Screen
