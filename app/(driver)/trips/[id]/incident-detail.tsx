@@ -397,10 +397,28 @@ export default function DriverIncidentDetailScreen() {
   };
 
   // ── CRITICAL: Xác nhận tiếp tục đi từ Bước 4 qua Bước 5 ──────────────────
+  // - requiresRescue === false: Gọi modal để submit API continue-trip
+  // - requiresRescue === true (TRANSLOAD_COMPLETED): Trip đã IN_TRANSIT, chỉ navigate về trip
   const handleConfirmContinueFromStep4 = () => {
+    if (incident?.requiresRescue === false) {
+      // Nhánh tự xử lý: cần điền form và gọi API continue-trip
+      setIsContinueTripModalVisible(true);
+    } else {
+      // Nhánh cứu hộ: confirm-transload đã cập nhật trip → IN_TRANSIT, chỉ cần navigate
+      const targetTripId = incident?.tripId || currentTripId;
+      setStep4ManuallyConfirmed(true);
+      setSelectedStep(null);
+      if (targetTripId) {
+        router.replace(`/trips/${targetTripId}` as never);
+      } else {
+        router.back();
+      }
+    }
+  };
+
+  // Navigate thẳng về trang chuyến xe (dùng cho Step 5)
+  const handleOpenTripFromStep5 = () => {
     const targetTripId = incident?.tripId || currentTripId;
-    setStep4ManuallyConfirmed(true);
-    setSelectedStep(null);
     if (targetTripId) {
       router.replace(`/trips/${targetTripId}` as never);
     } else {
@@ -1360,16 +1378,42 @@ export default function DriverIncidentDetailScreen() {
               </Pressable>
             ) : null}
 
-            {/* CTA: Bước 4 & Bước 5: Tiếp tục chuyến xe & Giao hàng các điểm dừng */}
-            {(currentStep === 4 || currentStep === 5) && incident.status !== 'RESOLVED' ? (
+            {/* CTA: Bước 4: Tiếp tục chuyến xe
+                - requiresRescue === false → gọi API continue-trip qua modal
+                - requiresRescue === true (TRANSLOAD_COMPLETED) → trip đã IN_TRANSIT, navigate về trip
+            */}
+            {currentStep === 4 && incident.status !== 'RESOLVED' ? (
               <Pressable
                 onPress={handleConfirmContinueFromStep4}
+                disabled={isContinueTripSubmitting}
+                style={{ backgroundColor: colors.brand.primary, minHeight: 48 }}
+                className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm px-4"
+              >
+                {isContinueTripSubmitting ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="navigate" size={18} color="#ffffff" />
+                    <Text className="text-base font-bold text-white">
+                      {incident.requiresRescue === false
+                        ? 'Tiếp tục chuyến (Tự xử lý)'
+                        : 'Tiếp tục chuyến xe & Giao hàng'}
+                    </Text>
+                  </>
+                )}
+              </Pressable>
+            ) : null}
+
+            {/* CTA: Bước 5: Mở trang giao hàng các điểm dừng */}
+            {currentStep === 5 && incident.status !== 'RESOLVED' ? (
+              <Pressable
+                onPress={handleOpenTripFromStep5}
                 style={{ backgroundColor: colors.brand.primary, minHeight: 48 }}
                 className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm px-4"
               >
                 <Ionicons name="navigate" size={18} color="#ffffff" />
                 <Text className="text-base font-bold text-white">
-                  Tiếp tục chuyến xe & Giao hàng
+                  🚀 Mở chuyến xe để giao hàng các điểm dừng
                 </Text>
               </Pressable>
             ) : null}
