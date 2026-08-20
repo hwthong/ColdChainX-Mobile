@@ -101,6 +101,19 @@ export default function CustomerLayout() {
         }}
       />
       <Tabs.Screen
+        name="chat/index"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="chat/[orderId]"
+        options={{
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
+      <Tabs.Screen
         name="tracking/[orderId]"
         options={{
           href: null,
