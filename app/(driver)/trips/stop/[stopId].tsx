@@ -247,29 +247,37 @@ export default function StopDetailScreen() {
       }
 
       const route = routeResponse.data;
-      setServerSealNumber(trackingResponse.data?.sealNumber ?? null);
-
       const routeStop = route.optimizedStops?.find((stop) => stop.stopId === stopId)
-        || route.optimizedStops?.find((s) => (s as { locationId?: string }).locationId === stopId);
+        || route.optimizedStops?.find((s) => (s as { locationId?: string }).locationId === stopId)
+        || route.optimizedStops?.find((_, idx) => `stop-${idx}` === stopId)
+        || (trackingResponse.data?.orders?.some((o) => o.orderId === stopId)
+          ? {
+              stopId,
+              address: trackingResponse.data.orders.find((o) => o.orderId === stopId)?.itemName || 'Điểm giao hàng',
+              orders: trackingResponse.data.orders.filter((o) => o.orderId === stopId).map((o) => ({
+                orderId: o.orderId,
+                trackingCode: o.trackingCode,
+                itemName: o.itemName,
+                tempCondition: o.tempCondition,
+              })),
+              lpns: [],
+            }
+          : undefined);
 
-      if (!tripDetail.stops || tripDetail.stops.length === 0) {
-        throw new ApiClientError('Chuyến xe chưa có dữ liệu điểm dừng (TripStops) trong hệ thống database. Vui lòng liên hệ điều phối viên hoặc tải lại.', 404);
-      }
-
-      // 1. Tìm trực tiếp theo stopId trong tripDetail.stops
-      let matchedStop = tripDetail.stops.find((stop) => stop.stopId === stopId);
+      // 1. Tìm trực tiếp theo stopId trong tripDetail.stops nếu có
+      let matchedStop = tripDetail.stops?.find((stop) => stop.stopId === stopId);
 
       // 2. Nếu không thấy theo ID trực tiếp, tìm theo stopSequence của routeStop
       if (!matchedStop && routeStop) {
         const seq = (routeStop as { optimizedSequence?: number; originalStopSequence?: number }).optimizedSequence
           ?? (routeStop as { originalStopSequence?: number }).originalStopSequence;
         if (seq !== undefined) {
-          matchedStop = tripDetail.stops.find((s) => s.stopSequence === seq);
+          matchedStop = tripDetail.stops?.find((s) => s.stopSequence === seq);
         }
       }
 
-      // 3. Nếu vẫn không thấy và chỉ có 1 stop hoặc tìm theo index
-      if (!matchedStop) {
+      // 3. Nếu vẫn không thấy và tripDetail.stops có dữ liệu, ánh xạ theo index
+      if (!matchedStop && tripDetail.stops && tripDetail.stops.length > 0) {
         if (tripDetail.stops.length === 1) {
           matchedStop = tripDetail.stops[0];
         } else {
@@ -282,11 +290,20 @@ export default function StopDetailScreen() {
         }
       }
 
-      if (!matchedStop) {
-        throw new ApiClientError('Điểm dừng không tồn tại trong danh sách điểm dừng của chuyến. Vui lòng tải lại.', 404);
-      }
+      const currentStop: DriverTripStopDto | null = matchedStop ??
+        (routeStop
+          ? ({
+              stopId: routeStop.stopId || stopId,
+              stopSequence: (routeStop as { optimizedSequence?: number; originalStopSequence?: number }).optimizedSequence ?? (routeStop as { originalStopSequence?: number }).originalStopSequence ?? 1,
+              address: (routeStop as { address?: string }).address || 'Điểm giao hàng',
+              status: (routeStop as { status?: string }).status || 'PLANNED',
+              stopType: (routeStop as { stopType?: string }).stopType || 'DELIVERY',
+            } as DriverTripStopDto)
+          : null);
 
-      const currentStop: DriverTripStopDto = matchedStop;
+      if (!currentStop && !routeStop) {
+        throw new ApiClientError('Stop không thuộc chuyến được giao.', 404);
+      }
 
       let routeOrders: TripRouteOrderDto[];
       let stopLocationId: string | null | undefined;
@@ -451,15 +468,16 @@ export default function StopDetailScreen() {
         || latestDetail.stops?.find((s) => s.stopSequence === driverStop?.stopSequence)
         || (latestDetail.stops?.length === 1 ? latestDetail.stops[0] : null);
 
-      if (!verifiedStop?.stopId) {
+      const checkinId = verifiedStop?.stopId || driverStop?.stopId || stopId;
+      if (!checkinId) {
         Alert.alert(
           'Không tìm thấy điểm dừng',
-          'Không tìm thấy mã điểm dừng (TripStopId) hợp lệ trong cơ sở dữ liệu. Vui lòng tải lại chi tiết chuyến.'
+          'Không tìm thấy mã điểm dừng (TripStopId) hợp lệ. Vui lòng tải lại chi tiết chuyến.'
         );
         return;
       }
 
-      await deliveryApi.checkInStop(verifiedStop.stopId, toDeliveryUploadFile(checkinProofAsset, 'checkin-proof.jpg'));
+      await deliveryApi.checkInStop(checkinId, toDeliveryUploadFile(checkinProofAsset, 'checkin-proof.jpg'));
       const reloaded = await loadData(false);
       Alert.alert(
         'Đã xác nhận đến điểm giao',

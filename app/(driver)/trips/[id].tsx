@@ -281,8 +281,30 @@ export default function DriverTripDetailScreen() {
     if (trip?.stops && trip.stops.length > 0) {
       return trip.stops;
     }
+    if (route?.optimizedStops && route.optimizedStops.length > 0) {
+      return route.optimizedStops.map((s, idx) => ({
+        stopId: s.stopId || (s as { locationId?: string }).locationId || `stop-${idx}`,
+        stopSequence: s.optimizedSequence ?? s.originalStopSequence ?? idx + 1,
+        address: s.address || 'Điểm giao hàng',
+        plannedArrivalTime: (s as { plannedArrivalTime?: string }).plannedArrivalTime ?? null,
+        plannedDepartureTime: (s as { plannedDepartureTime?: string }).plannedDepartureTime ?? null,
+        status: (s as { status?: string }).status || 'PLANNED',
+        stopType: s.stopType || 'DELIVERY',
+      }));
+    }
+    if (tracking?.orders && tracking.orders.length > 0) {
+      return tracking.orders.map((o, idx) => ({
+        stopId: o.orderId,
+        stopSequence: idx + 1,
+        address: `Điểm giao hàng: ${o.itemName} (${o.trackingCode})`,
+        plannedArrivalTime: null,
+        plannedDepartureTime: null,
+        status: 'PLANNED',
+        stopType: 'DELIVERY',
+      }));
+    }
     return [];
-  }, [trip?.stops]);
+  }, [trip?.stops, route?.optimizedStops, tracking?.orders]);
 
   const nextStopIndex = useMemo(() => {
     const finishedStatuses = new Set(['DEPARTED', 'COMPLETED', 'SKIPPED_NOSHOW', 'FAILED_DELIVERY']);
