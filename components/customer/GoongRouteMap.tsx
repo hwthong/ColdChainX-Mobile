@@ -425,9 +425,13 @@ function buildMapHtml(
     /* ─── VEHICLE MOVING RADAR MARKER ─── */
     .vehicle-marker-wrapper {
       position: relative;
+      width: 44px;
+      height: 44px;
       display: flex;
       align-items: center;
       justify-content: center;
+      cursor: pointer;
+      z-index: 50;
     }
     .vehicle-marker-bubble {
       width: 40px;
@@ -435,7 +439,7 @@ function buildMapHtml(
       border-radius: 999px;
       background: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%);
       border: 3px solid #FFFFFF;
-      box-shadow: 0 8px 22px rgba(29, 78, 216, 0.5);
+      box-shadow: 0 8px 22px rgba(29, 78, 216, 0.6);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -715,26 +719,26 @@ function buildMapHtml(
             }
             popupHtml += '</div>';
 
-            new goongjs.Marker({ element: markerEl, anchor: 'bottom' })
+            new goongjs.Marker(markerEl)
               .setLngLat([point.lon, point.lat])
-              .setPopup(new goongjs.Popup({ offset: [0, -42], closeButton: true, maxWidth: '280px' }).setHTML(popupHtml))
+              .setPopup(new goongjs.Popup({ offset: 24, closeButton: true, maxWidth: '280px' }).setHTML(popupHtml))
               .addTo(map);
 
             bounds.extend([point.lon, point.lat]);
           });
 
-          if (payload.vehiclePosition) {
+          if (payload.vehiclePosition && payload.vehiclePosition.latitude && payload.vehiclePosition.longitude) {
             const vehicleEl = document.createElement('div');
             vehicleEl.className = 'vehicle-marker-wrapper';
             vehicleEl.innerHTML = '<div class="vehicle-pulse-ring"></div><div class="vehicle-marker-bubble">🚚</div>';
 
-            new goongjs.Marker({ element: vehicleEl })
+            new goongjs.Marker(vehicleEl)
               .setLngLat([payload.vehiclePosition.longitude, payload.vehiclePosition.latitude])
-              .setPopup(new goongjs.Popup({ offset: [0, -24] }).setHTML(
+              .setPopup(new goongjs.Popup({ offset: 24, closeButton: true, maxWidth: '260px' }).setHTML(
                 '<div class="custom-popup-card">' +
                   '<div class="popup-badge-row"><span class="popup-badge" style="background:#DBEAFE; color:#1D4ED8;">🚚 Đang vận chuyển</span></div>' +
                   '<div class="popup-title">Vị trí xe hiện tại</div>' +
-                  '<div class="popup-address">Tọa độ: ' + payload.vehiclePosition.latitude.toFixed(5) + ', ' + payload.vehiclePosition.longitude.toFixed(5) + '</div>' +
+                  '<div class="popup-address">Tọa độ: ' + Number(payload.vehiclePosition.latitude).toFixed(5) + ', ' + Number(payload.vehiclePosition.longitude).toFixed(5) + '</div>' +
                 '</div>'
               ))
               .addTo(map);
