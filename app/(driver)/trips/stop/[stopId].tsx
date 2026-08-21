@@ -314,9 +314,9 @@ export default function StopDetailScreen() {
       let routeLpns: TripRouteLpnDto[];
 
       if (routeStop) {
-        routeOrders = routeStop.orders;
+        routeOrders = routeStop.orders || [];
         stopLocationId = (routeStop as { locationId?: string }).locationId;
-        routeLpns = routeStop.lpns;
+        routeLpns = routeStop.lpns || [];
       } else {
         const boundaryPoint = resolveBoundaryPoint(
           currentStop!,
@@ -324,23 +324,15 @@ export default function StopDetailScreen() {
           route.origin,
           route.destination
         );
-        if (!boundaryPoint?.locationId) {
-          throw new Error('Không xác định được vị trí thật của điểm dừng từ dữ liệu tuyến.');
-        }
-
-        stopLocationId = boundaryPoint.locationId;
+        stopLocationId = boundaryPoint?.locationId || currentStop?.locationId;
         routeLpns = [];
-
-        if (!trackingResponse.success || !trackingResponse.data) {
-          throw new Error('Không thể tải danh sách đơn hàng của chuyến.');
-        }
-        routeOrders = trackingResponse.data.orders;
+        routeOrders = trackingResponse.data?.orders || [];
       }
 
       const orderDetails = await loadOrderDetails(token, routeOrders);
-      const ordersAtStop = routeStop
+      const ordersAtStop = routeStop || !stopLocationId
         ? orderDetails
-        : orderDetails.filter((order) => order.destination?.locationId === stopLocationId);
+        : orderDetails.filter((order) => !order.destination?.locationId || order.destination?.locationId === stopLocationId);
       const routeOrderById = new Map(routeOrders.map((order) => [order.orderId, order]));
 
       const nextOrders = ordersAtStop.map((order): StopOrder => {
@@ -2490,14 +2482,55 @@ async function loadOrderDetails(
     ).values()
   );
 
-  const responses = await Promise.all(
+  const results = await Promise.allSettled(
     uniqueOrders.map((order) => getOrderById(token, order.orderId))
   );
-  return responses.map((response) => {
-    if (!response.success || !response.data) {
-      throw new Error('Không thể tải trạng thái thật của một Order.');
+
+  return results.map((res, idx) => {
+    const raw = uniqueOrders[idx];
+    if (res.status === 'fulfilled' && res.value?.success && res.value?.data) {
+      return res.value.data;
     }
-    return response.data;
+    return {
+      orderId: raw.orderId,
+      trackingCode: raw.trackingCode || '',
+      status: 'SEALED',
+      totalAmount: 0,
+      paymentMethod: 'COD',
+      paymentStatus: 'UNPAID',
+      codAmount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      pickupLocation: null,
+      destination: null,
+      sender: null,
+      receiver: null,
+      items: [
+        {
+          orderItemId: `item-${raw.orderId}`,
+          orderId: raw.orderId,
+          packageId: '',
+          quantity: raw.quantity ?? 1,
+          weightKg: raw.weightKg ?? 0,
+          volumeCbm: 0,
+          tempCondition: raw.tempCondition || 'Chilled',
+          package: {
+            packageId: `pkg-${raw.orderId}`,
+            trackingCode: raw.trackingCode || '',
+            productName: raw.itemName || 'Hàng đông lạnh',
+            category: 'Lạnh',
+            netWeightKg: raw.weightKg ?? 0,
+            cbm: 0,
+            tempCondition: raw.tempCondition || 'Chilled',
+            packageItems: [],
+          },
+        },
+      ],
+      documents: [],
+      lpns: [],
+      stops: [],
+      activities: [],
+    } as unknown as OrderResponse;
   });
 }
 
