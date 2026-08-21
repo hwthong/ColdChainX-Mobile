@@ -70,10 +70,8 @@ export default function DriverLayout() {
         }}
         listeners={({ navigation }) => ({
           tabPress: (e) => {
-            if (navigation.isFocused()) {
-              e.preventDefault();
-              router.replace('/(driver)/trips');
-            }
+            e.preventDefault();
+            navigation.navigate('trips', { screen: 'index' });
           },
         })}
       />

@@ -39,9 +39,15 @@ export function DriverHeader({ title, showBackButton = false }: DriverHeaderProp
       <View className="h-[56px] flex-row items-center justify-between px-4">
         {showBackButton ? (
           <Pressable
-            onPress={() => router.back()}
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace('/(driver)/home' as never);
+              }
+            }}
             style={{ backgroundColor: colors.surface.muted }}
-            className="h-10 w-10 items-center justify-center rounded-full"
+            className="h-10 w-10 items-center justify-center rounded-full active:opacity-70"
           >
             <Ionicons name="chevron-back" size={22} color={colors.text.primary} />
           </Pressable>
