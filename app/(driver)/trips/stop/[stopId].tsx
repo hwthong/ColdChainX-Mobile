@@ -1,6 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import * as Location from 'expo-location';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
@@ -424,26 +423,6 @@ export default function StopDetailScreen() {
     try {
       setIsProcessing(true);
 
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (permission.status !== 'granted') {
-        Alert.alert(
-          'Cần quyền vị trí',
-          'Vui lòng cho phép ứng dụng truy cập vị trí khi sử dụng để xác thực check-in.'
-        );
-        return;
-      }
-      if (!(await Location.hasServicesEnabledAsync())) {
-        Alert.alert('Chưa bật định vị', 'Vui lòng bật dịch vụ vị trí trên thiết bị rồi thử lại.');
-        return;
-      }
-      const deviceLocation = await withTimeout(
-        Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.High,
-          mayShowUserSettingsDialog: true,
-        }),
-        CHECKIN_LOCATION_TIMEOUT_MS
-      );
-
       // Resolve targetStopId từ chi tiết chuyến mới nhất từ database
       const latestDetail = await driverApi.getMyTripDetail(validTripId);
       const verifiedStop = latestDetail.stops?.find(
@@ -466,13 +445,7 @@ export default function StopDetailScreen() {
 
       await deliveryApi.checkInStop(
         verifiedStop.stopId,
-        toDeliveryUploadFile(checkinProofAsset, 'checkin-proof.jpg'),
-        {
-          latitude: deviceLocation.coords.latitude,
-          longitude: deviceLocation.coords.longitude,
-          locationTimestamp: new Date(deviceLocation.timestamp).toISOString(),
-          accuracyMeters: deviceLocation.coords.accuracy,
-        }
+        toDeliveryUploadFile(checkinProofAsset, 'checkin-proof.jpg')
       );
       const reloaded = await loadData(false);
       Alert.alert(
@@ -1298,7 +1271,7 @@ export default function StopDetailScreen() {
                 Xác nhận đã đến điểm giao
               </Text>
               <Text style={{ color: colors.text.secondary }} className="mb-4 text-center text-xs leading-5">
-                Chụp ảnh điểm giao để xác nhận có mặt. Hệ thống đối chiếu GPS mới nhất của xe và điện thoại trong bán kính tối đa 200 m.
+                Chụp ảnh điểm giao để xác nhận có mặt. Backend chỉ xác thực bằng GPS mới nhất của xe trong bán kính tối đa 10 km.
               </Text>
 
               {/* Thông tin khoảng cách xe hiện tại tới điểm giao */}
@@ -1312,7 +1285,7 @@ export default function StopDetailScreen() {
                       </Text>
                     </View>
                     <Text className="mt-1 text-[11px] text-emerald-800 leading-4">
-                      Đang nằm trong bán kính tham khảo 200 m. Backend sẽ xác thực lại GPS mới nhất khi gửi.
+                      Đang nằm trong bán kính tham khảo 10 km. Backend sẽ xác thực lại GPS mới nhất khi gửi.
                     </Text>
                   </View>
                 ) : (
@@ -1324,7 +1297,7 @@ export default function StopDetailScreen() {
                       </Text>
                     </View>
                     <Text className="mt-1 text-[11px] text-amber-800 leading-4">
-                      Ngoài bán kính 200 m. Đây là vị trí tham khảo; backend sẽ xác thực lại khi gửi.
+                      Ngoài bán kính 10 km. Đây là vị trí tham khảo; backend sẽ xác thực lại khi gửi.
                     </Text>
                   </View>
                 )
@@ -1587,17 +1560,6 @@ export default function StopDetailScreen() {
                 <Text className="mt-1 font-bold text-orange-950">{returnCargoSummary.quantity} kiện</Text>
                 <Text className="mt-3 text-sm text-orange-800">Lý do</Text>
                 <Text className="mt-1 text-orange-950">{returnCargoSummary.reason}</Text>
-              </View>
-            ) : null}
-
-            {hasCheckedIn && !allOrdersHandedOver && stopStatus !== 'SKIPPED_NOSHOW' ? (
-              <View className="mt-4">
-                <AppButton
-                  label="Khách không có mặt (No-Show)"
-                  variant="secondary"
-                  disabled={isProcessing}
-                  onPress={startNoShow}
-                />
               </View>
             ) : null}
 
@@ -2643,10 +2605,10 @@ function formatActionError(
       return 'Vui lòng thêm ảnh xác nhận trước khi check-in.';
     }
     if (action === 'CHECK_IN' && /distance|geofence|meter|metre|radius/.test(message)) {
-      return 'Xe chưa ở trong phạm vi 200 m của điểm giao hàng.';
+      return 'Xe chưa ở trong phạm vi 10 km của điểm giao hàng.';
     }
     if (action === 'CHECK_IN' && /iot|telemetry|gps|location/.test(message)) {
-      return 'Chưa nhận được GPS mới và đủ chính xác từ xe hoặc điện thoại. Vui lòng bật định vị và thử lại.';
+      return 'Không nhận được GPS từ xe.';
     }
     if (action === 'CHECK_IN' && /already|check.?in/.test(message)) {
       return 'Điểm giao này đã được xác nhận đến.';
@@ -2875,31 +2837,12 @@ function formatTripStatus(status?: string | null) {
   }
 }
 
-const MAX_CHECKIN_DISTANCE_KM = 0.2;
-const CHECKIN_LOCATION_TIMEOUT_MS = 15_000;
+const MAX_CHECKIN_DISTANCE_KM = 10;
 
 function matchedLocationId(stops: DriverTripStopDto[] | undefined, requestedStopId: string) {
   return stops?.find((stop) => stop.stopId === requestedStopId)?.locationId;
 }
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error('Không lấy được vị trí GPS mới trong thời gian cho phép.')),
-      timeoutMs
-    );
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (error) => {
-        clearTimeout(timer);
-        reject(error);
-      }
-    );
-  });
-}
 
 function calculateHaversineDistanceKm(
   lat1: number,

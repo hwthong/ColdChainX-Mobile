@@ -234,15 +234,17 @@ export const deliveryApi = {
   checkInStop: async (
     stopId: string,
     proofImageFile: DeliveryUploadFile,
-    location: DriverCheckinLocation
+    location?: DriverCheckinLocation | null
   ) => {
     const formData = new FormData();
     appendFile(formData, 'ProofImageFile', proofImageFile);
-    formData.append('Latitude', String(location.latitude));
-    formData.append('Longitude', String(location.longitude));
-    formData.append('LocationTimestamp', location.locationTimestamp);
-    if (location.accuracyMeters !== null && location.accuracyMeters !== undefined) {
-      formData.append('AccuracyMeters', String(location.accuracyMeters));
+    if (location) {
+      formData.append('Latitude', String(location.latitude));
+      formData.append('Longitude', String(location.longitude));
+      formData.append('LocationTimestamp', location.locationTimestamp);
+      if (location.accuracyMeters !== null && location.accuracyMeters !== undefined) {
+        formData.append('AccuracyMeters', String(location.accuracyMeters));
+      }
     }
 
     const response = await apiRequest<ApiResponse<CheckinDriverResponse>>(

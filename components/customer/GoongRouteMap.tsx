@@ -56,10 +56,19 @@ export function GoongRouteMap({
   const webViewRef = React.useRef<WebView>(null);
   const [mapFailure, setMapFailure] = useState<MapBridgeMessage | null>(null);
   const [isMapReady, setIsMapReady] = useState(false);
-  const points = useMemo(() => buildRoutePoints(route), [route]);
-  const routeCoordinates = useMemo(
-    () => decodePolyline(route.overviewPolyline),
-    [route.overviewPolyline]
+  const routeContentJson = JSON.stringify({
+    points: buildRoutePoints(route).filter(
+      (point) => !(point.type === 'origin' && point.locationId === 'vehicle')
+    ),
+    routeCoordinates: decodePolyline(route.overviewPolyline),
+  });
+  const { points, routeCoordinates } = useMemo(
+    () =>
+      JSON.parse(routeContentJson) as {
+        points: RouteMapPoint[];
+        routeCoordinates: [number, number][];
+      },
+    [routeContentJson]
   );
   const bootstrapVehicleRef = React.useRef<{
     tripId: string;
@@ -409,10 +418,15 @@ function buildMapHtml(
   <style>
     html, body { position: fixed; inset: 0; margin: 0; padding: 0; background: #eef2f5; overflow: hidden; touch-action: none; -webkit-overflow-scrolling: auto; }
     #map { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
-    .goongjs-canvas-container, .goongjs-canvas { touch-action: none; }
+    .goongjs-canvas-container, .goongjs-canvas,
+    .mapboxgl-canvas-container, .mapboxgl-canvas { touch-action: none; }
     
     /* ─── CUSTOM PIN MARKER STYLES ─── */
-    .custom-pin {
+    /* Goong owns transform on these positioner elements. Never animate it. */
+    .custom-pin-marker, .vehicle-marker-positioner {
+      transition: none !important;
+    }
+    .custom-pin-visual {
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -421,11 +435,13 @@ function buildMapHtml(
       z-index: 10;
       transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
     }
-    .custom-pin:hover, .custom-pin:active, .custom-pin.active {
+    .custom-pin-marker:hover .custom-pin-visual,
+    .custom-pin-marker:active .custom-pin-visual,
+    .custom-pin-visual.active {
       z-index: 999 !important;
       transform: scale(1.15) translateY(-3px);
     }
-    .custom-pin.active .pin-svg {
+    .custom-pin-visual.active .pin-svg {
       filter: drop-shadow(0 0 8px rgba(37, 99, 235, 0.9));
     }
     .pin-svg {
@@ -626,7 +642,12 @@ function buildMapHtml(
   <script>
     document.addEventListener('scroll', function() { window.scrollTo(0, 0); }, true);
     document.body.addEventListener('touchmove', function(e) {
-      if (!e.target.closest('.goongjs-canvas-container') && !e.target.closest('.goongjs-marker')) {
+      if (
+        !e.target.closest('.goongjs-canvas-container') &&
+        !e.target.closest('.goongjs-marker') &&
+        !e.target.closest('.mapboxgl-canvas-container') &&
+        !e.target.closest('.mapboxgl-marker')
+      ) {
         e.preventDefault();
       }
     }, { passive: false });
@@ -733,10 +754,21 @@ function buildMapHtml(
         map.addControl(new goongjs.NavigationControl({ showCompass: false }), 'top-right');
         window.addEventListener('resize', function() { map.resize(); });
 
-        let allBounds = new goongjs.LngLatBounds();
+        let routeBounds = new goongjs.LngLatBounds();
+        let currentVehicleLngLat = null;
+        function getAllBounds() {
+          const bounds = new goongjs.LngLatBounds();
+          if (!routeBounds.isEmpty()) {
+            bounds.extend(routeBounds.getSouthWest());
+            bounds.extend(routeBounds.getNorthEast());
+          }
+          if (currentVehicleLngLat) bounds.extend(currentVehicleLngLat);
+          return bounds;
+        }
         window.fitAllBounds = function() {
-          if (map && !allBounds.isEmpty()) {
-            map.fitBounds(allBounds, { padding: 48, maxZoom: 14, duration: 800 });
+          const bounds = getAllBounds();
+          if (map && !bounds.isEmpty()) {
+            map.fitBounds(bounds, { padding: 48, maxZoom: 14, duration: 800 });
           }
         };
 
@@ -752,9 +784,13 @@ function buildMapHtml(
             const seqNumber = point.sequence || (index + 1);
 
             const markerEl = document.createElement('div');
-            markerEl.className = 'custom-pin ' + point.type;
+            markerEl.className = 'custom-pin-marker';
             markerEl.setAttribute('role', 'img');
             markerEl.setAttribute('aria-label', point.accessibilityLabel || point.label);
+
+            const markerVisualEl = document.createElement('div');
+            markerVisualEl.className = 'custom-pin-visual ' + point.type;
+            markerEl.appendChild(markerVisualEl);
 
             const pinColorTop = isFinal ? '${colors.status.danger.main}' : isOrigin ? '${colors.status.success.main}' : '${colors.brand.primary}';
             const pinColorBottom = isFinal ? '${colors.status.danger.main}' : isOrigin ? '${colors.status.success.main}' : '${colors.brand.primaryPressed}';
@@ -780,7 +816,7 @@ function buildMapHtml(
             }
 
             const svgId = String(point.id || index).replace(/[^a-zA-Z0-9_-]/g, '');
-            markerEl.innerHTML =
+            markerVisualEl.innerHTML =
               '<svg class="pin-svg" width="28" height="36" viewBox="0 0 28 36" fill="none" xmlns="http://www.w3.org/2000/svg">' +
                 '<defs>' +
                   '<filter id="shadow-' + svgId + '" x="-20%" y="-20%" width="140%" height="140%">' +
@@ -864,17 +900,21 @@ function buildMapHtml(
 
             popup.on('open', function() {
               if (activeMarkerElement) activeMarkerElement.classList.remove('active');
-              markerEl.classList.add('active');
-              activeMarkerElement = markerEl;
+              markerVisualEl.classList.add('active');
+              activeMarkerElement = markerVisualEl;
               postBridge({ type: 'MARKER_SELECTED', pointId: point.id });
             });
 
             popup.on('close', function() {
-              markerEl.classList.remove('active');
-              if (activeMarkerElement === markerEl) activeMarkerElement = null;
+              markerVisualEl.classList.remove('active');
+              if (activeMarkerElement === markerVisualEl) activeMarkerElement = null;
             });
 
-            new goongjs.Marker(markerEl, { anchor: 'bottom' })
+            new goongjs.Marker(markerEl, {
+              anchor: 'bottom',
+              rotationAlignment: 'viewport',
+              pitchAlignment: 'viewport'
+            })
               .setLngLat([point.lon, point.lat])
               .setPopup(popup)
               .addTo(map);
@@ -886,62 +926,34 @@ function buildMapHtml(
             ? payload.routeCoordinates
             : (payload.points.length > 1 ? payload.points.map(function(p) { return [p.lon, p.lat]; }) : []);
 
-          function snapToRoute(lon, lat, coords) {
-            if (!coords || coords.length < 2) return [lon, lat];
-            var minDistanceSq = Infinity;
-            var bestPoint = [lon, lat];
-
-            for (var i = 0; i < coords.length - 1; i++) {
-              var p1 = coords[i];
-              var p2 = coords[i + 1];
-
-              var x = lon;
-              var y = lat;
-              var x1 = p1[0];
-              var y1 = p1[1];
-              var x2 = p2[0];
-              var y2 = p2[1];
-
-              var dx = x2 - x1;
-              var dy = y2 - y1;
-              var lenSq = dx * dx + dy * dy;
-
-              if (lenSq === 0) continue;
-
-              var t = Math.max(0, Math.min(1, ((x - x1) * dx + (y - y1) * dy) / lenSq));
-              var projX = x1 + t * dx;
-              var projY = y1 + t * dy;
-
-              var distSq = (x - projX) * (x - projX) + (y - projY) * (y - projY);
-              if (distSq < minDistanceSq) {
-                minDistanceSq = distSq;
-                bestPoint = [projX, projY];
-              }
-            }
-
-            return bestPoint;
-          }
-
           let vehicleMarker = null;
           window.updateVehicleMarker = function(lat, lon) {
             const rawLat = parseFloat(lat);
             const rawLon = parseFloat(lon);
             if (isNaN(rawLat) || isNaN(rawLon) || rawLat < -90 || rawLat > 90 || rawLon < -180 || rawLon > 180) return;
 
-            const snapped = snapToRoute(rawLon, rawLat, routeCoords);
-            const finalLon = snapped[0];
-            const finalLat = snapped[1];
+            const finalLon = rawLon;
+            const finalLat = rawLat;
+            currentVehicleLngLat = [finalLon, finalLat];
 
             if (vehicleMarker) {
               vehicleMarker.setLngLat([finalLon, finalLat]);
             } else if (map) {
+              const vehicleMarkerEl = document.createElement('div');
+              vehicleMarkerEl.className = 'vehicle-marker-positioner';
+              vehicleMarkerEl.setAttribute('role', 'img');
+              vehicleMarkerEl.setAttribute('aria-label', 'Vị trí xe đang vận chuyển');
+
               const vehicleEl = document.createElement('div');
               vehicleEl.className = 'vehicle-marker';
               vehicleEl.textContent = '🚚';
-              vehicleEl.setAttribute('role', 'img');
-              vehicleEl.setAttribute('aria-label', 'Vị trí xe đang vận chuyển');
+              vehicleMarkerEl.appendChild(vehicleEl);
 
-              vehicleMarker = new goongjs.Marker(vehicleEl, { anchor: 'center' })
+              vehicleMarker = new goongjs.Marker(vehicleMarkerEl, {
+                anchor: 'center',
+                rotationAlignment: 'viewport',
+                pitchAlignment: 'viewport'
+              })
                 .setLngLat([finalLon, finalLat])
                 .setPopup(new goongjs.Popup({ offset: [0, -18], closeButton: true, maxWidth: '260px' }).setHTML(
                   '<div class="custom-popup-card">' +
@@ -960,8 +972,6 @@ function buildMapHtml(
             const vLon = typeof vPos.longitude === 'number' ? vPos.longitude : parseFloat(vPos.longitude || vPos.lon || vPos.lng);
             if (!isNaN(vLat) && !isNaN(vLon) && vLat >= -90 && vLat <= 90 && vLon >= -180 && vLon <= 180) {
               window.updateVehicleMarker(vLat, vLon);
-              const initialSnapped = snapToRoute(vLon, vLat, routeCoords);
-              bounds.extend([initialSnapped[0], initialSnapped[1]]);
             }
           }
 
@@ -1015,10 +1025,13 @@ function buildMapHtml(
             });
           }
 
-          allBounds = bounds;
+          routeBounds = bounds;
 
           if (payload.points.length > 1 || payload.vehiclePosition || routeCoords.length > 1) {
-            map.fitBounds(bounds, { padding: 48, maxZoom: 14, duration: 0 });
+            const initialBounds = getAllBounds();
+            if (!initialBounds.isEmpty()) {
+              map.fitBounds(initialBounds, { padding: 48, maxZoom: 14, duration: 0 });
+            }
           }
 
           postBridge({ type: 'MAP_READY' });
