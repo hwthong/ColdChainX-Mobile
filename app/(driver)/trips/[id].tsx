@@ -990,22 +990,24 @@ function StopRow({
                 style={{ backgroundColor: '#FFFFFF', borderColor: '#BBF7D0' }}
                 className="rounded-xl border p-2.5 gap-1.5 shadow-2xs"
               >
-                <View className="flex-row items-center justify-between">
-                  <View className="flex-row items-center gap-1.5 flex-1 mr-2">
+                <View className="flex-row items-center justify-between gap-2">
+                  <View className="flex-row items-center gap-1.5 flex-1 min-w-0">
                     <Ionicons name="cube-outline" size={14} color="#16A34A" />
-                    <Text style={{ color: colors.text.primary }} className="text-xs font-bold" numberOfLines={1}>
+                    <Text style={{ color: colors.text.primary }} className="text-xs font-bold flex-1 min-w-0" numberOfLines={1} ellipsizeMode="tail">
                       {ord.itemName}
+                      {ord.quantity ? (
+                        <Text style={{ color: colors.text.secondary, fontWeight: 'normal' }} className="text-[11px]">
+                          {' '}({ord.quantity} kiện)
+                        </Text>
+                      ) : null}
                     </Text>
-                    {ord.quantity ? (
-                      <Text style={{ color: colors.text.secondary }} className="text-[11px]">
-                        ({ord.quantity} kiện)
-                      </Text>
-                    ) : null}
                   </View>
                   {ord.trackingCode ? (
-                    <Text style={{ color: '#15803D' }} className="text-[11px] font-bold">
-                      #{ord.trackingCode}
-                    </Text>
+                    <View style={{ backgroundColor: '#DCFCE7' }} className="rounded-md px-1.5 py-0.5 shrink-0">
+                      <Text style={{ color: '#15803D' }} className="text-[10px] font-bold">
+                        #{ord.trackingCode}
+                      </Text>
+                    </View>
                   ) : null}
                 </View>
 
@@ -1068,7 +1070,7 @@ function StopRow({
             {isDeparted ? '✓' : stop.stopSequence ?? index + 1}
           </Text>
         </View>
-        <View className="flex-1">
+        <View className="flex-1 min-w-0">
           <View className="flex-row items-center justify-between">
             <Text
               style={{
@@ -1089,14 +1091,16 @@ function StopRow({
             <View className="mt-2 gap-1.5 border-t border-slate-100 pt-2">
               {orders.map((ord, oIdx) => (
                 <View key={ord.orderId || oIdx} className="gap-1">
-                  <View className="flex-row items-center justify-between">
-                    <Text style={{ color: colors.text.primary }} className="text-[11px] font-semibold flex-1 mr-1" numberOfLines={1}>
+                  <View className="flex-row items-center justify-between gap-2">
+                    <Text style={{ color: colors.text.primary }} className="text-[11px] font-semibold flex-1 min-w-0" numberOfLines={1} ellipsizeMode="tail">
                       📦 {ord.itemName} {ord.quantity ? `(${ord.quantity} kiện)` : ''}
                     </Text>
                     {ord.trackingCode ? (
-                      <Text style={{ color: colors.brand.primary }} className="text-[10px] font-bold">
-                        #{ord.trackingCode}
-                      </Text>
+                      <View style={{ backgroundColor: colors.brand.primarySoft }} className="rounded px-1.5 py-0.5 shrink-0">
+                        <Text style={{ color: colors.brand.primary }} className="text-[10px] font-bold">
+                          #{ord.trackingCode}
+                        </Text>
+                      </View>
                     ) : null}
                   </View>
 
