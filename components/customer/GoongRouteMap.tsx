@@ -103,8 +103,12 @@ export function GoongRouteMap({
         domStorageEnabled
         mixedContentMode="never"
         scrollEnabled={false}
+        nestedScrollEnabled
+        bounces={false}
+        overScrollMode="never"
         showsHorizontalScrollIndicator={false}
         showsVerticalScrollIndicator={false}
+        allowsInlineMediaPlayback
         onError={({ nativeEvent }) => setMapFailure({
           type: 'MAP_ERROR',
           message: sanitizeDiagnosticMessage(nativeEvent.description),
@@ -448,11 +452,13 @@ function buildMapHtml(
 <html>
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
   <link href="https://cdn.jsdelivr.net/npm/@goongmaps/goong-js@1.0.9/dist/goong-js.css" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/@goongmaps/goong-js@1.0.9/dist/goong-js.js"></script>
   <style>
-    html, body, #map { height: 100%; margin: 0; padding: 0; background: #eef2f5; }
+    html, body, #map { height: 100%; margin: 0; padding: 0; background: #eef2f5; overflow: hidden; touch-action: none; -webkit-overflow-scrolling: auto; }
+    .goongjs-canvas-container, .goongjs-canvas { touch-action: none; }
+    .goongjs-marker { will-change: transform; }
     
     /* ─── CUSTOM PIN MARKER STYLES ─── */
     .custom-pin {
@@ -700,7 +706,12 @@ function buildMapHtml(
 
         map.addControl(new goongjs.NavigationControl({ showCompass: false }), 'top-right');
 
+        // Đảm bảo canvas WebGL luôn đúng kích thước container,
+        // tránh lệch tọa độ marker khi WebView thay đổi layout
+        window.addEventListener('resize', function() { map.resize(); });
+
         map.on('load', function () {
+          map.resize();
           const bounds = new goongjs.LngLatBounds();
 
           payload.points.forEach(function (point, index) {
