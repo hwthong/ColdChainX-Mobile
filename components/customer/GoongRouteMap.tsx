@@ -468,11 +468,10 @@ function buildMapHtml(
       cursor: pointer;
       user-select: none;
       filter: drop-shadow(0 4px 8px rgba(15, 23, 42, 0.35));
-      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
       z-index: 10;
     }
     .custom-pin:hover, .custom-pin:active {
-      transform: scale(1.25);
+      filter: drop-shadow(0 6px 12px rgba(15, 23, 42, 0.5));
       z-index: 999 !important;
     }
     .pin-svg {
@@ -498,10 +497,9 @@ function buildMapHtml(
       user-select: none;
       box-sizing: border-box;
       z-index: 100;
-      transition: transform 0.2s ease;
     }
     .vehicle-marker:hover, .vehicle-marker:active {
-      transform: scale(1.22);
+      box-shadow: 0 6px 20px rgba(29, 78, 216, 0.8);
       z-index: 1000 !important;
     }
 
