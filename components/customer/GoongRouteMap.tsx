@@ -796,12 +796,7 @@ function buildMapHtml(
               }
             }
 
-            // Snap vào tim đường nếu tọa độ GPS cách tuyến đường < 150m (~0.0015 độ)
-            var SNAP_THRESHOLD_SQ = 0.0015 * 0.0015;
-            if (minDistanceSq <= SNAP_THRESHOLD_SQ) {
-              return bestPoint;
-            }
-            return [lon, lat];
+            return bestPoint;
           }
 
           let vehicleMarker = null;
@@ -827,7 +822,7 @@ function buildMapHtml(
                   '<div class="custom-popup-card">' +
                     '<div class="popup-badge-row"><span class="popup-badge" style="background:#DBEAFE; color:#1D4ED8;">🚚 Đang vận chuyển</span></div>' +
                     '<div class="popup-title">Vị trí xe hiện tại</div>' +
-                    '<div class="popup-address">Tọa độ: ' + rawLat.toFixed(5) + ', ' + rawLon.toFixed(5) + '</div>' +
+                    '<div class="popup-address">Tọa độ: ' + finalLat.toFixed(5) + ', ' + finalLon.toFixed(5) + '</div>' +
                   '</div>'
                 ))
                 .addTo(map);
@@ -840,7 +835,8 @@ function buildMapHtml(
             const vLon = typeof vPos.longitude === 'number' ? vPos.longitude : parseFloat(vPos.longitude || vPos.lon || vPos.lng);
             if (!isNaN(vLat) && !isNaN(vLon) && vLat >= -90 && vLat <= 90 && vLon >= -180 && vLon <= 180) {
               window.updateVehicleMarker(vLat, vLon);
-              bounds.extend([vLon, vLat]);
+              const initialSnapped = snapToRoute(vLon, vLat, payload.routeCoordinates);
+              bounds.extend([initialSnapped[0], initialSnapped[1]]);
             }
           }
 
