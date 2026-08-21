@@ -918,10 +918,61 @@ export default function StopDetailScreen() {
       mutationLock.current = true;
       setIsProcessing(true);
       const result = await deliveryApi.closeShift(tripId, selectedWarehouseId);
+
+      // Kiểm tra xem backend đã thực sự giải phóng xe và tài xế chưa
+      const vehicleOk = result.vehicleReleased === true;
+      const driverOk = (result.driversReleasedCount ?? 0) > 0;
+
+      if (!vehicleOk || !driverOk) {
+        // Reload trip detail để xác nhận lại trạng thái thực tế từ backend
+        try {
+          const tripDetail = await driverApi.getMyTripDetail(tripId);
+          const currentTripStatus = (tripDetail.status || '').toUpperCase();
+          const notCompleted = currentTripStatus !== 'COMPLETED' && currentTripStatus !== 'CLOSED';
+
+          if (notCompleted) {
+            const issues: string[] = [];
+            if (!vehicleOk) issues.push('Xe chưa được giải phóng');
+            if (!driverOk) issues.push('Tài xế chưa được giải phóng');
+            issues.push(`Trạng thái chuyến: ${tripDetail.status || 'Không xác định'}`);
+
+            await loadData(false);
+            Alert.alert(
+              '⚠️ Hệ thống đang gặp lỗi',
+              `Kết ca chưa hoàn tất:\n\n${issues.join('\n')}\n\nVui lòng thử kết ca lại. Nếu vẫn lỗi, liên hệ Điều phối viên.`,
+              [
+                { text: 'Thử lại kết ca', onPress: () => void submitCloseShift(), style: 'default' },
+                { text: 'Đóng', style: 'cancel' },
+              ]
+            );
+            return;
+          }
+        } catch {
+          // Nếu không reload được trip detail thì cảnh báo luôn
+          await loadData(false);
+          const issues: string[] = [];
+          if (!vehicleOk) issues.push('Xe chưa được giải phóng');
+          if (!driverOk) issues.push('Tài xế chưa được giải phóng');
+
+          Alert.alert(
+            '⚠️ Hệ thống đang gặp lỗi',
+            `Kết ca chưa hoàn tất:\n\n${issues.join('\n')}\n\nVui lòng thử kết ca lại. Nếu vẫn lỗi, liên hệ Điều phối viên.`,
+            [
+              { text: 'Thử lại kết ca', onPress: () => void submitCloseShift(), style: 'default' },
+              { text: 'Đóng', style: 'cancel' },
+            ]
+          );
+          return;
+        }
+      }
+
+      // Kết ca thành công, xe và tài xế đã được giải phóng
       await loadData(false);
-      Alert.alert('Đóng ca thành công', result.message || 'Tài xế và xe đã sẵn sàng cho chuyến mới.', [
-        { text: 'Về danh sách chuyến', onPress: () => router.replace('/(driver)/trips' as never) },
-      ]);
+      Alert.alert(
+        '✅ Đóng ca thành công',
+        result.message || 'Tài xế và xe đã được giải phóng, sẵn sàng cho chuyến mới.',
+        [{ text: 'Về danh sách chuyến', onPress: () => router.replace('/(driver)/trips' as never) }]
+      );
     } catch (error) {
       Alert.alert('Không thể đóng ca', formatActionError(error, 'CLOSE_SHIFT'));
       await loadData(false);
