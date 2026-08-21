@@ -177,7 +177,7 @@ export const driverApi = {
     const endpoint = `/api/drivers/my/trips/${tripId}/detail`;
 
     const response = await authenticatedDriverRequest((token) =>
-      apiRequest<{ success: boolean; data: DriverTripDetailResponseDto }>(endpoint, {
+      apiRequest<any>(endpoint, {
         method: 'GET',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -185,12 +185,12 @@ export const driverApi = {
       })
     );
 
-    if (!response.success || !response.data) {
+    const rawData = response?.data ?? response;
+    if (!rawData) {
       throw new Error('Không thể tải chi tiết chuyến.');
     }
 
-    const rawData = response.data;
-    const rawStops = (rawData as any).stops ?? (rawData as any).tripStops ?? (rawData as any).Stops ?? [];
+    const rawStops = rawData.stops ?? rawData.tripStops ?? rawData.Stops ?? rawData.TripStops ?? [];
     const normalizedStops: DriverTripStopDto[] = Array.isArray(rawStops)
       ? rawStops.map((s: any, idx: number) => ({
           stopId: s.stopId || s.tripStopId || s.id || s.TripStopId || s.StopId || s.Id || '',
@@ -205,7 +205,7 @@ export const driverApi = {
 
     return {
       ...rawData,
-      tripId: rawData.tripId || (rawData as any).id || (rawData as any).TripId || tripId,
+      tripId: rawData.tripId || rawData.id || rawData.TripId || tripId,
       stops: normalizedStops,
     };
   },

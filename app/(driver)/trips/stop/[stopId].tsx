@@ -291,6 +291,10 @@ export default function StopDetailScreen() {
         }
       }
 
+      if (__DEV__) {
+        console.log('[StopScreen] Param stopId:', stopId, 'Matched stopId:', matchedStop?.stopId, 'All trip stops:', tripDetail.stops?.map(s => ({ id: s.stopId, seq: s.stopSequence, addr: s.address })));
+      }
+
       const currentStop: DriverTripStopDto | null = matchedStop ??
         (routeStop
           ? ({

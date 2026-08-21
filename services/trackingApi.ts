@@ -275,7 +275,7 @@ function normalizeStop(value: unknown): OptimizedTripStopDto | null {
 
   return {
     ...point,
-    stopId: getString(readValue(value, 'stopId', 'StopId')),
+    stopId: getString(readValue(value, 'tripStopId', 'TripStopId', 'stopId', 'StopId', 'id', 'Id')),
     originalStopSequence: getNumber(readValue(value, 'originalStopSequence', 'OriginalStopSequence')),
     optimizedSequence: getNumber(readValue(value, 'optimizedSequence', 'OptimizedSequence')),
     stopType: getString(readValue(value, 'stopType', 'StopType')),
