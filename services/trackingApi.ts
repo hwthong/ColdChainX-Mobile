@@ -153,8 +153,13 @@ export function normalizeTrackingData(value: unknown): TrackingDataResponse | nu
 
   const vehicleValue = readValue(value, 'vehicle', 'Vehicle');
   const deviceValue = readValue(value, 'device', 'Device');
-  const latestValue = readValue(value, 'latestTelemetry', 'LatestTelemetry');
+  const latestValue = readValue(value, 'latestTelemetry', 'LatestTelemetry', 'telemetry', 'Telemetry', 'lastTelemetry', 'currentLocation');
   const etaValue = readValue(value, 'eta', 'Eta');
+
+  let latestTelemetry = normalizeTelemetry(latestValue);
+  if (!latestTelemetry) {
+    latestTelemetry = normalizeTelemetry(value);
+  }
 
   return {
     tripId: getString(readValue(value, 'tripId', 'TripId')) ?? '',
@@ -163,7 +168,7 @@ export function normalizeTrackingData(value: unknown): TrackingDataResponse | nu
     vehicle: normalizeVehicle(vehicleValue),
     device: normalizeDevice(deviceValue),
     orders: getArray(readValue(value, 'orders', 'Orders')).map(normalizeTrackingOrder),
-    latestTelemetry: normalizeTelemetry(latestValue),
+    latestTelemetry,
     eta: normalizeEta(etaValue),
   };
 }
