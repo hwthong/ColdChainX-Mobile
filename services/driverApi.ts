@@ -189,7 +189,25 @@ export const driverApi = {
       throw new Error('Không thể tải chi tiết chuyến.');
     }
 
-    return response.data;
+    const rawData = response.data;
+    const rawStops = (rawData as any).stops ?? (rawData as any).tripStops ?? (rawData as any).Stops ?? [];
+    const normalizedStops: DriverTripStopDto[] = Array.isArray(rawStops)
+      ? rawStops.map((s: any, idx: number) => ({
+          stopId: s.stopId || s.tripStopId || s.id || s.TripStopId || s.StopId || s.Id || '',
+          stopSequence: s.stopSequence ?? s.sequence ?? s.StopSequence ?? s.Sequence ?? idx + 1,
+          address: s.address ?? s.Address ?? 'Điểm giao hàng',
+          plannedArrivalTime: s.plannedArrivalTime ?? s.PlannedArrivalTime ?? null,
+          plannedDepartureTime: s.plannedDepartureTime ?? s.PlannedDepartureTime ?? null,
+          status: s.status ?? s.Status ?? 'PLANNED',
+          stopType: s.stopType ?? s.StopType ?? 'DELIVERY',
+        }))
+      : [];
+
+    return {
+      ...rawData,
+      tripId: rawData.tripId || (rawData as any).id || (rawData as any).TripId || tripId,
+      stops: normalizedStops,
+    };
   },
 
   /**
