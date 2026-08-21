@@ -502,14 +502,12 @@ export default function DriverTripDetailScreen() {
   const isCompleted = TERMINAL.has(status.toUpperCase());
 
   const handleGoBack = () => {
-    if (params.from === 'home') {
-      router.navigate('/(driver)/home');
-    } else if (params.from === 'trips') {
-      router.navigate('/(driver)/trips');
-    } else if (router.canGoBack()) {
+    if (router.canGoBack()) {
       router.back();
+    } else if (params.from === 'home') {
+      router.replace('/(driver)/home');
     } else {
-      router.navigate('/(driver)/home');
+      router.replace('/(driver)/trips');
     }
   };
 
