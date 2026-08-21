@@ -43,6 +43,7 @@ import {
 } from '../../../../services/driverApi';
 import {
   getStopTemperatureChart,
+  getTripTemperatureChart,
   StopTemperatureChart,
 } from '../../../../services/monitoringApi';
 import {
@@ -904,11 +905,41 @@ export default function StopDetailScreen() {
     try {
       setIsLoadingTemperature(true);
       setTemperatureError(null);
-      const response = await getStopTemperatureChart(token, stopId);
-      if (!response.success || !response.data) {
-        throw new Error(response.message || 'Không thể tải dữ liệu nhiệt độ.');
+
+      let chartData: StopTemperatureChart | null = null;
+      try {
+        const response = await getStopTemperatureChart(token, stopId);
+        if (response.success && response.data && (response.data.points?.length ?? 0) > 0) {
+          chartData = response.data;
+        }
+      } catch {
+        // Fallback to trip temperature chart if stop-level chart is 404/unavailable
       }
-      setTemperatureChart(response.data);
+
+      if (!chartData && tripId) {
+        try {
+          const tripChartRes = await getTripTemperatureChart(token, tripId);
+          if (tripChartRes.success && tripChartRes.data && (tripChartRes.data.points?.length ?? 0) > 0) {
+            const points = tripChartRes.data.points;
+            chartData = {
+              points,
+              tripId,
+              stopId,
+              endTime: points[points.length - 1]?.timestamp || new Date().toISOString(),
+              rawPointCount: points.length,
+              sampledPointCount: points.length,
+            };
+          }
+        } catch {
+          // Both failed
+        }
+      }
+
+      if (chartData && (chartData.points?.length ?? 0) > 0) {
+        setTemperatureChart(chartData);
+      } else {
+        setTemperatureError('Thiết bị IoT đang ghi nhận dữ liệu định kỳ. Chưa có lịch sử đo nhiệt độ cho chặng này.');
+      }
     } catch (error) {
       setTemperatureError(formatActionError(error, 'TEMPERATURE'));
     } finally {
@@ -2442,9 +2473,14 @@ function formatActionError(
       }
       return 'Bạn không có quyền thực hiện thao tác này.';
     }
-    if (error.status === 404) return action === 'HANDOVER'
-      ? 'Không tìm thấy dữ liệu bàn giao. Vui lòng tải lại điểm dừng.'
-      : 'Không tìm thấy dữ liệu cần xử lý. Vui lòng tải lại.';
+    if (error.status === 404) {
+      if (action === 'TEMPERATURE') {
+        return 'Thiết bị IoT đang ghi nhận dữ liệu định kỳ. Chưa có lịch sử đo nhiệt độ cho chặng này.';
+      }
+      return action === 'HANDOVER'
+        ? 'Không tìm thấy dữ liệu bàn giao. Vui lòng tải lại điểm dừng.'
+        : 'Không tìm thấy dữ liệu cần xử lý. Vui lòng tải lại.';
+    }
 
     const message = error.message.toLowerCase();
     if (action === 'CHECK_IN' && /proof|image|photo/.test(message)) {
