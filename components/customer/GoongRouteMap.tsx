@@ -447,83 +447,58 @@ function buildMapHtml(
       align-items: center;
       cursor: pointer;
       user-select: none;
-      margin-top: -46px;
-      margin-left: -18px;
+      margin-top: -32px;
+      margin-left: -12px;
       transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), z-index 0.2s ease;
       z-index: 10;
     }
     .custom-pin-container:hover, .custom-pin-container:active {
-      transform: scale(1.22);
+      transform: scale(1.25);
       z-index: 999 !important;
     }
     
     .pin-svg {
       display: block;
-      filter: drop-shadow(0 6px 12px rgba(15, 23, 42, 0.35));
-    }
-
-    .pin-badge {
-      margin-top: 2px;
-      font-size: 9px;
-      font-weight: 800;
-      padding: 1.5px 6px;
-      border-radius: 999px;
-      white-space: nowrap;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-      border: 1px solid rgba(255,255,255,0.8);
-      letter-spacing: 0.2px;
-    }
-    .pin-badge.origin-badge {
-      background: #059669;
-      color: #FFFFFF;
-    }
-    .pin-badge.stop-badge {
-      background: #E11D48;
-      color: #FFFFFF;
-    }
-    .pin-badge.final-badge {
-      background: #DC2626;
-      color: #FFFFFF;
-      border-color: #FEF08A;
+      filter: drop-shadow(0 4px 8px rgba(15, 23, 42, 0.35));
     }
 
     /* ─── VEHICLE MOVING RADAR MARKER ─── */
     .vehicle-marker-wrapper {
       position: relative;
-      width: 44px;
-      height: 44px;
+      width: 34px;
+      height: 34px;
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      margin-top: -22px;
-      margin-left: -22px;
+      margin-top: -17px;
+      margin-left: -17px;
       z-index: 100;
       transition: transform 0.2s ease;
     }
     .vehicle-marker-wrapper:hover, .vehicle-marker-wrapper:active {
-      transform: scale(1.25);
+      transform: scale(1.22);
       z-index: 1000 !important;
     }
     .vehicle-marker-bubble {
-      width: 40px;
-      height: 40px;
+      width: 32px;
+      height: 32px;
       border-radius: 999px;
       background: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%);
-      border: 3px solid #FFFFFF;
-      box-shadow: 0 8px 22px rgba(29, 78, 216, 0.6);
+      border: 2.5px solid #FFFFFF;
+      box-shadow: 0 6px 16px rgba(29, 78, 216, 0.55);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 20px;
+      font-size: 16px;
       z-index: 10;
     }
     .vehicle-pulse-ring {
       position: absolute;
-      width: 56px;
-      height: 56px;
+      width: 44px;
+      height: 44px;
       border-radius: 999px;
-      border: 2.5px solid #3B82F6;
+      border: 2px solid #3B82F6;
       animation: pulse-ring 2s infinite cubic-bezier(0.215, 0.61, 0.355, 1);
       pointer-events: none;
       z-index: 1;
@@ -747,24 +722,22 @@ function buildMapHtml(
 
             const pinColorTop = isFinal ? '#EF4444' : isOrigin ? '#10B981' : '#F43F5E';
             const pinColorBottom = isFinal ? '#B91C1C' : isOrigin ? '#047857' : '#BE123C';
-            const shadowColor = isFinal ? 'rgba(220,38,38,0.55)' : isOrigin ? 'rgba(5,150,105,0.55)' : 'rgba(225,29,72,0.5)';
             const textFill = isFinal ? '#B91C1C' : isOrigin ? '#047857' : '#BE123C';
-            const labelText = isOrigin ? '🏢' : String(seqNumber);
-            const fontSize = labelText.length > 1 && !isOrigin ? '11.5' : '13.5';
+            const labelText = isOrigin ? 'A' : String(seqNumber);
+            const fontSize = isOrigin ? '9' : (labelText.length > 1 ? '8.5' : '10.5');
 
             markerEl.innerHTML = 
-              '<svg class="pin-svg" width="36" height="46" viewBox="0 0 36 46" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+              '<svg class="pin-svg" width="24" height="32" viewBox="0 0 24 32" fill="none" xmlns="http://www.w3.org/2000/svg">' +
                 '<defs>' +
-                  '<linearGradient id="grad-' + point.id + '" x1="0" y1="0" x2="0" y2="46" gradientUnits="userSpaceOnUse">' +
+                  '<linearGradient id="grad-' + point.id + '" x1="0" y1="0" x2="0" y2="32" gradientUnits="userSpaceOnUse">' +
                     '<stop offset="0%" stop-color="' + pinColorTop + '" />' +
                     '<stop offset="100%" stop-color="' + pinColorBottom + '" />' +
                   '</linearGradient>' +
                 '</defs>' +
-                '<path d="M18 0C8.05887 0 0 8.05887 0 18C0 30.5 18 46 18 46C18 46 36 30.5 36 18C36 8.05887 27.9411 0 18 0Z" fill="url(#grad-' + point.id + ')" stroke="#FFFFFF" stroke-width="2.5" />' +
-                '<circle cx="18" cy="17" r="11" fill="#FFFFFF" />' +
-                '<text x="18" y="21.5" text-anchor="middle" font-size="' + fontSize + '" font-weight="900" fill="' + textFill + '" font-family="system-ui, -apple-system, sans-serif">' + labelText + '</text>' +
-              '</svg>' +
-              (isFinal ? '<div class="pin-badge final-badge">Điểm ' + seqNumber + ' (Cuối)</div>' : isOrigin ? '<div class="pin-badge origin-badge">Xuất phát</div>' : '<div class="pin-badge stop-badge">Điểm ' + seqNumber + '</div>');
+                '<path d="M12 0C5.37258 0 0 5.37258 0 12C0 21 12 32 12 32C12 32 24 21 24 12C24 5.37258 18.6274 0 12 0Z" fill="url(#grad-' + point.id + ')" stroke="#FFFFFF" stroke-width="2" />' +
+                '<circle cx="12" cy="11.5" r="7" fill="#FFFFFF" />' +
+                '<text x="12" y="15" text-anchor="middle" font-size="' + fontSize + '" font-weight="900" fill="' + textFill + '" font-family="system-ui, -apple-system, sans-serif">' + labelText + '</text>' +
+              '</svg>';
 
             let popupHtml = '<div class="custom-popup-card">';
             popupHtml += '<div class="popup-badge-row">';
