@@ -351,11 +351,11 @@ export default function DriverIncidentDetailScreen() {
             {
               text: 'Mở màn hình chuyến xe',
               onPress: () => {
-                const targetTripId = incident?.tripId || currentTripId;
+                const targetTripId = incident?.tripId || (currentTripId !== 'active' ? currentTripId : null);
                 if (targetTripId) {
-                  router.replace(`/trips/${targetTripId}` as never);
+                  router.replace(`/(driver)/trips/${targetTripId}` as never);
                 } else {
-                  router.back();
+                  router.replace('/(driver)/trips' as never);
                 }
               },
             },
@@ -396,11 +396,11 @@ export default function DriverIncidentDetailScreen() {
             {
               text: 'Tiếp tục giao hàng',
               onPress: () => {
-                const targetTripId = incident?.tripId || currentTripId;
+                const targetTripId = incident?.tripId || (currentTripId !== 'active' ? currentTripId : null);
                 if (targetTripId) {
-                  router.replace(`/trips/${targetTripId}` as never);
+                  router.replace(`/(driver)/trips/${targetTripId}` as never);
                 } else {
-                  void loadIncident();
+                  router.replace('/(driver)/trips' as never);
                 }
               },
             },
