@@ -11,6 +11,8 @@ type GoongAutocompleteResponse = {
       secondary_text?: string;
     };
   }>;
+  status?: string;
+  error_message?: string;
 };
 
 export type GoongAddressSuggestion = {
@@ -33,6 +35,7 @@ type GoongPlaceDetailResponse = {
     };
   };
   status?: string;
+  error_message?: string;
 };
 
 export type GoongPlaceDetail = {
@@ -45,24 +48,98 @@ export type GoongPlaceDetail = {
 
 export class GoongPlacesError extends Error {}
 
+export function isAbortError(err: unknown): boolean {
+  if (!err) return false;
+  if (typeof err === 'object') {
+    const errorObj = err as { name?: string; message?: string };
+    if (errorObj.name === 'AbortError' || errorObj.name === 'CanceledError') return true;
+    if (typeof errorObj.message === 'string' && /abort|cancel/i.test(errorObj.message)) return true;
+  }
+  return false;
+}
+
+// In-memory LRU caches to prevent redundant network calls and eliminate 429 rate limits
+const MAX_CACHE_ENTRIES = 120;
+const suggestionsCache = new Map<string, GoongAddressSuggestion[]>();
+const placeDetailCache = new Map<string, GoongPlaceDetail>();
+
+function setCacheItem<T>(cache: Map<string, T>, key: string, value: T) {
+  if (cache.size >= MAX_CACHE_ENTRIES) {
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey) cache.delete(oldestKey);
+  }
+  cache.set(key, value);
+}
+
+async function fetchWithRetry(url: string, signal?: AbortSignal, maxRetries = 1): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    if (signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
+    try {
+      const response = await fetch(url, { signal });
+      if (response.ok) return response;
+
+      // Rate limited (429) -> wait briefly and retry once
+      if (response.status === 429 && attempt < maxRetries) {
+        await new Promise((resolve) => setTimeout(resolve, 350));
+        continue;
+      }
+      return response;
+    } catch (err) {
+      lastError = err;
+      if (signal?.aborted || isAbortError(err)) {
+        throw err;
+      }
+      if (attempt < maxRetries) {
+        await new Promise((resolve) => setTimeout(resolve, 350));
+        continue;
+      }
+    }
+  }
+  throw lastError;
+}
+
 export async function searchGoongAddressSuggestions(query: string, signal?: AbortSignal): Promise<GoongAddressSuggestion[]> {
   if (!GOONG_REST_API_KEY) {
     throw new GoongPlacesError('Goong Places is not configured.');
   }
 
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return [];
+
+  // Return from in-memory cache if available
+  const cached = suggestionsCache.get(normalizedQuery);
+  if (cached) {
+    return cached;
+  }
+
   const params = new URLSearchParams({
     api_key: GOONG_REST_API_KEY,
     input: query.trim(),
-    limit: '5',
+    limit: '6',
     more_compound: 'true',
   });
-  const response = await fetch(`${GOONG_PLACES_BASE_URL}?${params.toString()}`, { signal });
+
+  const response = await fetchWithRetry(`${GOONG_PLACES_BASE_URL}?${params.toString()}`, signal, 1);
   if (!response.ok) {
-    throw new GoongPlacesError('Goong Places request failed.');
+    throw new GoongPlacesError(`Goong Places request failed with HTTP ${response.status}.`);
   }
 
   const payload = (await response.json()) as GoongAutocompleteResponse;
-  return (payload.predictions ?? [])
+
+  if (payload.status === 'ZERO_RESULTS' || !payload.predictions) {
+    setCacheItem(suggestionsCache, normalizedQuery, []);
+    return [];
+  }
+
+  if (payload.status === 'OVER_QUERY_LIMIT') {
+    // Graceful degradation when rate limited
+    return [];
+  }
+
+  const results = (payload.predictions ?? [])
     .map((prediction): GoongAddressSuggestion | null => {
       const address = prediction.description?.trim();
       if (!address || !prediction.place_id) return null;
@@ -75,7 +152,10 @@ export async function searchGoongAddressSuggestions(query: string, signal?: Abor
       };
     })
     .filter((prediction): prediction is GoongAddressSuggestion => prediction !== null)
-    .slice(0, 5);
+    .slice(0, 6);
+
+  setCacheItem(suggestionsCache, normalizedQuery, results);
+  return results;
 }
 
 export async function getGoongPlaceDetail(placeId: string, signal?: AbortSignal): Promise<GoongPlaceDetail> {
@@ -88,13 +168,20 @@ export async function getGoongPlaceDetail(placeId: string, signal?: AbortSignal)
     throw new GoongPlacesError('Goong place ID is required.');
   }
 
+  // Return from in-memory cache if available
+  const cached = placeDetailCache.get(normalizedPlaceId);
+  if (cached) {
+    return cached;
+  }
+
   const params = new URLSearchParams({
     api_key: GOONG_REST_API_KEY,
     place_id: normalizedPlaceId,
   });
-  const response = await fetch(`${GOONG_PLACE_DETAIL_URL}?${params.toString()}`, { signal });
+
+  const response = await fetchWithRetry(`${GOONG_PLACE_DETAIL_URL}?${params.toString()}`, signal, 1);
   if (!response.ok) {
-    throw new GoongPlacesError('Goong place detail request failed.');
+    throw new GoongPlacesError(`Goong place detail request failed with HTTP ${response.status}.`);
   }
 
   const payload = (await response.json()) as GoongPlaceDetailResponse;
@@ -114,13 +201,16 @@ export async function getGoongPlaceDetail(placeId: string, signal?: AbortSignal)
     throw new GoongPlacesError('Goong returned an invalid place detail.');
   }
 
-  return {
+  const detail: GoongPlaceDetail = {
     placeId: result.place_id?.trim() || normalizedPlaceId,
     address,
     name: result.name?.trim() || undefined,
     latitude,
     longitude,
   };
+
+  setCacheItem(placeDetailCache, normalizedPlaceId, detail);
+  return detail;
 }
 
 function isValidLatitude(value: unknown): value is number {

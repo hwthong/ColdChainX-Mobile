@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../../../../constants/colors';
 import {
   getGoongPlaceDetail,
+  isAbortError,
   searchGoongAddressSuggestions,
   type GoongAddressSuggestion,
   type GoongPlaceDetail,
@@ -63,11 +64,13 @@ export function AddressAutocompleteField({
   const [isResolvingLocation, setIsResolvingLocation] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
 
+  const [retryTrigger, setRetryTrigger] = useState(0);
+
   useEffect(() => {
     if (!isOpen || stage !== 'search') return;
 
     const rawQuery = query.trim();
-    if (rawQuery.length < 3) {
+    if (rawQuery.length < 2) {
       setSuggestions([]);
       setSearchState('idle');
       return;
@@ -80,23 +83,32 @@ export function AddressAutocompleteField({
     setSearchState('loading');
 
     const timer = setTimeout(() => {
-      void searchGoongAddressSuggestions(searchQuery, controller.signal)
-        .then((results) => {
+      void (async () => {
+        try {
+          let results = await searchGoongAddressSuggestions(searchQuery, controller.signal);
+
+          // If searching with destinationCity suffix yielded 0 results, fallback to raw query
+          if (results.length === 0 && searchQuery !== rawQuery && !controller.signal.aborted) {
+            results = await searchGoongAddressSuggestions(rawQuery, controller.signal);
+          }
+
+          if (controller.signal.aborted) return;
+
           setSuggestions(results);
           setSearchState(results.length > 0 ? 'idle' : 'empty');
-        })
-        .catch((requestError: unknown) => {
-          if (requestError instanceof Error && requestError.name === 'AbortError') return;
+        } catch (requestError: unknown) {
+          if (controller.signal.aborted || isAbortError(requestError)) return;
           setSuggestions([]);
           setSearchState('error');
-        });
-    }, 300);
+        }
+      })();
+    }, 280);
 
     return () => {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [destinationCity, isOpen, query, stage]);
+  }, [destinationCity, isOpen, query, stage, retryTrigger]);
 
   const openPicker = () => {
     if (disabled) return;
@@ -341,7 +353,13 @@ export function AddressAutocompleteField({
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={suggestions.length ? styles.resultsContent : styles.emptyContent}
                 ListHeaderComponent={suggestions.length ? <Text style={styles.resultsHeading}>Kết quả</Text> : null}
-                ListEmptyComponent={<SearchEmptyState query={query} searchState={searchState} />}
+                ListEmptyComponent={
+                  <SearchEmptyState
+                    query={query}
+                    searchState={searchState}
+                    onRetry={() => setRetryTrigger((c) => c + 1)}
+                  />
+                }
                 renderItem={({ item, index }) => (
                   <Pressable
                     accessibilityRole="button"
@@ -389,13 +407,21 @@ export function AddressAutocompleteField({
   );
 }
 
-function SearchEmptyState({ query, searchState }: { query: string; searchState: SearchState }) {
-  if (query.trim().length < 3) {
+function SearchEmptyState({
+  query,
+  searchState,
+  onRetry,
+}: {
+  query: string;
+  searchState: SearchState;
+  onRetry?: () => void;
+}) {
+  if (query.trim().length < 2) {
     return (
       <View style={styles.emptyState}>
         <Ionicons name="location-outline" size={26} color={colors.text.muted} />
         <Text style={styles.emptyTitle}>Tìm điểm giao hàng</Text>
-        <Text style={styles.emptySubtitle}>Nhập ít nhất 3 ký tự để tìm địa chỉ.</Text>
+        <Text style={styles.emptySubtitle}>Nhập ít nhất 2 ký tự để tìm địa chỉ.</Text>
       </View>
     );
   }
@@ -405,7 +431,18 @@ function SearchEmptyState({ query, searchState }: { query: string; searchState: 
       <View style={styles.emptyState}>
         <Ionicons name="cloud-offline-outline" size={26} color={colors.text.muted} />
         <Text style={styles.emptyTitle}>Không thể tải kết quả</Text>
-        <Text style={styles.emptySubtitle}>Kiểm tra kết nối và thử tìm lại.</Text>
+        <Text style={styles.emptySubtitle}>Kiểm tra kết nối hoặc thử tìm lại.</Text>
+        {onRetry ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Thử tìm lại"
+            onPress={onRetry}
+            style={styles.retryButton}
+          >
+            <Ionicons name="refresh" size={14} color={colors.brand.primary} />
+            <Text style={styles.retryButtonText}>Thử lại</Text>
+          </Pressable>
+        ) : null}
       </View>
     );
   }
@@ -711,6 +748,21 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     marginTop: 4,
     textAlign: 'center',
+  },
+  retryButton: {
+    alignItems: 'center',
+    backgroundColor: colors.brand.primarySoft,
+    borderRadius: 10,
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  retryButtonText: {
+    color: colors.brand.primary,
+    fontSize: 13,
+    fontWeight: '700',
   },
   resolvingOverlay: {
     alignItems: 'center',
