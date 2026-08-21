@@ -8,6 +8,13 @@ export type DeliveryUploadFile = {
   type: string;
 };
 
+export type DriverCheckinLocation = {
+  latitude: number;
+  longitude: number;
+  locationTimestamp: string;
+  accuracyMeters?: number | null;
+};
+
 export type CheckinDriverResponse = {
   stopId: string;
   checkinTime: string;
@@ -224,9 +231,21 @@ function unwrap<T>(response: ApiResponse<T>, fallbackMessage: string): T {
 }
 
 export const deliveryApi = {
-  checkInStop: async (stopId: string, proofImageFile: DeliveryUploadFile) => {
+  checkInStop: async (
+    stopId: string,
+    proofImageFile: DeliveryUploadFile,
+    location?: DriverCheckinLocation | null
+  ) => {
     const formData = new FormData();
     appendFile(formData, 'ProofImageFile', proofImageFile);
+    if (location) {
+      formData.append('Latitude', String(location.latitude));
+      formData.append('Longitude', String(location.longitude));
+      formData.append('LocationTimestamp', location.locationTimestamp);
+      if (location.accuracyMeters !== null && location.accuracyMeters !== undefined) {
+        formData.append('AccuracyMeters', String(location.accuracyMeters));
+      }
+    }
 
     const response = await apiRequest<ApiResponse<CheckinDriverResponse>>(
       `/api/stops/${stopId}/check-ins`,
@@ -341,7 +360,7 @@ export const deliveryApi = {
       `/api/Delivery/nearest-return-warehouses?tripId=${encodeURIComponent(tripId)}`,
       { method: 'GET', headers: getAuthHeaders() }
     );
-    return unwrap(response, 'Không thể tải danh sách kho quy đầu.');
+    return unwrap(response, 'Không thể tải danh sách kho trả hàng.');
   },
 
   closeShift: async (tripId: string, warehouseId: string) => {

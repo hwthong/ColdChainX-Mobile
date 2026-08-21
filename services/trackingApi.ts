@@ -98,6 +98,12 @@ export interface TripRouteResponse {
   optimizedStops: OptimizedTripStopDto[];
 }
 
+// Alias exports for convention compliance
+export type TripRoutePoint = TripRoutePointDto;
+export type OptimizedTripStop = OptimizedTripStopDto;
+export type TripRouteOrder = TripRouteOrderDto;
+export type LpnSummary = TripRouteLpnDto;
+
 export interface ApiResponse<T> {
   success: boolean;
   message?: string | null;
@@ -121,26 +127,28 @@ export function getTrackingByTripId(accessToken: string, tripId: string) {
   } satisfies ApiResponse<TrackingDataResponse>));
 }
 
-export async function getPlannedTripRoute(accessToken: string, tripId: string) {
+export async function getPlannedTripRoute(
+  accessToken: string,
+  tripId: string,
+  signal?: AbortSignal
+) {
   const sanitizedTripId = sanitizeTripId(tripId);
   if (!sanitizedTripId) {
     throw new Error('TripId không hợp lệ. Vui lòng nhập UUID của chuyến.');
   }
 
-  const response = await apiRequest<ApiResponse<unknown>>(
+  const response = await apiRequest<unknown>(
     `/api/Dispatch/trip/${encodeURIComponent(sanitizedTripId)}/route`,
     {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
+      signal,
     }
   );
 
-  return {
-    ...response,
-    data: normalizeTripRoute(response.data),
-  } satisfies ApiResponse<TripRouteResponse>;
+  return normalizeTripRouteApiResponse(response);
 }
 
 export function sanitizeTripId(value: string) {
@@ -236,7 +244,7 @@ function normalizeTrackingOrder(value: unknown): TrackingOrderDto {
   };
 }
 
-function normalizeTripRoute(value: unknown): TripRouteResponse | null {
+export function normalizeTripRoute(value: unknown): TripRouteResponse | null {
   if (!isRecord(value)) return null;
 
   return {
@@ -249,8 +257,21 @@ function normalizeTripRoute(value: unknown): TripRouteResponse | null {
     waypointOrder: getNumberArray(readValue(value, 'waypointOrder', 'WaypointOrder')),
     optimizedStops: getArray(readValue(value, 'optimizedStops', 'OptimizedStops'))
       .map(normalizeStop)
-      .filter((stop): stop is OptimizedTripStopDto => Boolean(stop))
-      .sort((left, right) => (left.optimizedSequence ?? 0) - (right.optimizedSequence ?? 0)),
+      .filter((stop): stop is OptimizedTripStopDto => Boolean(stop)),
+  };
+}
+
+export function normalizeTripRouteApiResponse(
+  value: unknown
+): ApiResponse<TripRouteResponse> {
+  if (!isRecord(value)) {
+    return { success: false, data: null, message: 'Phản hồi tuyến đường không hợp lệ.' };
+  }
+
+  return {
+    success: getBoolean(readValue(value, 'success', 'Success')) ?? false,
+    message: getString(readValue(value, 'message', 'Message', 'error', 'Error')),
+    data: normalizeTripRoute(readValue(value, 'data', 'Data')),
   };
 }
 

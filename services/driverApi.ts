@@ -209,6 +209,16 @@ export const driverApi = {
         }))
       : [];
 
+    if (__DEV__) {
+      console.log('[driverApi] Trip detail stops:', {
+        tripId: rawData.tripId || rawData.id || rawData.TripId || tripId,
+        declaredStopCount: rawData.stopCount ?? rawData.StopCount ?? null,
+        rawStopCount: Array.isArray(rawStops) ? rawStops.length : null,
+        normalizedStopCount: normalizedStops.length,
+        validStopIdCount: normalizedStops.filter((stop) => Boolean(stop.stopId)).length,
+      });
+    }
+
     return {
       ...rawData,
       tripId: rawData.tripId || rawData.id || rawData.TripId || tripId,

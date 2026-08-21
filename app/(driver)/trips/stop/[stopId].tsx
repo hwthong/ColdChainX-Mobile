@@ -42,6 +42,10 @@ import {
   DriverTripStopDto,
 } from '../../../../services/driverApi';
 import {
+  hasRemainingDeliveryStops,
+  tripHasNoShowStop,
+} from '../../../../services/driverReturnFlow';
+import {
   getStopTemperatureChart,
   getTripTemperatureChart,
   StopTemperatureChart,
@@ -131,9 +135,11 @@ export default function StopDetailScreen() {
   const params = useLocalSearchParams<{
     stopId?: string | string[];
     tripId?: string | string[];
+    locationId?: string | string[];
   }>();
   const stopId = firstParam(params.stopId);
   const tripId = firstParam(params.tripId);
+  const requestedLocationId = firstParam(params.locationId);
   const router = useRouter();
   const token = useAuthStore((state) => state.token);
   const mutationLock = useRef(false);
@@ -202,10 +208,7 @@ export default function StopDetailScreen() {
   const isLegacyCompletedStop = stopStatus === 'DEPARTED';
   const serverSealIsCut = isCutSealNumber(serverSealNumber);
   const hasCutSeal = Boolean(cutSeal) || serverSealIsCut;
-  const hasRemainingStops = tripStops.some(
-    (stop) => stop.stopSequence > (driverStop?.stopSequence ?? Number.MAX_SAFE_INTEGER)
-      && stop.status?.toUpperCase() !== 'DEPARTED'
-  );
+  const hasRemainingStops = hasRemainingDeliveryStops(tripStops, driverStop?.stopId);
   const hasAppliedSeal = Boolean(appliedSeal)
     || (allOrdersHandedOver && hasRemainingStops && Boolean(serverSealNumber) && !serverSealIsCut);
   const deliveryActionState = getDriverDeliveryActionState({
@@ -218,10 +221,12 @@ export default function StopDetailScreen() {
     hasAppliedSeal,
     tripStatus,
   });
-  const isReturnFlow = returnFlowActive
+  const isNoShowReturnFlow = tripHasNoShowStop(tripStops)
     || stopStatus === 'SKIPPED_NOSHOW'
     || orders.some((order) => RETURN_ORDER_STATUSES.has(order.status.toUpperCase()));
-  const showCloseShiftPanel = (isReturnFlow || (allOrdersHandedOver && !hasRemainingStops))
+  const isReturnFlow = returnFlowActive || isNoShowReturnFlow;
+  const showCloseShiftPanel = ((isReturnFlow && !isNoShowReturnFlow)
+    || (allOrdersHandedOver && !hasRemainingStops))
     && tripStatus.toUpperCase() !== 'COMPLETED';
   const canCloseShift = allOrdersHandedOver
     && allPaymentsReady
@@ -239,11 +244,19 @@ export default function StopDetailScreen() {
     setLoadError(null);
 
     try {
-      const [tripDetail, routeResponse, trackingResponse] = await Promise.all([
+      const [tripDetailRes, routeRes, trackingRes] = await Promise.allSettled([
         driverApi.getMyTripDetail(tripId),
         getPlannedTripRoute(token, tripId),
         getTrackingByTripId(token, tripId),
       ]);
+
+      if (tripDetailRes.status !== 'fulfilled') {
+        throw tripDetailRes.reason;
+      }
+      const tripDetail = tripDetailRes.value;
+      const routeResponse = routeRes.status === 'fulfilled' ? routeRes.value : { success: false, data: null };
+      const trackingResponse = trackingRes.status === 'fulfilled' ? trackingRes.value : { success: false, data: null };
+
       const route: TripRouteResponse = routeResponse.data || {
         tripId,
         totalDistanceMeters: 0,
@@ -253,61 +266,24 @@ export default function StopDetailScreen() {
       };
       const routeStop = route.optimizedStops?.find((stop) => stop.stopId === stopId)
         || route.optimizedStops?.find((s) => (s as { locationId?: string }).locationId === stopId)
-        || route.optimizedStops?.find((_, idx) => `stop-${idx}` === stopId)
-        || (trackingResponse.data?.orders?.some((o) => o.orderId === stopId)
-          ? {
-              stopId,
-              address: trackingResponse.data.orders.find((o) => o.orderId === stopId)?.itemName || 'Điểm giao hàng',
-              orders: trackingResponse.data.orders.filter((o) => o.orderId === stopId).map((o) => ({
-                orderId: o.orderId,
-                trackingCode: o.trackingCode,
-                itemName: o.itemName,
-                tempCondition: o.tempCondition,
-              })),
-              lpns: [],
-            }
-          : undefined);
+        || route.optimizedStops?.find((s) => Boolean(requestedLocationId) && s.locationId === requestedLocationId)
+        || route.optimizedStops?.find((s) => s.locationId === matchedLocationId(tripDetail.stops, stopId));
 
       // 1. Tìm trực tiếp theo stopId hoặc locationId trong tripDetail.stops nếu có
-      let matchedStop = tripDetail.stops?.find((stop) => stop.stopId === stopId || (Boolean(stop.locationId) && stop.locationId === stopId));
+      const matchedStop = tripDetail.stops?.find(
+        (stop) =>
+          stop.stopId === stopId
+          || (Boolean(stop.locationId) && stop.locationId === stopId)
+          || (Boolean(requestedLocationId) && stop.locationId === requestedLocationId)
+      );
 
-      // 2. Nếu không thấy theo ID trực tiếp, tìm theo stopSequence của routeStop
-      if (!matchedStop && routeStop) {
-        const seq = (routeStop as { optimizedSequence?: number; originalStopSequence?: number }).optimizedSequence
-          ?? (routeStop as { originalStopSequence?: number }).originalStopSequence;
-        if (seq !== undefined) {
-          matchedStop = tripDetail.stops?.find((s) => s.stopSequence === seq);
-        }
+      if (!matchedStop?.stopId) {
+        throw new ApiClientError(
+          'Không tìm thấy TripStop hợp lệ trong chi tiết chuyến. Vui lòng quay lại và tải lại chuyến.',
+          404
+        );
       }
-
-      // 3. Nếu vẫn không thấy và tripDetail.stops có dữ liệu, ánh xạ theo index
-      if (!matchedStop && tripDetail.stops && tripDetail.stops.length > 0) {
-        if (tripDetail.stops.length === 1) {
-          matchedStop = tripDetail.stops[0];
-        } else {
-          const routeIndex = route.optimizedStops?.findIndex(
-            (s) => s.stopId === stopId || (s as { locationId?: string }).locationId === stopId
-          );
-          if (routeIndex !== undefined && routeIndex >= 0 && tripDetail.stops[routeIndex]) {
-            matchedStop = tripDetail.stops[routeIndex];
-          }
-        }
-      }
-
-      const currentStop: DriverTripStopDto | null = matchedStop ??
-        (routeStop
-          ? ({
-              stopId: routeStop.stopId || stopId,
-              stopSequence: (routeStop as { optimizedSequence?: number; originalStopSequence?: number }).optimizedSequence ?? (routeStop as { originalStopSequence?: number }).originalStopSequence ?? 1,
-              address: (routeStop as { address?: string }).address || 'Điểm giao hàng',
-              status: (routeStop as { status?: string }).status || 'PLANNED',
-              stopType: (routeStop as { stopType?: string }).stopType || 'DELIVERY',
-            } as DriverTripStopDto)
-          : null);
-
-      if (!currentStop && !routeStop) {
-        throw new ApiClientError('Stop không thuộc chuyến được giao.', 404);
-      }
+      const currentStop = matchedStop;
 
       let routeOrders: TripRouteOrderDto[];
       let stopLocationId: string | null | undefined;
@@ -319,7 +295,7 @@ export default function StopDetailScreen() {
         routeLpns = routeStop.lpns || [];
       } else {
         const boundaryPoint = resolveBoundaryPoint(
-          currentStop!,
+          currentStop,
           tripDetail.stops ?? [],
           route.origin,
           route.destination
@@ -427,7 +403,7 @@ export default function StopDetailScreen() {
     } finally {
       if (showSpinner) setLoading(false);
     }
-  }, [stopId, token, tripId]);
+  }, [requestedLocationId, stopId, token, tripId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -438,14 +414,6 @@ export default function StopDetailScreen() {
   const handleCheckIn = async () => {
     if (!checkinProofAsset) {
       Alert.alert('Thiếu ảnh xác nhận', 'Vui lòng thêm ảnh xác nhận trước khi check-in.');
-      return;
-    }
-
-    if (distanceToStopKm !== null && distanceToStopKm > MAX_CHECKIN_DISTANCE_KM) {
-      Alert.alert(
-        '⚠️ Chưa đến phạm vi điểm giao',
-        `Xe hiện đang cách điểm giao hàng ${distanceToStopKm} km (vượt quá bán kính 10 km cho phép check-in theo quy định hệ thống).\n\nVui lòng di chuyển xe đến gần điểm giao hơn để xác nhận.`
-      );
       return;
     }
 
@@ -461,10 +429,14 @@ export default function StopDetailScreen() {
       // Resolve targetStopId từ chi tiết chuyến mới nhất từ database
       const latestDetail = await driverApi.getMyTripDetail(validTripId);
       const verifiedStop = latestDetail.stops?.find(
-        (s) => s.stopId === driverStop?.stopId || s.stopId === stopId || (Boolean(s.locationId) && (s.locationId === stopId || s.locationId === driverStop?.locationId))
-      )
-        || latestDetail.stops?.find((s) => s.stopSequence === driverStop?.stopSequence)
-        || (latestDetail.stops?.length === 1 ? latestDetail.stops[0] : null);
+        (s) =>
+          s.stopId === driverStop?.stopId
+          || s.stopId === stopId
+          || (Boolean(s.locationId)
+            && (s.locationId === stopId
+              || s.locationId === driverStop?.locationId
+              || s.locationId === requestedLocationId))
+      );
 
       if (!verifiedStop?.stopId) {
         Alert.alert(
@@ -474,7 +446,10 @@ export default function StopDetailScreen() {
         return;
       }
 
-      await deliveryApi.checkInStop(verifiedStop.stopId, toDeliveryUploadFile(checkinProofAsset, 'checkin-proof.jpg'));
+      await deliveryApi.checkInStop(
+        verifiedStop.stopId,
+        toDeliveryUploadFile(checkinProofAsset, 'checkin-proof.jpg')
+      );
       const reloaded = await loadData(false);
       Alert.alert(
         'Đã xác nhận đến điểm giao',
@@ -538,6 +513,50 @@ export default function StopDetailScreen() {
     if (!result.canceled && result.assets[0]) {
       onSelected(result.assets[0]);
     }
+  };
+
+  const captureImage = async (
+    onSelected: (asset: ImagePicker.ImagePickerAsset) => void,
+    description: string
+  ) => {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Chưa có quyền camera', `Vui lòng cấp quyền camera để chụp ${description}.`);
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 0.9,
+    });
+    if (!result.canceled && result.assets[0]) {
+      onSelected(result.assets[0]);
+    }
+  };
+
+  const chooseNoShowEvidenceSource = () => {
+    Alert.alert(
+      'Ảnh minh chứng khách vắng mặt',
+      'Chụp ảnh mới hoặc chọn ảnh có sẵn trên thiết bị.',
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Chụp ảnh',
+          onPress: () => void captureImage(
+            setNoShowEvidenceAsset,
+            'ảnh minh chứng khách không có mặt'
+          ),
+        },
+        {
+          text: 'Chọn ảnh',
+          onPress: () => void pickImage(
+            setNoShowEvidenceAsset,
+            'ảnh minh chứng khách không có mặt'
+          ),
+        },
+      ]
+    );
   };
 
   const handleHandoverConfirm = async () => {
@@ -910,6 +929,13 @@ export default function StopDetailScreen() {
   };
 
   const startNoShow = () => {
+    if (!hasCheckedIn) {
+      Alert.alert(
+        'Chưa check-in điểm giao',
+        'Driver phải xác nhận đã đến điểm giao trước khi báo khách không có mặt.'
+      );
+      return;
+    }
     setSelectedOrderId(null);
     setNoShowEvidenceAsset(null);
     setStep('NO_SHOW');
@@ -918,6 +944,13 @@ export default function StopDetailScreen() {
   const submitNoShow = async () => {
     const targetStopId = driverStop?.stopId || stopId;
     if (mutationLock.current || isProcessing || !targetStopId) return;
+    if (!hasCheckedIn) {
+      Alert.alert(
+        'Chưa check-in điểm giao',
+        'Driver phải xác nhận đã đến điểm giao trước khi báo khách không có mặt.'
+      );
+      return;
+    }
     if (!noShowEvidenceAsset) {
       Alert.alert('Thiếu ảnh minh chứng', 'Vui lòng thêm ảnh minh chứng.');
       return;
@@ -942,8 +975,10 @@ export default function StopDetailScreen() {
       await loadData(false);
       resetOrderForm();
       Alert.alert(
-        'Đã báo khách không có mặt',
-        'Hàng chưa được giao và phải nhập lại kho. Toàn bộ đơn hàng tại điểm giao này đã chuyển sang trạng thái chờ trả về kho (RETURN_PENDING).'
+        'Đã xác nhận chở hàng về kho',
+        hasRemainingStops
+          ? 'Hàng chưa được giao và phải chở về kho. Hãy tiếp tục hoàn thành các điểm giao còn lại; chỉ đóng ca sau khi đã xử lý đơn cuối cùng.'
+          : 'Hàng chưa được giao và phải chở về kho. Chuyến không còn điểm giao; hãy chọn kho trả hàng và chỉ đóng ca khi xe đã đến kho.'
       );
     } catch (error) {
       Alert.alert('Không thể báo khách không có mặt', formatActionError(error, 'NO_SHOW'));
@@ -969,7 +1004,7 @@ export default function StopDetailScreen() {
     );
   };
 
-  const loadReturnWarehouses = async () => {
+  const loadReturnWarehouses = useCallback(async () => {
     if (!tripId || !showCloseShiftPanel || isLoadingWarehouses) return;
     try {
       setIsLoadingWarehouses(true);
@@ -981,7 +1016,30 @@ export default function StopDetailScreen() {
     } finally {
       setIsLoadingWarehouses(false);
     }
-  };
+  }, [isLoadingWarehouses, showCloseShiftPanel, tripId]);
+
+  React.useEffect(() => {
+    if (
+      !tripId
+      || !isNoShowReturnFlow
+      || !showCloseShiftPanel
+      || hasRemainingStops
+      || warehouses !== null
+      || warehouseError
+      || isLoadingWarehouses
+    ) return;
+
+    void loadReturnWarehouses();
+  }, [
+    hasRemainingStops,
+    isNoShowReturnFlow,
+    isLoadingWarehouses,
+    loadReturnWarehouses,
+    showCloseShiftPanel,
+    tripId,
+    warehouseError,
+    warehouses,
+  ]);
 
   const loadTemperatureChart = async () => {
     if (!token || !stopId || isLoadingTemperature) return;
@@ -1035,6 +1093,17 @@ export default function StopDetailScreen() {
     try {
       mutationLock.current = true;
       setIsProcessing(true);
+
+      const latestTrip = await driverApi.getMyTripDetail(tripId);
+      if (hasRemainingDeliveryStops(latestTrip.stops ?? [], driverStop?.stopId)) {
+        await loadData(false);
+        Alert.alert(
+          'Chưa thể đóng ca',
+          'Chuyến vẫn còn điểm giao chưa hoàn tất. Hãy giao hoặc xử lý đơn cuối cùng trước khi về kho đóng ca.'
+        );
+        return;
+      }
+
       const result = await deliveryApi.closeShift(tripId, selectedWarehouseId);
 
       // Kiểm tra xem backend đã thực sự giải phóng xe và tài xế chưa
@@ -1089,11 +1158,20 @@ export default function StopDetailScreen() {
       const warehouse = warehouses?.find((item) => item.warehouseId === selectedWarehouseId);
       const locationName = result.newLocation || warehouse?.warehouseName || 'kho trả hàng';
       const successTitle = '✅ Đóng ca thành công';
-      const successMessage = result.message || (
-        `Đã bàn giao luồng trả hàng về ${locationName}.\n` +
-        `Nhân viên kho sẽ nhập lại hàng bằng seal tại màn hình Inbound sự cố.\n` +
-        `Hàng không cần thực hiện QC lại.`
-      );
+      const successMessage = isNoShowReturnFlow
+        ? [
+            `Đã bàn giao luồng trả hàng về ${locationName}.`,
+            result.message,
+            result.requiresWarehouseInboundBySeal !== false
+              ? 'Nhân viên kho sẽ nhập lại hàng bằng seal tại màn hình Inbound sự cố.'
+              : null,
+            'Hàng không cần thực hiện QC lại.',
+          ].filter(Boolean).join('\n\n')
+        : result.message || (
+            `Đã bàn giao luồng trả hàng về ${locationName}.\n` +
+            `Nhân viên kho sẽ nhập lại hàng bằng seal tại màn hình Inbound sự cố.\n` +
+            `Hàng không cần thực hiện QC lại.`
+          );
 
       Alert.alert(
         successTitle,
@@ -1299,7 +1377,7 @@ export default function StopDetailScreen() {
                 Xác nhận đã đến điểm giao
               </Text>
               <Text style={{ color: colors.text.secondary }} className="mb-4 text-center text-xs leading-5">
-                Chụp ảnh điểm giao để xác nhận có mặt. Vị trí check-in được hệ thống đối chiếu từ thiết bị IoT của xe (bán kính hợp lệ tối đa 10 km).
+                Chụp ảnh điểm giao để xác nhận có mặt. Backend chỉ xác thực bằng GPS mới nhất của xe trong bán kính tối đa 10 km.
               </Text>
 
               {/* Thông tin khoảng cách xe hiện tại tới điểm giao */}
@@ -1313,7 +1391,7 @@ export default function StopDetailScreen() {
                       </Text>
                     </View>
                     <Text className="mt-1 text-[11px] text-emerald-800 leading-4">
-                      Hợp lệ theo quy định hệ thống (trong bán kính cho phép 10 km).
+                      Đang nằm trong bán kính tham khảo 10 km. Backend sẽ xác thực lại GPS mới nhất khi gửi.
                     </Text>
                   </View>
                 ) : (
@@ -1325,7 +1403,7 @@ export default function StopDetailScreen() {
                       </Text>
                     </View>
                     <Text className="mt-1 text-[11px] text-amber-800 leading-4">
-                      Vượt quá bán kính 10 km quy định. Xe cần đến gần hơn để check-in.
+                      Ngoài bán kính 10 km. Đây là vị trí tham khảo; backend sẽ xác thực lại khi gửi.
                     </Text>
                   </View>
                 )
@@ -1345,7 +1423,7 @@ export default function StopDetailScreen() {
                   label="Xác nhận đã đến"
                   onPress={() => void handleCheckIn()}
                   loading={isProcessing}
-                  disabled={!checkinProofAsset || (distanceToStopKm !== null && distanceToStopKm > MAX_CHECKIN_DISTANCE_KM)}
+                  disabled={!checkinProofAsset}
                 />
               </View>
             </View>
@@ -1430,9 +1508,9 @@ export default function StopDetailScreen() {
               <ProofPicker
                 asset={noShowEvidenceAsset}
                 emptyLabel="Chưa có ảnh xác nhận khách không có mặt"
-                chooseLabel={noShowEvidenceAsset ? 'Đổi ảnh minh chứng' : 'Thêm ảnh minh chứng'}
+                chooseLabel={noShowEvidenceAsset ? 'Đổi ảnh minh chứng' : 'Chụp/chọn ảnh minh chứng'}
                 disabled={isProcessing}
-                onPick={() => void pickImage(setNoShowEvidenceAsset, 'ảnh minh chứng khách không có mặt')}
+                onPick={chooseNoShowEvidenceSource}
                 onRemove={() => setNoShowEvidenceAsset(null)}
               />
               <View className="mt-4">
@@ -1559,9 +1637,14 @@ export default function StopDetailScreen() {
                 <AppButton
                   label="Báo khách hàng không có mặt (No-Show)"
                   variant="secondary"
-                  disabled={isProcessing}
+                  disabled={isProcessing || !hasCheckedIn}
                   onPress={startNoShow}
                 />
+                {!hasCheckedIn ? (
+                  <Text className="mt-2 text-center text-xs text-amber-800">
+                    Cần check-in điểm giao trước khi báo khách không có mặt.
+                  </Text>
+                ) : null}
               </View>
             ) : null}
 
@@ -1591,23 +1674,14 @@ export default function StopDetailScreen() {
               </View>
             ) : null}
 
-            {hasCheckedIn && !allOrdersHandedOver && stopStatus !== 'SKIPPED_NOSHOW' ? (
-              <View className="mt-4">
-                <AppButton
-                  label="Khách không có mặt (No-Show)"
-                  variant="secondary"
-                  disabled={isProcessing}
-                  onPress={startNoShow}
-                />
-              </View>
-            ) : null}
-
             {stopStatus === 'SKIPPED_NOSHOW' ? (
               <View className="mt-4">
                 <DeliveryNotice
                   icon="warning"
-                  title="Khách không có mặt (No-Show)"
-                  detail="Hàng chưa được giao và phải nhập lại kho. Toàn bộ kiện hàng đã được chuyển sang trạng thái chờ trả về kho (RETURN_PENDING)."
+                  title="Đã xác nhận chở hàng về kho"
+                  detail={hasRemainingStops
+                    ? 'Khách vắng mặt nên hàng chưa được giao. Các LPN đang chờ trả về kho (RETURN_PENDING). Tiếp tục hoàn thành các điểm giao còn lại và chỉ đóng ca sau đơn cuối cùng.'
+                    : 'Khách vắng mặt nên hàng chưa được giao. Các LPN đang chờ trả về kho (RETURN_PENDING). Chọn kho trả hàng và chỉ đóng ca khi xe đã đến kho.'}
                   tone="warning"
                 />
               </View>
@@ -1649,35 +1723,40 @@ export default function StopDetailScreen() {
                     <Text className="font-bold text-orange-950">Kho trả hàng gần vị trí xe</Text>
                     <Text className="mt-1 text-xs text-orange-800">
                       {isReturnFlow
-                        ? 'Chọn kho trả hàng để đưa hàng về và đóng ca.'
+                        ? 'Toàn bộ điểm giao đã được xử lý. Chọn kho trả hàng và chỉ đóng ca khi xe đã đến đúng kho.'
                         : 'Sau khi hoàn tất toàn bộ điểm giao và thanh toán COD, chọn kho để đóng ca.'}
                     </Text>
                   </View>
                 </View>
 
-                {/* Thanh tiến trình quy trình trả hàng */}
-                <View className="mt-3 rounded-xl bg-orange-100/80 p-2.5">
-                  <Text className="text-[11px] font-bold text-orange-950 mb-1.5">Quy trình trả hàng:</Text>
-                  <View className="flex-row items-center justify-between">
-                    <Text className="text-[10.5px] font-bold text-emerald-800">1. Khách vắng mặt ✓</Text>
-                    <Text className="text-slate-400">→</Text>
-                    <Text className={`text-[10.5px] font-bold ${selectedWarehouseId ? 'text-emerald-800' : 'text-orange-900'}`}>2. Chọn kho</Text>
-                    <Text className="text-slate-400">→</Text>
-                    <Text className="text-[10.5px] font-medium text-orange-800">3. Về kho</Text>
-                    <Text className="text-slate-400">→</Text>
-                    <Text className="text-[10.5px] font-medium text-orange-800">4. Đóng ca</Text>
-                  </View>
-                </View>
-
-                {/* Cảnh báo đưa hàng về đúng kho đã chọn */}
-                <View className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3">
-                  <View className="flex-row items-center gap-2">
-                    <Ionicons name="alert-circle" size={18} color="#D97706" />
-                    <Text className="text-xs font-bold text-amber-900 flex-1">
-                      Vui lòng đưa hàng về đúng kho đã chọn. Chỉ đóng ca khi xe đã đến kho.
+                {isReturnFlow ? (
+                  <View className="mt-3 rounded-xl bg-orange-100/80 p-3">
+                    <Text className="text-xs font-bold text-orange-950">Tiến trình trả hàng</Text>
+                    <Text className="mt-2 text-xs font-bold text-emerald-800">
+                      1. Khách vắng mặt ✓
+                    </Text>
+                    <Text className={`mt-1 text-xs font-bold ${selectedWarehouseId ? 'text-emerald-800' : 'text-orange-900'}`}>
+                      2. Chọn kho trả hàng {selectedWarehouseId ? '✓' : '← đang thực hiện'}
+                    </Text>
+                    <Text className={`mt-1 text-xs font-bold ${selectedWarehouseId ? 'text-orange-900' : 'text-orange-700'}`}>
+                      3. Di chuyển về kho {selectedWarehouseId ? '← bước tiếp theo' : ''}
+                    </Text>
+                    <Text className="mt-1 text-xs font-medium text-orange-700">
+                      4. Đóng ca
                     </Text>
                   </View>
-                </View>
+                ) : null}
+
+                {selectedWarehouseId ? (
+                  <View className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3">
+                    <View className="flex-row items-center gap-2">
+                      <Ionicons name="alert-circle" size={18} color="#D97706" />
+                      <Text className="flex-1 text-xs font-bold text-amber-900">
+                        Vui lòng đưa hàng về đúng kho đã chọn. Chỉ đóng ca khi xe đã đến kho.
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
 
                 {warehouses === null && !warehouseError ? (
                   <View className="mt-4">
@@ -1703,10 +1782,10 @@ export default function StopDetailScreen() {
                   return (
                     <Pressable
                       key={warehouse.warehouseId}
-                      disabled={!canCloseShift || isProcessing}
+                      disabled={isProcessing}
                       onPress={() => setSelectedWarehouseId(warehouse.warehouseId)}
                       className={`mt-3 rounded-xl border p-3.5 ${selected ? 'border-orange-700 bg-white shadow-sm' : 'border-orange-200 bg-white/80'}`}
-                      style={({ pressed }) => ({ opacity: !canCloseShift ? 0.8 : pressed ? 0.7 : 1 })}
+                      style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
                     >
                       <View className="flex-row items-start justify-between gap-3">
                         <View className="flex-1">
@@ -2627,6 +2706,24 @@ function formatActionError(
       }
       return 'Bạn không có quyền thực hiện thao tác này.';
     }
+    if (error.status === 409) {
+      if (action === 'NO_SHOW') {
+        return 'Không thể báo khách vắng mặt vì đơn hàng tại điểm dừng đã có ePOD hoàn tất.';
+      }
+      return 'Thao tác xung đột với trạng thái hiện tại. Dữ liệu sẽ được tải lại.';
+    }
+    if (error.status === 400 || error.status === 422) {
+      if (action === 'CLOSE_SHIFT') {
+        return 'Không thể đóng ca: còn điểm giao hoặc đơn chưa hoàn tất, LPN chưa ở RETURN_PENDING, hoặc kho trả hàng không hoạt động.';
+      }
+      if (action === 'NO_SHOW') {
+        if (/check.?in|arrival|arrived/i.test(error.message)) {
+          return 'Driver phải check-in điểm giao trước khi báo khách không có mặt.';
+        }
+        return error.message || 'Yêu cầu báo khách không có mặt chưa đáp ứng điều kiện nghiệp vụ.';
+      }
+      return error.message || 'Backend từ chối yêu cầu do điều kiện nghiệp vụ chưa hợp lệ.';
+    }
     if (error.status === 404) {
       if (action === 'CHECK_IN') {
         return 'Không tìm thấy thông tin điểm dừng trên hệ thống hoặc điểm dừng chưa sẵn sàng để check-in. Vui lòng tải lại.';
@@ -2644,10 +2741,10 @@ function formatActionError(
       return 'Vui lòng thêm ảnh xác nhận trước khi check-in.';
     }
     if (action === 'CHECK_IN' && /distance|geofence|meter|metre|radius/.test(message)) {
-      return 'Xe chưa ở trong phạm vi điểm giao hàng.';
+      return 'Xe chưa ở trong phạm vi 10 km của điểm giao hàng.';
     }
     if (action === 'CHECK_IN' && /iot|telemetry|gps|location/.test(message)) {
-      return 'Chưa nhận được vị trí xe từ thiết bị IoT. Vui lòng thử lại.';
+      return 'Không nhận được GPS từ xe.';
     }
     if (action === 'CHECK_IN' && /already|check.?in/.test(message)) {
       return 'Điểm giao này đã được xác nhận đến.';
@@ -2688,21 +2785,6 @@ function formatActionError(
     if (action === 'CLOSE_SHIFT' && /status|state|pending|unconfirmed|handover/.test(message)) {
       return 'Thao tác này chưa thể thực hiện ở trạng thái hiện tại.';
     }
-    if (error.status === 409) {
-      if (action === 'NO_SHOW') {
-        return 'Đơn hàng tại điểm dừng đã có ePOD hoàn tất trước đó.';
-      }
-      return 'Thao tác xung đột với trạng thái hiện tại. Dữ liệu sẽ được tải lại.';
-    }
-    if (error.status === 400 || error.status === 422) {
-      if (action === 'CLOSE_SHIFT') {
-        return 'Không thể đóng ca: còn đơn chưa hoàn tất, kiện hàng chưa ở trạng thái chờ trả kho (RETURN_PENDING) hoặc kho trả hàng không hoạt động.';
-      }
-      if (action === 'NO_SHOW') {
-        return error.message || 'Yêu cầu báo khách không có mặt không hợp lệ. Vui lòng kiểm tra lại ảnh minh chứng.';
-      }
-      return error.message || 'Backend từ chối yêu cầu do điều kiện nghiệp vụ chưa hợp lệ.';
-    }
   }
 
   switch (action) {
@@ -2723,7 +2805,7 @@ function formatActionError(
     case 'NO_SHOW':
       return 'Không thể báo khách không có mặt. Vui lòng thử lại.';
     case 'WAREHOUSE':
-      return 'Không thể tải danh sách kho quy đầu. Vui lòng thử lại.';
+      return 'Không thể tải danh sách kho trả hàng. Vui lòng thử lại.';
     case 'TEMPERATURE':
       return 'Không thể tải dữ liệu nhiệt độ. Vui lòng thử lại.';
     case 'CLOSE_SHIFT':
@@ -2878,6 +2960,11 @@ function formatTripStatus(status?: string | null) {
 
 const MAX_CHECKIN_DISTANCE_KM = 10;
 
+function matchedLocationId(stops: DriverTripStopDto[] | undefined, requestedStopId: string) {
+  return stops?.find((stop) => stop.stopId === requestedStopId)?.locationId;
+}
+
+
 function calculateHaversineDistanceKm(
   lat1: number,
   lon1: number,
@@ -2894,5 +2981,5 @@ function calculateHaversineDistanceKm(
       Math.sin(dLon / 2) *
       Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return Math.round(R * c * 10) / 10;
+  return Math.round(R * c * 100) / 100;
 }
