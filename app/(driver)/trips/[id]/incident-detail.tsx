@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -88,6 +88,7 @@ export default function DriverIncidentDetailScreen() {
   const [error, setError] = useState<string | null>(null);
   const [isNotFound, setIsNotFound] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const navigationLock = useRef(false);
 
   // ── Tua xem lại các bước trên Stepper ──────────────────────────────────────
   const [selectedStep, setSelectedStep] = useState<number | null>(null);
@@ -353,11 +354,11 @@ export default function DriverIncidentDetailScreen() {
 
   // ── Nhánh 1: Tự xử lý tại chỗ, không cần cứu hộ (requiresRescue == false) ──
   const handleSubmitContinueTrip = async () => {
-    if (!token || !incidentId || isContinueTripSubmitting) return;
+    if (!token || !incidentId || isContinueTripSubmitting || navigationLock.current) return;
     setIsContinueTripSubmitting(true);
     const parsedDelay = parseInt(expectedDelayMinutesText.trim() || '0', 10);
     const delayMinutes = Number.isFinite(parsedDelay) && parsedDelay >= 0 ? parsedDelay : 0;
-    const note = continueTripNote.trim();
+    const note = continueTripNote.trim() || 'Đã xử lý sự cố, xe hoạt động bình thường.';
 
     try {
       const res = await continueTrip(
@@ -367,12 +368,13 @@ export default function DriverIncidentDetailScreen() {
         delayMinutes
       );
       if (res.success) {
+        navigationLock.current = true;
         setIsContinueTripModalVisible(false);
         if (incident) {
           setIncident({
             ...incident,
             status: 'CONTINUED',
-            handlingNote: note || 'Đã xử lý sự cố, xe hoạt động bình thường.',
+            handlingNote: note,
           });
         }
         Alert.alert(
@@ -382,7 +384,7 @@ export default function DriverIncidentDetailScreen() {
             {
               text: 'Mở màn hình chuyến xe',
               onPress: () => {
-                const targetTripId = incident?.tripId || (currentTripId !== 'active' ? currentTripId : null);
+                const targetTripId = incident?.tripId || (typeof params.id === 'string' && params.id !== 'active' ? params.id : null);
                 if (targetTripId) {
                   router.replace(`/(driver)/trips/${targetTripId}` as never);
                 } else {
@@ -404,7 +406,7 @@ export default function DriverIncidentDetailScreen() {
 
   // ── Nhánh 2: Sự cố có xe cứu hộ (requiresRescue == true) — Xác nhận đã sang hàng và tiếp tục chuyến ──
   const handleConfirmTransload = async () => {
-    if (!token || !incidentId || isTransloadSubmitting) return;
+    if (!token || !incidentId || isTransloadSubmitting || navigationLock.current) return;
     setIsTransloadSubmitting(true);
     try {
       const res = await confirmTransload(
@@ -413,6 +415,7 @@ export default function DriverIncidentDetailScreen() {
         transloadNote.trim() || 'Đã sang đủ hàng sang xe cứu hộ và kiểm tra seal.'
       );
       if (res.success) {
+        navigationLock.current = true;
         setIsTransloadModalVisible(false);
         if (incident) {
           setIncident({
@@ -427,7 +430,7 @@ export default function DriverIncidentDetailScreen() {
             {
               text: 'Tiếp tục giao hàng',
               onPress: () => {
-                const targetTripId = incident?.tripId || (currentTripId !== 'active' ? currentTripId : null);
+                const targetTripId = incident?.tripId || (typeof params.id === 'string' && params.id !== 'active' ? params.id : null);
                 if (targetTripId) {
                   router.replace(`/(driver)/trips/${targetTripId}` as never);
                 } else {
@@ -451,12 +454,14 @@ export default function DriverIncidentDetailScreen() {
   // - requiresRescue === false: Gọi modal để submit API continue-trip
   // - requiresRescue === true (TRANSLOAD_COMPLETED): Trip đã IN_TRANSIT, chỉ navigate về trip
   const handleConfirmContinueFromStep4 = () => {
+    if (navigationLock.current) return;
     if (incident?.requiresRescue === false) {
       // Nhánh tự xử lý: cần điền form và gọi API continue-trip
       setIsContinueTripModalVisible(true);
     } else {
       // Nhánh cứu hộ: confirm-transload đã cập nhật trip → IN_TRANSIT, chỉ cần navigate
-      const targetTripId = incident?.tripId || (currentTripId !== 'active' ? currentTripId : null);
+      navigationLock.current = true;
+      const targetTripId = incident?.tripId || (typeof params.id === 'string' && params.id !== 'active' ? params.id : null);
       setStep4ManuallyConfirmed(true);
       setSelectedStep(null);
       if (targetTripId) {
@@ -467,9 +472,12 @@ export default function DriverIncidentDetailScreen() {
     }
   };
 
-  // Navigate thẳng về trang chuyến xe (dùng cho Step 5 hoặc khi sự cố đã xử lý xong)
+  // Navigate thẳng về trang chuyến xe (dùng cho Step 5 hoặc khi sự cố đã xử lý xong / TRANSLOAD_COMPLETED)
+  // Tuyệt đối KHÔNG gọi API continue-trip ở đây vì trip đã IN_TRANSIT
   const handleOpenTripFromStep5 = () => {
-    const targetTripId = incident?.tripId || (currentTripId !== 'active' ? currentTripId : null);
+    if (navigationLock.current) return;
+    navigationLock.current = true;
+    const targetTripId = incident?.tripId || (typeof params.id === 'string' && params.id !== 'active' ? params.id : null);
     if (targetTripId) {
       router.replace(`/(driver)/trips/${targetTripId}` as never);
     } else {
