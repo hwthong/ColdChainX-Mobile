@@ -440,80 +440,48 @@ function buildMapHtml(
     html, body, #map { height: 100%; margin: 0; padding: 0; background: #eef2f5; }
     
     /* ─── CUSTOM PIN MARKER STYLES ─── */
-    .pin-anchor-wrapper {
-      width: 0;
-      height: 0;
-      position: relative;
-      cursor: pointer;
-      z-index: 10;
-    }
-    .pin-anchor-wrapper:hover, .pin-anchor-wrapper:active {
-      z-index: 999 !important;
-    }
-    .pin-body-inner {
-      position: absolute;
-      left: -12px;
-      bottom: 0px;
+    .custom-pin {
       width: 24px;
       height: 32px;
+      display: block;
+      cursor: pointer;
+      user-select: none;
+      filter: drop-shadow(0 4px 8px rgba(15, 23, 42, 0.35));
       transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
-      transform-origin: bottom center;
+      z-index: 10;
     }
-    .pin-anchor-wrapper:hover .pin-body-inner, .pin-anchor-wrapper:active .pin-body-inner {
+    .custom-pin:hover, .custom-pin:active {
       transform: scale(1.25);
+      z-index: 999 !important;
     }
     .pin-svg {
       display: block;
       width: 24px;
       height: 32px;
-      filter: drop-shadow(0 3px 6px rgba(15, 23, 42, 0.35));
+      pointer-events: none;
     }
 
-    /* ─── VEHICLE MOVING RADAR MARKER ─── */
-    .vehicle-anchor-wrapper {
-      width: 0;
-      height: 0;
-      position: relative;
-      cursor: pointer;
-      z-index: 100;
-    }
-    .vehicle-anchor-wrapper:hover, .vehicle-anchor-wrapper:active {
-      z-index: 1000 !important;
-    }
-    .vehicle-body-inner {
-      position: absolute;
-      left: -16px;
-      top: -16px;
-      width: 32px;
-      height: 32px;
+    /* ─── VEHICLE MOVING MARKER ─── */
+    .vehicle-marker {
+      width: 34px;
+      height: 34px;
       border-radius: 999px;
       background: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%);
       border: 2.5px solid #FFFFFF;
-      box-shadow: 0 4px 12px rgba(29, 78, 216, 0.6);
+      box-shadow: 0 4px 14px rgba(29, 78, 216, 0.6);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 16px;
+      font-size: 17px;
+      cursor: pointer;
+      user-select: none;
       box-sizing: border-box;
+      z-index: 100;
       transition: transform 0.2s ease;
     }
-    .vehicle-anchor-wrapper:hover .vehicle-body-inner, .vehicle-anchor-wrapper:active .vehicle-body-inner {
+    .vehicle-marker:hover, .vehicle-marker:active {
       transform: scale(1.22);
-    }
-    .vehicle-pulse-ring {
-      position: absolute;
-      left: -22px;
-      top: -22px;
-      width: 44px;
-      height: 44px;
-      border-radius: 999px;
-      border: 2px solid #3B82F6;
-      animation: pulse-ring 2s infinite cubic-bezier(0.215, 0.61, 0.355, 1);
-      pointer-events: none;
-    }
-    @keyframes pulse-ring {
-      0% { transform: scale(0.6); opacity: 0.9; }
-      100% { transform: scale(1.45); opacity: 0; }
+      z-index: 1000 !important;
     }
 
     /* ─── POPUP DIALOG STYLING ─── */
@@ -726,7 +694,7 @@ function buildMapHtml(
             const seqNumber = point.sequence || (index + 1);
 
             const markerEl = document.createElement('div');
-            markerEl.className = 'pin-anchor-wrapper ' + point.type;
+            markerEl.className = 'custom-pin ' + point.type;
 
             const pinColorTop = isFinal ? '#EF4444' : isOrigin ? '#10B981' : '#F43F5E';
             const pinColorBottom = isFinal ? '#B91C1C' : isOrigin ? '#047857' : '#BE123C';
@@ -735,19 +703,17 @@ function buildMapHtml(
             const fontSize = isOrigin ? '9' : (labelText.length > 1 ? '8.5' : '10.5');
 
             markerEl.innerHTML = 
-              '<div class="pin-body-inner">' +
-                '<svg class="pin-svg" width="24" height="32" viewBox="0 0 24 32" fill="none" xmlns="http://www.w3.org/2000/svg">' +
-                  '<defs>' +
-                    '<linearGradient id="grad-' + point.id + '" x1="0" y1="0" x2="0" y2="32" gradientUnits="userSpaceOnUse">' +
-                      '<stop offset="0%" stop-color="' + pinColorTop + '" />' +
-                      '<stop offset="100%" stop-color="' + pinColorBottom + '" />' +
-                    '</linearGradient>' +
-                  '</defs>' +
-                  '<path d="M12 0C5.37258 0 0 5.37258 0 12C0 21 12 32 12 32C12 32 24 21 24 12C24 5.37258 18.6274 0 12 0Z" fill="url(#grad-' + point.id + ')" stroke="#FFFFFF" stroke-width="2" />' +
-                  '<circle cx="12" cy="11.5" r="7" fill="#FFFFFF" />' +
-                  '<text x="12" y="11.5" text-anchor="middle" dominant-baseline="central" font-size="' + fontSize + '" font-weight="900" fill="' + textFill + '" font-family="system-ui, -apple-system, sans-serif">' + labelText + '</text>' +
-                '</svg>' +
-              '</div>';
+              '<svg class="pin-svg" width="24" height="32" viewBox="0 0 24 32" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+                '<defs>' +
+                  '<linearGradient id="grad-' + point.id + '" x1="0" y1="0" x2="0" y2="32" gradientUnits="userSpaceOnUse">' +
+                    '<stop offset="0%" stop-color="' + pinColorTop + '" />' +
+                    '<stop offset="100%" stop-color="' + pinColorBottom + '" />' +
+                  '</linearGradient>' +
+                '</defs>' +
+                '<path d="M12 0C5.37258 0 0 5.37258 0 12C0 21 12 32 12 32C12 32 24 21 24 12C24 5.37258 18.6274 0 12 0Z" fill="url(#grad-' + point.id + ')" stroke="#FFFFFF" stroke-width="2" />' +
+                '<circle cx="12" cy="11.5" r="7" fill="#FFFFFF" />' +
+                '<text x="12" y="11.5" text-anchor="middle" dominant-baseline="central" font-size="' + fontSize + '" font-weight="900" fill="' + textFill + '" font-family="system-ui, -apple-system, sans-serif">' + labelText + '</text>' +
+              '</svg>';
 
             let popupHtml = '<div class="custom-popup-card">';
             popupHtml += '<div class="popup-badge-row">';
@@ -774,9 +740,9 @@ function buildMapHtml(
             }
             popupHtml += '</div>';
 
-            new goongjs.Marker(markerEl)
+            new goongjs.Marker(markerEl, { offset: [0, -16] })
               .setLngLat([point.lon, point.lat])
-              .setPopup(new goongjs.Popup({ offset: [0, -32], closeButton: true, maxWidth: '280px' }).setHTML(popupHtml))
+              .setPopup(new goongjs.Popup({ offset: [0, -28], closeButton: true, maxWidth: '280px' }).setHTML(popupHtml))
               .addTo(map);
 
             bounds.extend([point.lon, point.lat]);
@@ -788,8 +754,8 @@ function buildMapHtml(
             const vLon = typeof vPos.longitude === 'number' ? vPos.longitude : parseFloat(vPos.longitude || vPos.lon || vPos.lng);
             if (!isNaN(vLat) && !isNaN(vLon) && vLat >= -90 && vLat <= 90 && vLon >= -180 && vLon <= 180) {
               const vehicleEl = document.createElement('div');
-              vehicleEl.className = 'vehicle-anchor-wrapper';
-              vehicleEl.innerHTML = '<div class="vehicle-pulse-ring"></div><div class="vehicle-body-inner">🚚</div>';
+              vehicleEl.className = 'vehicle-marker';
+              vehicleEl.textContent = '🚚';
 
               new goongjs.Marker(vehicleEl)
                 .setLngLat([vLon, vLat])
