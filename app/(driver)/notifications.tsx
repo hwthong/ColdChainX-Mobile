@@ -175,6 +175,14 @@ export default function DriverNotificationsScreen() {
     }
   };
 
+  const handleGoBack = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(driver)/home' as never);
+    }
+  }, [router]);
+
   const modalImageUrl = selectedNotification ? extractImageUrl(selectedNotification) : null;
   const modalRawBody = selectedNotification?.body || selectedNotification?.message || selectedNotification?.content || '';
   const modalDisplayBody = cleanNotificationBody(modalRawBody) || 'Không có nội dung chi tiết.';
@@ -191,7 +199,7 @@ export default function DriverNotificationsScreen() {
         className="border-b px-4 pb-3.5 shadow-sm"
       >
         <View className="flex-row items-center justify-between">
-          <Pressable onPress={() => router.back()} style={{ backgroundColor: colors.brand.primarySoft }} className="rounded-full p-2">
+          <Pressable onPress={handleGoBack} style={{ backgroundColor: colors.brand.primarySoft }} className="rounded-full p-2 active:opacity-70">
             <Ionicons name="arrow-back" size={20} color={colors.brand.primary} />
           </Pressable>
           <View className="items-center">
@@ -357,101 +365,105 @@ export default function DriverNotificationsScreen() {
       )}
 
       {/* Detail Modal */}
-      <Modal visible={Boolean(selectedNotification)} transparent animationType="fade" onRequestClose={() => setSelectedNotification(null)}>
-        <View className="flex-1 items-center justify-center bg-black/60 px-6">
-          <View style={{ backgroundColor: colors.surface.card }} className="w-full rounded-3xl p-6 shadow-2xl">
-            <View className="flex-row items-center justify-between border-b pb-3">
-              <Text style={{ color: colors.text.primary }} className="text-base font-bold">
-                Chi tiết thông báo
-              </Text>
-              <Pressable onPress={() => setSelectedNotification(null)} className="rounded-full bg-gray-100 p-1.5">
-                <Ionicons name="close" size={18} color={colors.text.secondary} />
-              </Pressable>
-            </View>
+      {Boolean(selectedNotification) && (
+        <Modal visible={true} transparent animationType="fade" onRequestClose={() => setSelectedNotification(null)}>
+          <View className="flex-1 items-center justify-center bg-black/60 px-6">
+            <View style={{ backgroundColor: colors.surface.card }} className="w-full rounded-3xl p-6 shadow-2xl">
+              <View className="flex-row items-center justify-between border-b pb-3">
+                <Text style={{ color: colors.text.primary }} className="text-base font-bold">
+                  Chi tiết thông báo
+                </Text>
+                <Pressable onPress={() => setSelectedNotification(null)} className="rounded-full bg-gray-100 p-1.5 active:opacity-70">
+                  <Ionicons name="close" size={18} color={colors.text.secondary} />
+                </Pressable>
+              </View>
 
-            <ScrollView className="max-h-[420px] my-4" showsVerticalScrollIndicator={false}>
-              <Text style={{ color: colors.text.primary }} className="text-base font-bold mb-2">
-                {selectedNotification?.title || 'Thông báo'}
-              </Text>
-              <Text style={{ color: colors.text.secondary }} className="text-sm leading-5">
-                {modalDisplayBody}
-              </Text>
+              <ScrollView className="max-h-[420px] my-4" showsVerticalScrollIndicator={false}>
+                <Text style={{ color: colors.text.primary }} className="text-base font-bold mb-2">
+                  {selectedNotification?.title || 'Thông báo'}
+                </Text>
+                <Text style={{ color: colors.text.secondary }} className="text-sm leading-5">
+                  {modalDisplayBody}
+                </Text>
 
-              {/* Receipt Image Section in Detail Modal */}
-              {modalImageUrl ? (
-                <View className="mt-4 rounded-2xl border border-gray-200 bg-gray-50 p-3">
-                  <View className="flex-row items-center justify-between mb-2">
-                    <View className="flex-row items-center gap-1.5">
-                      <Ionicons name="receipt-outline" size={16} color={colors.brand.primary} />
-                      <Text style={{ color: colors.text.primary }} className="text-xs font-bold">
-                        Biên lai / Chứng từ hoàn tiền
+                {/* Receipt Image Section in Detail Modal */}
+                {modalImageUrl ? (
+                  <View className="mt-4 rounded-2xl border border-gray-200 bg-gray-50 p-3">
+                    <View className="flex-row items-center justify-between mb-2">
+                      <View className="flex-row items-center gap-1.5">
+                        <Ionicons name="receipt-outline" size={16} color={colors.brand.primary} />
+                        <Text style={{ color: colors.text.primary }} className="text-xs font-bold">
+                          Biên lai / Chứng từ hoàn tiền
+                        </Text>
+                      </View>
+                      <Text style={{ color: colors.brand.primary }} className="text-[11px] font-medium">
+                        Nhấn để phóng to
                       </Text>
                     </View>
-                    <Text style={{ color: colors.brand.primary }} className="text-[11px] font-medium">
-                      Nhấn để phóng to
-                    </Text>
+
+                    <Pressable
+                      onPress={() => setPreviewImageUrl(modalImageUrl)}
+                      className="relative overflow-hidden rounded-xl bg-gray-200 items-center justify-center active:opacity-75"
+                      style={{ height: 180 }}
+                    >
+                      <Image
+                        source={{ uri: modalImageUrl }}
+                        style={{ width: '100%', height: '100%' }}
+                        contentFit="cover"
+                      />
+                      <View className="absolute bottom-2 right-2 rounded-lg bg-black/60 px-2.5 py-1 flex-row items-center gap-1">
+                        <Ionicons name="scan-outline" size={13} color="#FFFFFF" />
+                        <Text className="text-[10px] font-bold text-white">Xem ảnh lớn</Text>
+                      </View>
+                    </Pressable>
                   </View>
+                ) : null}
 
-                  <Pressable
-                    onPress={() => setPreviewImageUrl(modalImageUrl)}
-                    className="relative overflow-hidden rounded-xl bg-gray-200 items-center justify-center"
-                    style={{ height: 180 }}
-                  >
-                    <Image
-                      source={{ uri: modalImageUrl }}
-                      style={{ width: '100%', height: '100%' }}
-                      contentFit="cover"
-                    />
-                    <View className="absolute bottom-2 right-2 rounded-lg bg-black/60 px-2.5 py-1 flex-row items-center gap-1">
-                      <Ionicons name="scan-outline" size={13} color="#FFFFFF" />
-                      <Text className="text-[10px] font-bold text-white">Xem ảnh lớn</Text>
-                    </View>
-                  </Pressable>
-                </View>
-              ) : null}
+                <Text style={{ color: colors.text.muted }} className="mt-4 text-xs">
+                  {formatNotificationTime(selectedNotification?.createdAt)}
+                </Text>
+              </ScrollView>
 
-              <Text style={{ color: colors.text.muted }} className="mt-4 text-xs">
-                {formatNotificationTime(selectedNotification?.createdAt)}
-              </Text>
-            </ScrollView>
-
-            <Pressable
-              onPress={() => setSelectedNotification(null)}
-              style={{ backgroundColor: colors.brand.primary }}
-              className="items-center rounded-xl p-3"
-            >
-              <Text style={{ color: colors.text.onPrimary }} className="font-bold">
-                Đóng
-              </Text>
-            </Pressable>
+              <Pressable
+                onPress={() => setSelectedNotification(null)}
+                style={{ backgroundColor: colors.brand.primary }}
+                className="items-center rounded-xl p-3 active:opacity-80"
+              >
+                <Text style={{ color: colors.text.onPrimary }} className="font-bold">
+                  Đóng
+                </Text>
+              </Pressable>
+            </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      )}
 
       {/* Fullscreen Image Lightbox Modal */}
-      <Modal visible={Boolean(previewImageUrl)} transparent animationType="fade" onRequestClose={() => setPreviewImageUrl(null)}>
-        <View className="flex-1 bg-black/95 items-center justify-center p-4">
-          <Pressable
-            onPress={() => setPreviewImageUrl(null)}
-            className="absolute top-12 right-6 z-50 rounded-full bg-white/20 p-2.5"
-            hitSlop={15}
-          >
-            <Ionicons name="close" size={24} color="#FFFFFF" />
-          </Pressable>
+      {Boolean(previewImageUrl) && (
+        <Modal visible={true} transparent animationType="fade" onRequestClose={() => setPreviewImageUrl(null)}>
+          <View className="flex-1 bg-black/95 items-center justify-center p-4">
+            <Pressable
+              onPress={() => setPreviewImageUrl(null)}
+              className="absolute top-12 right-6 z-50 rounded-full bg-white/20 p-2.5 active:bg-white/40"
+              hitSlop={15}
+            >
+              <Ionicons name="close" size={24} color="#FFFFFF" />
+            </Pressable>
 
-          {previewImageUrl ? (
-            <Image
-              source={{ uri: previewImageUrl }}
-              style={{ width: '100%', height: '80%' }}
-              contentFit="contain"
-            />
-          ) : null}
+            {previewImageUrl ? (
+              <Image
+                source={{ uri: previewImageUrl }}
+                style={{ width: '100%', height: '80%' }}
+                contentFit="contain"
+              />
+            ) : null}
 
-          <Text className="absolute bottom-10 text-center text-xs text-white/70">
-            Chạm dấu ✕ hoặc nhấn nút đóng để quay lại
-          </Text>
-        </View>
-      </Modal>
+            <Text className="absolute bottom-10 text-center text-xs text-white/70">
+              Chạm dấu ✕ hoặc nhấn nút đóng để quay lại
+            </Text>
+          </View>
+        </Modal>
+      )}
     </View>
   );
 }
