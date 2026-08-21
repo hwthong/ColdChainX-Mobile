@@ -12,7 +12,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppPressable as Pressable } from '../../../../components/AppPressable';
 import { colors } from '../../../../constants/colors';
@@ -65,8 +65,13 @@ type StopOrder = {
   itemName: string;
   category?: string | null;
   customerId?: string | null;
+  customerName?: string | null;
+  customerPhone?: string | null;
   receiverName?: string | null;
   receiverPhone?: string | null;
+  originAddress?: string | null;
+  destAddress?: string | null;
+  tempCondition?: string | number | null;
   originalQuantity: number;
   status: string;
   lpns: TripRouteLpnDto[];
@@ -102,6 +107,7 @@ const RETURN_ORDER_STATUSES = new Set([
 ]);
 
 export default function StopDetailScreen() {
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{
     stopId?: string | string[];
     tripId?: string | string[];
@@ -289,8 +295,13 @@ export default function StopDetailScreen() {
           itemName: order.itemName || routeOrder?.itemName || 'Đơn hàng',
           category: order.category || routeOrder?.category,
           customerId: order.customerId,
+          customerName: order.customerName || order.customerContactName || null,
+          customerPhone: order.customerPhone || null,
           receiverName: order.receiverName || null,
           receiverPhone: order.receiverPhone || null,
+          originAddress: order.route?.originCity || null,
+          destAddress: order.destination?.address || order.route?.destCity || null,
+          tempCondition: order.tempCondition || routeOrder?.tempCondition,
           originalQuantity: firstLpnQuantity && firstLpnQuantity > 0
             ? firstLpnQuantity
             : order.quantity,
@@ -906,24 +917,83 @@ export default function StopDetailScreen() {
 
   if (loadError || !driverStop) {
     return (
-      <View style={{ backgroundColor: colors.surface.page }} className="flex-1 items-center justify-center px-6">
-        <Ionicons name="alert-circle-outline" size={48} color={colors.status.danger.main} />
-        <Text style={{ color: colors.status.danger.main }} className="mt-4 text-center font-semibold">
-          {loadError || 'Không tìm thấy dữ liệu điểm dừng.'}
-        </Text>
-        <View className="mt-5 w-full">
-          <AppButton label="Thử tải lại" onPress={() => void loadData()} />
+      <View style={{ backgroundColor: colors.surface.page }} className="flex-1">
+        <View
+          style={{
+            backgroundColor: colors.surface.card,
+            borderBottomColor: colors.border.default,
+            paddingTop: Math.max(insets.top + 6, 44),
+          }}
+          className="border-b px-4 pb-3.5 shadow-sm"
+        >
+          <View className="flex-row items-center justify-between">
+            <Pressable
+              onPress={() => router.back()}
+              style={{ backgroundColor: colors.brand.primarySoft }}
+              className="rounded-full p-2.5 active:opacity-70"
+            >
+              <Ionicons name="arrow-back" size={18} color={colors.brand.primary} />
+            </Pressable>
+            <Text style={{ color: colors.text.primary }} className="text-base font-bold">
+              Chi tiết điểm dừng
+            </Text>
+            <View style={{ width: 38 }} />
+          </View>
+        </View>
+        <View className="flex-1 items-center justify-center px-6">
+          <Ionicons name="alert-circle-outline" size={48} color={colors.status.danger.main} />
+          <Text style={{ color: colors.status.danger.main }} className="mt-4 text-center font-semibold">
+            {loadError || 'Không tìm thấy dữ liệu điểm dừng.'}
+          </Text>
+          <View className="mt-5 w-full">
+            <AppButton label="Thử tải lại" onPress={() => void loadData()} />
+          </View>
         </View>
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={{ backgroundColor: colors.surface.page }} className="flex-1" edges={['bottom']}>
-      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 100 }}>
-        <StopHeader stop={driverStop} orderCount={orders.length} />
+    <View style={{ backgroundColor: colors.surface.page }} className="flex-1">
+      {/* ── TOP APP BAR WITH SAFE AREA INSETS ── */}
+      <View
+        style={{
+          backgroundColor: colors.surface.card,
+          borderBottomColor: colors.border.default,
+          paddingTop: Math.max(insets.top + 6, 44),
+        }}
+        className="border-b px-4 pb-3.5 shadow-sm"
+      >
+        <View className="flex-row items-center justify-between">
+          <Pressable
+            onPress={() => router.back()}
+            style={{ backgroundColor: colors.brand.primarySoft }}
+            className="rounded-full p-2.5 active:opacity-70"
+          >
+            <Ionicons name="arrow-back" size={18} color={colors.brand.primary} />
+          </Pressable>
+          <View className="flex-1 items-center px-3">
+            <Text style={{ color: colors.text.primary }} className="text-base font-bold" numberOfLines={1}>
+              Điểm dừng #{driverStop.stopSequence}
+            </Text>
+            <Text style={{ color: colors.text.secondary }} className="text-xs" numberOfLines={1}>
+              {driverStop.address}
+            </Text>
+          </View>
+          <Pressable
+            onPress={() => void loadData()}
+            style={{ backgroundColor: colors.brand.primarySoft }}
+            className="rounded-full p-2.5 active:opacity-70"
+          >
+            <Ionicons name="refresh" size={18} color={colors.brand.primary} />
+          </Pressable>
+        </View>
+      </View>
 
-        <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="mb-6 rounded-2xl border p-4 shadow-sm">
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 100 }}>
+        <StopHeader stop={driverStop} orders={orders} />
+
+        <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="mb-5 rounded-2xl border p-4 shadow-sm">
           <View className="flex-row items-center gap-3">
             <Ionicons name="thermometer-outline" size={24} color={colors.brand.primary} />
             <View className="flex-1">
@@ -970,25 +1040,53 @@ export default function StopDetailScreen() {
             </Text>
           </View>
         ) : !hasCheckedIn ? (
-          <View className="mt-10 items-center">
-            <Ionicons name="location" size={64} color={colors.brand.primary} />
-            <Text style={{ color: colors.text.primary }} className="mb-6 mt-4 text-center text-base font-medium">
-              Thêm ảnh xác nhận. Vị trí check-in được Backend đối chiếu từ thiết bị IoT của xe.
-            </Text>
-            <ProofPicker
-              asset={checkinProofAsset}
-              emptyLabel="Chưa có ảnh xác nhận đến điểm giao"
-              chooseLabel={checkinProofAsset ? 'Chọn lại ảnh xác nhận' : 'Thêm ảnh xác nhận'}
-              disabled={isProcessing}
-              onPick={() => void pickImage(setCheckinProofAsset, 'ảnh xác nhận đến điểm giao')}
-            />
-            <View className="w-full">
-              <AppButton
-                label="Xác nhận đã đến"
-                onPress={() => void handleCheckIn()}
-                loading={isProcessing}
-                disabled={!checkinProofAsset}
-              />
+          <View className="mt-2">
+            {/* Hiển thị danh sách các đơn hàng và người nhận tại điểm này để tài xế nắm trước */}
+            {orders.length > 0 && (
+              <View className="mb-5">
+                <Text style={{ color: colors.text.primary }} className="mb-3 text-base font-bold">
+                  Đơn hàng cần giao ({orders.length})
+                </Text>
+                {orders.map((order) => (
+                  <OrderCard
+                    key={order.orderId}
+                    order={order}
+                    selected={false}
+                    disabled={true}
+                    onSelect={() => {}}
+                  />
+                ))}
+              </View>
+            )}
+
+            {/* Khối Check-in xác nhận đến */}
+            <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="items-center rounded-2xl border p-5 shadow-sm">
+              <View style={{ backgroundColor: colors.brand.primarySoft }} className="mb-3 h-16 w-16 items-center justify-center rounded-full">
+                <Ionicons name="location" size={32} color={colors.brand.primary} />
+              </View>
+              <Text style={{ color: colors.text.primary }} className="mb-1 text-center text-base font-bold">
+                Xác nhận đã đến điểm giao
+              </Text>
+              <Text style={{ color: colors.text.secondary }} className="mb-4 text-center text-xs leading-5">
+                Chụp ảnh điểm giao để xác nhận có mặt. Vị trí check-in được hệ thống đối chiếu từ thiết bị IoT của xe.
+              </Text>
+              <View className="w-full">
+                <ProofPicker
+                  asset={checkinProofAsset}
+                  emptyLabel="Chưa có ảnh xác nhận đến điểm giao"
+                  chooseLabel={checkinProofAsset ? 'Chọn lại ảnh xác nhận' : 'Thêm ảnh xác nhận'}
+                  disabled={isProcessing}
+                  onPick={() => void pickImage(setCheckinProofAsset, 'ảnh xác nhận đến điểm giao')}
+                />
+              </View>
+              <View className="mt-4 w-full">
+                <AppButton
+                  label="Xác nhận đã đến"
+                  onPress={() => void handleCheckIn()}
+                  loading={isProcessing}
+                  disabled={!checkinProofAsset}
+                />
+              </View>
             </View>
           </View>
         ) : step === 'ORDER_ACTIONS' && selectedOrder ? (
@@ -1405,38 +1503,124 @@ export default function StopDetailScreen() {
           </View>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 function StopHeader({
   stop,
-  orderCount,
+  orders,
 }: {
   stop: DriverTripStopDto;
-  orderCount: number;
+  orders: StopOrder[];
 }) {
   const status = stop.status?.toUpperCase() || 'UNKNOWN';
+  const orderCount = orders.length;
+
+  // Lấy danh sách tên người nhận / người gửi duy nhất
+  const receivers = Array.from(
+    new Map(
+      orders
+        .filter((o) => o.receiverName || o.receiverPhone)
+        .map((o) => [o.receiverPhone || o.receiverName || '', { name: o.receiverName, phone: o.receiverPhone }])
+    ).values()
+  );
+
+  const senders = Array.from(
+    new Map(
+      orders
+        .filter((o) => o.customerName || o.customerPhone)
+        .map((o) => [o.customerPhone || o.customerName || '', { name: o.customerName, phone: o.customerPhone }])
+    ).values()
+  );
+
   return (
-    <View className="mb-6 rounded-2xl border border-amber-200 bg-white p-4 shadow-sm">
+    <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="mb-5 rounded-2xl border p-4 shadow-sm">
       <View className="flex-row items-start justify-between gap-3">
         <View className="flex-1">
-          <Text className="mb-1 text-sm font-bold text-amber-700">
-            ĐIỂM DỪNG {stop.stopSequence}
-          </Text>
-          <Text className="text-lg font-bold text-amber-950">
+          <View className="flex-row items-center gap-2">
+            <View style={{ backgroundColor: colors.brand.primarySoft }} className="rounded-lg px-2.5 py-1">
+              <Text style={{ color: colors.brand.primary }} className="text-xs font-bold uppercase">
+                ĐIỂM DỪNG {stop.stopSequence}
+              </Text>
+            </View>
+            <Text style={{ color: colors.text.secondary }} className="text-xs font-medium">
+              {orderCount} Đơn hàng
+            </Text>
+          </View>
+          <Text style={{ color: colors.text.primary }} className="mt-2 text-base font-bold leading-6">
             {stop.address}
           </Text>
         </View>
-        <View className="rounded-lg bg-amber-100 px-3 py-2">
-          <Text className="text-xs font-bold text-amber-900">
+        <View style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default }} className="rounded-xl border px-3 py-1.5">
+          <Text style={{ color: colors.text.secondary }} className="text-xs font-bold">
             {getStopStatusLabel(status)}
           </Text>
         </View>
       </View>
-      <Text className="mt-3 text-sm text-amber-700">
-        {orderCount} Order
-      </Text>
+
+      {/* ── THÔNG TIN NGƯỜI NHẬN & NGƯỜI GỬI ── */}
+      <View className="mt-4 border-t border-slate-100 pt-3 gap-2.5">
+        {/* Khối Người nhận */}
+        <View style={{ backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }} className="rounded-xl border p-3">
+          <View className="flex-row items-center justify-between">
+            <View className="flex-row items-center gap-1.5">
+              <Ionicons name="person" size={14} color="#15803D" />
+              <Text className="text-xs font-bold text-green-900 uppercase">Người nhận hàng</Text>
+            </View>
+            {receivers[0]?.phone ? (
+              <Pressable
+                onPress={() => void Linking.openURL(`tel:${receivers[0].phone}`)}
+                style={{ backgroundColor: '#DCFCE7', borderColor: '#86EFAC' }}
+                className="flex-row items-center gap-1.5 rounded-lg border px-2.5 py-1 active:opacity-75"
+              >
+                <Ionicons name="call" size={12} color="#16A34A" />
+                <Text className="text-xs font-bold text-green-700">Gọi người nhận</Text>
+              </Pressable>
+            ) : null}
+          </View>
+          <View className="mt-1.5">
+            <Text className="text-sm font-bold text-slate-900">
+              {receivers.map((r) => r.name || 'Khách nhận').join(', ') || 'Chưa cập nhật tên người nhận'}
+            </Text>
+            {receivers.some((r) => r.phone) && (
+              <Text className="text-xs font-medium text-slate-600 mt-0.5">
+                SĐT: <Text className="font-semibold text-green-800">{receivers.map((r) => r.phone).filter(Boolean).join(' · ')}</Text>
+              </Text>
+            )}
+          </View>
+        </View>
+
+        {/* Khối Người gửi */}
+        <View style={{ backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }} className="rounded-xl border p-3">
+          <View className="flex-row items-center justify-between">
+            <View className="flex-row items-center gap-1.5">
+              <Ionicons name="business" size={14} color="#1D4ED8" />
+              <Text className="text-xs font-bold text-blue-900 uppercase">Người gửi (Khách hàng)</Text>
+            </View>
+            {senders[0]?.phone ? (
+              <Pressable
+                onPress={() => void Linking.openURL(`tel:${senders[0].phone}`)}
+                style={{ backgroundColor: '#DBEAFE', borderColor: '#93C5FD' }}
+                className="flex-row items-center gap-1.5 rounded-lg border px-2.5 py-1 active:opacity-75"
+              >
+                <Ionicons name="call" size={12} color="#2563EB" />
+                <Text className="text-xs font-bold text-blue-700">Liên hệ người gửi</Text>
+              </Pressable>
+            ) : null}
+          </View>
+          <View className="mt-1.5">
+            <Text className="text-sm font-bold text-slate-900">
+              {senders.map((s) => s.name || 'Khách hàng gửi').join(', ') || 'Chưa cập nhật'}
+            </Text>
+            {senders.some((s) => s.phone) && (
+              <Text className="text-xs font-medium text-slate-600 mt-0.5">
+                SĐT: <Text className="font-semibold text-blue-800">{senders.map((s) => s.phone).filter(Boolean).join(' · ')}</Text>
+              </Text>
+            )}
+          </View>
+        </View>
+      </View>
     </View>
   );
 }
@@ -1459,54 +1643,82 @@ function OrderCard({
     <Pressable
       disabled={disabled || confirmed}
       onPress={onSelect}
-      className={`mb-3 rounded-2xl border bg-white p-4 ${selected ? 'border-amber-700' : 'border-amber-200'
-        }`}
-      style={({ pressed }) => ({
-        opacity: confirmed ? 0.75 : pressed ? 0.7 : 1,
-      })}
+      style={{ backgroundColor: colors.surface.card, borderColor: selected ? colors.brand.primary : colors.border.default }}
+      className={`mb-3 rounded-2xl border p-4 shadow-xs ${confirmed ? 'opacity-75' : ''}`}
     >
       <View className="flex-row items-start justify-between gap-3">
         <View className="flex-1">
-          <Text className="font-bold text-amber-950">#{order.trackingCode}</Text>
-          <Text className="mt-1 text-sm font-bold text-amber-900">{order.itemName}</Text>
-          <Text className="mt-1 text-xs text-amber-700">
-            {order.lpns.length} LPN · {order.originalQuantity} kiện
+          <Text style={{ color: colors.brand.primary }} className="font-bold text-sm">#{order.trackingCode}</Text>
+          <Text style={{ color: colors.text.primary }} className="mt-1 text-sm font-bold">{order.itemName}</Text>
+          <Text style={{ color: colors.text.secondary }} className="mt-1 text-xs">
+            {order.lpns.length} LPN · {order.originalQuantity} kiện {order.tempCondition ? `· ${order.tempCondition}°C` : ''}
           </Text>
         </View>
-        <View className={`rounded-lg px-3 py-2 ${status.background}`}>
+        <View className={`rounded-lg px-2.5 py-1.5 ${status.background}`}>
           <Text className={`text-xs font-bold ${status.text}`}>{status.label}</Text>
         </View>
       </View>
 
-      {/* Thông tin người nhận hàng và nút gọi điện */}
-      <View className="mt-3 border-t border-amber-100 pt-2.5 flex-row items-center justify-between">
-        <View className="flex-1 mr-2">
-          <Text className="text-[11px] text-amber-700">Người nhận:</Text>
-          <Text className="text-xs font-bold text-amber-950" numberOfLines={1}>
-            {order.receiverName || 'Chưa cập nhật'}
-          </Text>
+      {/* Thông tin Người nhận & Người gửi của từng Order */}
+      <View style={{ borderColor: colors.border.default }} className="mt-3 border-t pt-2.5 gap-2">
+        {/* Người nhận */}
+        <View className="flex-row items-center justify-between">
+          <View className="flex-1 mr-2">
+            <Text style={{ color: colors.text.muted }} className="text-[11px] font-medium">Người nhận:</Text>
+            <Text style={{ color: colors.text.primary }} className="text-xs font-bold" numberOfLines={1}>
+              {order.receiverName || 'Chưa cập nhật'}
+            </Text>
+          </View>
+
+          {order.receiverPhone ? (
+            <Pressable
+              onPress={(e) => {
+                e.stopPropagation();
+                void Linking.openURL(`tel:${order.receiverPhone}`);
+              }}
+              style={{ backgroundColor: '#DCFCE7', borderColor: '#86EFAC' }}
+              className="flex-row items-center gap-1.5 rounded-xl border px-3 py-1.5"
+            >
+              <Ionicons name="call" size={13} color="#16A34A" />
+              <Text style={{ color: '#16A34A' }} className="text-xs font-bold">
+                {order.receiverPhone}
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
 
-        {order.receiverPhone ? (
-          <Pressable
-            onPress={(e) => {
-              e.stopPropagation();
-              void Linking.openURL(`tel:${order.receiverPhone}`);
-            }}
-            style={{ backgroundColor: '#DCFCE7', borderColor: '#86EFAC' }}
-            className="flex-row items-center gap-1.5 rounded-xl border px-3 py-1.5 shadow-2xs"
-          >
-            <Ionicons name="call" size={13} color="#16A34A" />
-            <Text style={{ color: '#16A34A' }} className="text-xs font-bold">
-              {order.receiverPhone}
-            </Text>
-          </Pressable>
+        {/* Người gửi */}
+        {order.customerName || order.customerPhone ? (
+          <View className="flex-row items-center justify-between">
+            <View className="flex-1 mr-2">
+              <Text style={{ color: colors.text.muted }} className="text-[11px] font-medium">Người gửi:</Text>
+              <Text style={{ color: colors.text.secondary }} className="text-xs font-semibold" numberOfLines={1}>
+                {order.customerName || 'Khách hàng'}
+              </Text>
+            </View>
+
+            {order.customerPhone ? (
+              <Pressable
+                onPress={(e) => {
+                  e.stopPropagation();
+                  void Linking.openURL(`tel:${order.customerPhone}`);
+                }}
+                style={{ backgroundColor: '#DBEAFE', borderColor: '#BFDBFE' }}
+                className="flex-row items-center gap-1 rounded-lg border px-2 py-1"
+              >
+                <Ionicons name="call" size={11} color="#2563EB" />
+                <Text style={{ color: '#2563EB' }} className="text-[11px] font-semibold">
+                  {order.customerPhone}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
         ) : null}
       </View>
 
-      {!confirmed ? (
-        <Text className="mt-3 text-sm font-bold text-amber-800">
-          {selected ? 'Đang chọn Order này' : 'Chọn để bàn giao'}
+      {!confirmed && !disabled ? (
+        <Text style={{ color: colors.brand.primary }} className="mt-3 text-xs font-bold">
+          {selected ? '✓ Đang chọn Order này' : 'Chạm để xử lý bàn giao →'}
         </Text>
       ) : null}
     </Pressable>
