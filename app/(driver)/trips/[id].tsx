@@ -314,6 +314,8 @@ export default function DriverTripDetailScreen() {
     );
   }, [displayStops]);
 
+
+
   const getOrdersForStop = useCallback(
     (stop: DriverTripStopDto): StopOrderDisplayInfo[] => {
       const result: StopOrderDisplayInfo[] = [];
@@ -396,6 +398,47 @@ export default function DriverTripDetailScreen() {
   );
 
   const vehiclePosition = useMemo(() => getVehiclePosition(tracking), [tracking]);
+
+  const effectiveRoute = useMemo<TripRouteResponse | null>(() => {
+    if (route) return route;
+    if (!trip && !tracking && !vehiclePosition) return null;
+    return {
+      tripId: tripId || '',
+      totalDistanceMeters: (trip?.totalDistanceKm ?? 0) * 1000,
+      totalDurationSeconds: (trip?.estimatedDurationHours ?? 0) * 3600,
+      overviewPolyline: trip?.encodedPolyline || undefined,
+      waypointOrder: [],
+      origin: trip?.stops?.[0]?.latitude && trip?.stops?.[0]?.longitude ? {
+        locationId: trip.stops[0].locationId || 'origin',
+        address: trip.stops[0].address || 'Điểm xuất phát',
+        lat: Number(trip.stops[0].latitude),
+        lon: Number(trip.stops[0].longitude),
+      } : vehiclePosition ? {
+        locationId: 'vehicle',
+        address: 'Vị trí xe hiện tại',
+        lat: vehiclePosition.latitude,
+        lon: vehiclePosition.longitude,
+      } : undefined,
+      destination: trip?.stops && trip.stops.length > 1 && trip.stops[trip.stops.length - 1].latitude ? {
+        locationId: trip.stops[trip.stops.length - 1].locationId || 'destination',
+        address: trip.stops[trip.stops.length - 1].address || 'Điểm kết thúc',
+        lat: Number(trip.stops[trip.stops.length - 1].latitude),
+        lon: Number(trip.stops[trip.stops.length - 1].longitude),
+      } : undefined,
+      optimizedStops: (trip?.stops || []).map((s, idx) => ({
+        stopId: s.stopId,
+        locationId: s.locationId,
+        address: s.address,
+        lat: s.latitude ? Number(s.latitude) : 0,
+        lon: s.longitude ? Number(s.longitude) : 0,
+        optimizedSequence: s.stopSequence ?? idx + 1,
+        stopType: s.stopType,
+        status: s.status,
+        orders: [],
+        lpns: [],
+      })).filter((s) => s.lat !== 0 && s.lon !== 0),
+    };
+  }, [route, trip, tracking, vehiclePosition, tripId]);
 
   const safeOpenURL = useCallback(async (primaryUrl: string, fallbackUrl?: string) => {
     try {
@@ -662,7 +705,7 @@ export default function DriverTripDetailScreen() {
           title="Bản đồ tuyến đường"
           icon="map-outline"
           rightAction={
-            route ? (
+            effectiveRoute ? (
               <Pressable
                 onPress={() => setIsMapFullscreen(true)}
                 style={{ backgroundColor: colors.brand.primarySoft }}
@@ -676,17 +719,17 @@ export default function DriverTripDetailScreen() {
             ) : null
           }
         >
-          {errors.route ? <ErrorMessage message={errors.route} onRetry={loadRoute} /> : null}
-          {route ? (
+          {errors.route && !effectiveRoute ? <ErrorMessage message={errors.route} onRetry={loadRoute} /> : null}
+          {effectiveRoute ? (
             <>
               <InfoRow
                 label="Mã chuyến (Trip ID)"
-                value={trip?.tripId || route?.tripId || tracking?.tripId || tripId || '--'}
+                value={trip?.tripId || effectiveRoute?.tripId || tracking?.tripId || tripId || '--'}
                 highlight
               />
-              <InfoRow label="Quãng đường" value={formatDistance(route.totalDistanceMeters)} />
-              <InfoRow label="Thời gian dự kiến" value={formatDuration(route.totalDurationSeconds)} />
-              <GoongRouteMap route={route} vehiclePosition={vehiclePosition} />
+              <InfoRow label="Quãng đường" value={formatDistance(effectiveRoute.totalDistanceMeters)} />
+              <InfoRow label="Thời gian dự kiến" value={formatDuration(effectiveRoute.totalDurationSeconds)} />
+              <GoongRouteMap route={effectiveRoute} vehiclePosition={vehiclePosition} />
               {!vehiclePosition ? <Empty message="Chưa nhận được vị trí từ thiết bị." /> : null}
 
               {/* Phím tắt mở nhanh bản đồ ngoài */}
@@ -870,9 +913,9 @@ export default function DriverTripDetailScreen() {
 
           {/* Bản đồ Goong toàn màn hình */}
           <View className="flex-1 p-2">
-            {route ? (
+            {effectiveRoute ? (
               <GoongRouteMap
-                route={route}
+                route={effectiveRoute}
                 vehiclePosition={vehiclePosition}
                 isFullScreen
               />
