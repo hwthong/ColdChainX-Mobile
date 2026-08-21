@@ -221,12 +221,12 @@ export default function StopDetailScreen() {
     hasAppliedSeal,
     tripStatus,
   });
-  const isReturnFlow = returnFlowActive
-    || tripHasNoShowStop(tripStops)
+  const isNoShowReturnFlow = tripHasNoShowStop(tripStops)
     || stopStatus === 'SKIPPED_NOSHOW'
     || orders.some((order) => RETURN_ORDER_STATUSES.has(order.status.toUpperCase()));
-  const showCloseShiftPanel = allOrdersHandedOver
-    && !hasRemainingStops
+  const isReturnFlow = returnFlowActive || isNoShowReturnFlow;
+  const showCloseShiftPanel = ((isReturnFlow && !isNoShowReturnFlow)
+    || (allOrdersHandedOver && !hasRemainingStops))
     && tripStatus.toUpperCase() !== 'COMPLETED';
   const canCloseShift = allOrdersHandedOver
     && allPaymentsReady
@@ -513,6 +513,50 @@ export default function StopDetailScreen() {
     if (!result.canceled && result.assets[0]) {
       onSelected(result.assets[0]);
     }
+  };
+
+  const captureImage = async (
+    onSelected: (asset: ImagePicker.ImagePickerAsset) => void,
+    description: string
+  ) => {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Chưa có quyền camera', `Vui lòng cấp quyền camera để chụp ${description}.`);
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 0.9,
+    });
+    if (!result.canceled && result.assets[0]) {
+      onSelected(result.assets[0]);
+    }
+  };
+
+  const chooseNoShowEvidenceSource = () => {
+    Alert.alert(
+      'Ảnh minh chứng khách vắng mặt',
+      'Chụp ảnh mới hoặc chọn ảnh có sẵn trên thiết bị.',
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Chụp ảnh',
+          onPress: () => void captureImage(
+            setNoShowEvidenceAsset,
+            'ảnh minh chứng khách không có mặt'
+          ),
+        },
+        {
+          text: 'Chọn ảnh',
+          onPress: () => void pickImage(
+            setNoShowEvidenceAsset,
+            'ảnh minh chứng khách không có mặt'
+          ),
+        },
+      ]
+    );
   };
 
   const handleHandoverConfirm = async () => {
@@ -932,7 +976,7 @@ export default function StopDetailScreen() {
       resetOrderForm();
       Alert.alert(
         'Đã báo khách không có mặt',
-        'Hàng chưa được giao và phải nhập lại kho. Toàn bộ đơn hàng tại điểm giao này đã chuyển sang trạng thái chờ trả về kho (RETURN_PENDING).'
+        'Hàng chưa được giao và phải nhập lại kho. Các đơn đã được ghi nhận giao thất bại do khách vắng mặt; các LPN đã chuyển sang chờ trả về kho (RETURN_PENDING).'
       );
     } catch (error) {
       Alert.alert('Không thể báo khách không có mặt', formatActionError(error, 'NO_SHOW'));
@@ -975,6 +1019,7 @@ export default function StopDetailScreen() {
   React.useEffect(() => {
     if (
       !tripId
+      || !isNoShowReturnFlow
       || !showCloseShiftPanel
       || hasRemainingStops
       || warehouses !== null
@@ -985,6 +1030,7 @@ export default function StopDetailScreen() {
     void loadReturnWarehouses();
   }, [
     hasRemainingStops,
+    isNoShowReturnFlow,
     isLoadingWarehouses,
     loadReturnWarehouses,
     showCloseShiftPanel,
@@ -1099,7 +1145,7 @@ export default function StopDetailScreen() {
       const warehouse = warehouses?.find((item) => item.warehouseId === selectedWarehouseId);
       const locationName = result.newLocation || warehouse?.warehouseName || 'kho trả hàng';
       const successTitle = '✅ Đóng ca thành công';
-      const successMessage = isReturnFlow
+      const successMessage = isNoShowReturnFlow
         ? [
             `Đã bàn giao luồng trả hàng về ${locationName}.`,
             result.message,
@@ -1449,9 +1495,9 @@ export default function StopDetailScreen() {
               <ProofPicker
                 asset={noShowEvidenceAsset}
                 emptyLabel="Chưa có ảnh xác nhận khách không có mặt"
-                chooseLabel={noShowEvidenceAsset ? 'Đổi ảnh minh chứng' : 'Thêm ảnh minh chứng'}
+                chooseLabel={noShowEvidenceAsset ? 'Đổi ảnh minh chứng' : 'Chụp/chọn ảnh minh chứng'}
                 disabled={isProcessing}
-                onPick={() => void pickImage(setNoShowEvidenceAsset, 'ảnh minh chứng khách không có mặt')}
+                onPick={chooseNoShowEvidenceSource}
                 onRemove={() => setNoShowEvidenceAsset(null)}
               />
               <View className="mt-4">
@@ -1620,7 +1666,7 @@ export default function StopDetailScreen() {
                 <DeliveryNotice
                   icon="warning"
                   title="Khách không có mặt (No-Show)"
-                  detail="Hàng chưa được giao và phải nhập lại kho. Toàn bộ kiện hàng đã được chuyển sang trạng thái chờ trả về kho (RETURN_PENDING)."
+                  detail="Hàng chưa được giao và phải nhập lại kho. Các đơn đã được ghi nhận giao thất bại do khách vắng mặt; các LPN đang chờ trả về kho (RETURN_PENDING)."
                   tone="warning"
                 />
               </View>
