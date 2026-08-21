@@ -975,8 +975,10 @@ export default function StopDetailScreen() {
       await loadData(false);
       resetOrderForm();
       Alert.alert(
-        'Đã báo khách không có mặt',
-        'Hàng chưa được giao và phải nhập lại kho. Các đơn đã được ghi nhận giao thất bại do khách vắng mặt; các LPN đã chuyển sang chờ trả về kho (RETURN_PENDING).'
+        'Đã xác nhận chở hàng về kho',
+        hasRemainingStops
+          ? 'Hàng chưa được giao và phải chở về kho. Hãy tiếp tục hoàn thành các điểm giao còn lại; chỉ đóng ca sau khi đã xử lý đơn cuối cùng.'
+          : 'Hàng chưa được giao và phải chở về kho. Chuyến không còn điểm giao; hãy chọn kho trả hàng và chỉ đóng ca khi xe đã đến kho.'
       );
     } catch (error) {
       Alert.alert('Không thể báo khách không có mặt', formatActionError(error, 'NO_SHOW'));
@@ -1091,6 +1093,17 @@ export default function StopDetailScreen() {
     try {
       mutationLock.current = true;
       setIsProcessing(true);
+
+      const latestTrip = await driverApi.getMyTripDetail(tripId);
+      if (hasRemainingDeliveryStops(latestTrip.stops ?? [], driverStop?.stopId)) {
+        await loadData(false);
+        Alert.alert(
+          'Chưa thể đóng ca',
+          'Chuyến vẫn còn điểm giao chưa hoàn tất. Hãy giao hoặc xử lý đơn cuối cùng trước khi về kho đóng ca.'
+        );
+        return;
+      }
+
       const result = await deliveryApi.closeShift(tripId, selectedWarehouseId);
 
       // Kiểm tra xem backend đã thực sự giải phóng xe và tài xế chưa
@@ -1665,8 +1678,10 @@ export default function StopDetailScreen() {
               <View className="mt-4">
                 <DeliveryNotice
                   icon="warning"
-                  title="Khách không có mặt (No-Show)"
-                  detail="Hàng chưa được giao và phải nhập lại kho. Các đơn đã được ghi nhận giao thất bại do khách vắng mặt; các LPN đang chờ trả về kho (RETURN_PENDING)."
+                  title="Đã xác nhận chở hàng về kho"
+                  detail={hasRemainingStops
+                    ? 'Khách vắng mặt nên hàng chưa được giao. Các LPN đang chờ trả về kho (RETURN_PENDING). Tiếp tục hoàn thành các điểm giao còn lại và chỉ đóng ca sau đơn cuối cùng.'
+                    : 'Khách vắng mặt nên hàng chưa được giao. Các LPN đang chờ trả về kho (RETURN_PENDING). Chọn kho trả hàng và chỉ đóng ca khi xe đã đến kho.'}
                   tone="warning"
                 />
               </View>
@@ -1708,7 +1723,7 @@ export default function StopDetailScreen() {
                     <Text className="font-bold text-orange-950">Kho trả hàng gần vị trí xe</Text>
                     <Text className="mt-1 text-xs text-orange-800">
                       {isReturnFlow
-                        ? 'Chọn kho trả hàng để đưa hàng về và đóng ca.'
+                        ? 'Toàn bộ điểm giao đã được xử lý. Chọn kho trả hàng và chỉ đóng ca khi xe đã đến đúng kho.'
                         : 'Sau khi hoàn tất toàn bộ điểm giao và thanh toán COD, chọn kho để đóng ca.'}
                     </Text>
                   </View>

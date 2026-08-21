@@ -33,3 +33,13 @@ test('no-show state is restored from Backend trip stops', () => {
     true
   );
 });
+
+test('an unfinished earlier delivery stop also blocks closing the shift', () => {
+  assert.equal(
+    hasRemainingDeliveryStops([
+      { stopId: 'unfinished-earlier-stop', stopType: 'DELIVERY', status: 'ARRIVED' },
+      { stopId: 'current-last-stop', stopType: 'DELIVERY', status: 'DEPARTED' },
+    ], 'current-last-stop'),
+    true
+  );
+});
