@@ -799,22 +799,27 @@ function buildMapHtml(
             bounds.extend([point.lon, point.lat]);
           });
 
-          if (payload.vehiclePosition && payload.vehiclePosition.latitude && payload.vehiclePosition.longitude) {
-            const vehicleEl = document.createElement('div');
-            vehicleEl.className = 'vehicle-marker-wrapper';
-            vehicleEl.innerHTML = '<div class="vehicle-pulse-ring"></div><div class="vehicle-marker-bubble">🚚</div>';
+          const vPos = payload.vehiclePosition;
+          if (vPos) {
+            const vLat = typeof vPos.latitude === 'number' ? vPos.latitude : parseFloat(vPos.latitude || vPos.lat);
+            const vLon = typeof vPos.longitude === 'number' ? vPos.longitude : parseFloat(vPos.longitude || vPos.lon || vPos.lng);
+            if (!isNaN(vLat) && !isNaN(vLon) && vLat >= -90 && vLat <= 90 && vLon >= -180 && vLon <= 180) {
+              const vehicleEl = document.createElement('div');
+              vehicleEl.className = 'vehicle-marker-wrapper';
+              vehicleEl.innerHTML = '<div class="vehicle-pulse-ring"></div><div class="vehicle-marker-bubble">🚚</div>';
 
-            new goongjs.Marker(vehicleEl)
-              .setLngLat([payload.vehiclePosition.longitude, payload.vehiclePosition.latitude])
-              .setPopup(new goongjs.Popup({ offset: 24, closeButton: true, maxWidth: '260px' }).setHTML(
-                '<div class="custom-popup-card">' +
-                  '<div class="popup-badge-row"><span class="popup-badge" style="background:#DBEAFE; color:#1D4ED8;">🚚 Đang vận chuyển</span></div>' +
-                  '<div class="popup-title">Vị trí xe hiện tại</div>' +
-                  '<div class="popup-address">Tọa độ: ' + Number(payload.vehiclePosition.latitude).toFixed(5) + ', ' + Number(payload.vehiclePosition.longitude).toFixed(5) + '</div>' +
-                '</div>'
-              ))
-              .addTo(map);
-            bounds.extend([payload.vehiclePosition.longitude, payload.vehiclePosition.latitude]);
+              new goongjs.Marker(vehicleEl)
+                .setLngLat([vLon, vLat])
+                .setPopup(new goongjs.Popup({ offset: 24, closeButton: true, maxWidth: '260px' }).setHTML(
+                  '<div class="custom-popup-card">' +
+                    '<div class="popup-badge-row"><span class="popup-badge" style="background:#DBEAFE; color:#1D4ED8;">🚚 Đang vận chuyển</span></div>' +
+                    '<div class="popup-title">Vị trí xe hiện tại</div>' +
+                    '<div class="popup-address">Tọa độ: ' + vLat.toFixed(5) + ', ' + vLon.toFixed(5) + '</div>' +
+                  '</div>'
+                ))
+                .addTo(map);
+              bounds.extend([vLon, vLat]);
+            }
           }
 
           if (payload.routeCoordinates.length > 1) {

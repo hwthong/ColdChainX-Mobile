@@ -1134,7 +1134,30 @@ function StopRow({
 function ErrorMessage({ message, onRetry }: { message: string; onRetry: () => void | Promise<unknown> }) { return <View className="rounded-2xl border border-red-200 bg-red-50 p-4"><Text className="text-sm leading-5 text-red-800">{message}</Text><Pressable onPress={() => void onRetry()} className="mt-3 self-start rounded-lg bg-red-800 px-4 py-2"><Text className="font-bold text-white">Thử lại</Text></Pressable></View>; }
 function Empty({ message }: { message: string }) { return <Text style={{ color: colors.text.secondary }} className="py-3 text-center text-sm font-medium">{message}</Text>; }
 
-function getVehiclePosition(tracking: TripTracking | null) { const latitude = tracking?.telemetry?.latitude; const longitude = tracking?.telemetry?.longitude; if (typeof latitude !== 'number' || !Number.isFinite(latitude) || latitude < -90 || latitude > 90) return null; if (typeof longitude !== 'number' || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) return null; return { latitude, longitude }; }
+function getVehiclePosition(tracking: TripTracking | null) {
+  if (!tracking) return null;
+  const lat =
+    tracking.telemetry?.latitude ??
+    (tracking as any)?.latestTelemetry?.lat ??
+    (tracking as any)?.latestTelemetry?.latitude ??
+    (tracking as any)?.latitude ??
+    (tracking as any)?.lat ??
+    (tracking as any)?.currentLatitude;
+  const lon =
+    tracking.telemetry?.longitude ??
+    (tracking as any)?.latestTelemetry?.lon ??
+    (tracking as any)?.latestTelemetry?.lng ??
+    (tracking as any)?.latestTelemetry?.longitude ??
+    (tracking as any)?.longitude ??
+    (tracking as any)?.lon ??
+    (tracking as any)?.currentLongitude;
+
+  const latNum = typeof lat === 'string' ? parseFloat(lat) : Number(lat);
+  const lonNum = typeof lon === 'string' ? parseFloat(lon) : Number(lon);
+  if (!Number.isFinite(latNum) || latNum < -90 || latNum > 90) return null;
+  if (!Number.isFinite(lonNum) || lonNum < -180 || lonNum > 180) return null;
+  return { latitude: latNum, longitude: lonNum };
+}
 function formatOnlineState(tracking: TripTracking) { if (tracking.device?.isOnline === true) return 'Trực tuyến'; if (tracking.device?.isOnline === false) return 'Ngoại tuyến'; return tracking.device?.status || 'Không xác định'; }
 function formatTemperature(value?: number) { return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(1)} °C` : '--'; }
 function formatDoor(value?: boolean) { return value === true ? 'Đang mở' : value === false ? 'Đang đóng' : '--'; }

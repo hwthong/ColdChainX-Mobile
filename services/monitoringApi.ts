@@ -129,14 +129,21 @@ export function getStopTemperatureChart(token: string, stopId: string) {
 
 function toTripTracking(tracking: TrackingDataResponse): TripTracking {
   const latest = tracking.latestTelemetry;
+  const rawLat = latest?.lat ?? (tracking as any).lat ?? (tracking as any).latitude ?? (tracking as any).currentLatitude;
+  const rawLon = latest?.lon ?? (tracking as any).lon ?? (tracking as any).lng ?? (tracking as any).longitude ?? (tracking as any).currentLongitude;
+  const latNum = rawLat !== undefined && rawLat !== null && !isNaN(Number(rawLat)) ? Number(rawLat) : undefined;
+  const lonNum = rawLon !== undefined && rawLon !== null && !isNaN(Number(rawLon)) ? Number(rawLon) : undefined;
+
+  const hasCoords = typeof latNum === 'number' && Number.isFinite(latNum) && typeof lonNum === 'number' && Number.isFinite(lonNum);
+
   return {
     ...tracking,
-    telemetry: latest ? {
-      latitude: latest.lat,
-      longitude: latest.lon,
-      temperatureC: latest.tempC ?? latest.temperature,
-      doorOpen: latest.doorOpen,
-      timestamp: latest.timestamp,
+    telemetry: (latest || hasCoords) ? {
+      latitude: latNum ?? latest?.lat,
+      longitude: lonNum ?? latest?.lon,
+      temperatureC: latest?.tempC ?? latest?.temperature ?? (tracking as any).temperature,
+      doorOpen: latest?.doorOpen ?? (tracking as any).doorOpen,
+      timestamp: latest?.timestamp ?? (tracking as any).timestamp,
     } : undefined,
     device: tracking.device ? {
       deviceId: tracking.device.deviceId,
