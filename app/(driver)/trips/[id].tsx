@@ -293,8 +293,19 @@ export default function DriverTripDetailScreen() {
         stopType: s.stopType || 'DELIVERY',
       }));
     }
+    if (tracking?.orders && tracking.orders.length > 0) {
+      return tracking.orders.map((o, idx) => ({
+        stopId: o.orderId,
+        stopSequence: idx + 1,
+        address: `Điểm giao hàng: ${o.itemName} (${o.trackingCode})`,
+        plannedArrivalTime: null,
+        plannedDepartureTime: null,
+        status: 'PLANNED',
+        stopType: 'DELIVERY',
+      }));
+    }
     return [];
-  }, [trip?.stops, route?.optimizedStops]);
+  }, [trip?.stops, route?.optimizedStops, tracking?.orders]);
 
   const nextStopIndex = useMemo(() => {
     const finishedStatuses = new Set(['DEPARTED', 'COMPLETED', 'SKIPPED_NOSHOW', 'FAILED_DELIVERY']);

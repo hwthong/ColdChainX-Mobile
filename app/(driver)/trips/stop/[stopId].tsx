@@ -53,9 +53,11 @@ import {
 import {
   getPlannedTripRoute,
   getTrackingByTripId,
+  OptimizedTripStopDto,
   TripRouteLpnDto,
   TripRouteOrderDto,
   TripRoutePointDto,
+  TripRouteResponse,
 } from '../../../../services/trackingApi';
 import { useAuthStore } from '../../../../store/useAuthStore';
 
@@ -242,14 +244,29 @@ export default function StopDetailScreen() {
         getPlannedTripRoute(token, tripId),
         getTrackingByTripId(token, tripId),
       ]);
-      if (!routeResponse.success || !routeResponse.data) {
-        throw new Error('Không thể tải tuyến đường của chuyến.');
-      }
-
-      const route = routeResponse.data;
+      const route: TripRouteResponse = routeResponse.data || {
+        tripId,
+        totalDistanceMeters: 0,
+        totalDurationSeconds: 0,
+        waypointOrder: [],
+        optimizedStops: [],
+      };
       const routeStop = route.optimizedStops?.find((stop) => stop.stopId === stopId)
         || route.optimizedStops?.find((s) => (s as { locationId?: string }).locationId === stopId)
-        || route.optimizedStops?.find((_, idx) => `stop-${idx}` === stopId);
+        || route.optimizedStops?.find((_, idx) => `stop-${idx}` === stopId)
+        || (trackingResponse.data?.orders?.some((o) => o.orderId === stopId)
+          ? {
+              stopId,
+              address: trackingResponse.data.orders.find((o) => o.orderId === stopId)?.itemName || 'Điểm giao hàng',
+              orders: trackingResponse.data.orders.filter((o) => o.orderId === stopId).map((o) => ({
+                orderId: o.orderId,
+                trackingCode: o.trackingCode,
+                itemName: o.itemName,
+                tempCondition: o.tempCondition,
+              })),
+              lpns: [],
+            }
+          : undefined);
 
       // 1. Tìm trực tiếp theo stopId hoặc locationId trong tripDetail.stops nếu có
       let matchedStop = tripDetail.stops?.find((stop) => stop.stopId === stopId || (Boolean(stop.locationId) && stop.locationId === stopId));
