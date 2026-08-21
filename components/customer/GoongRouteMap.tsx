@@ -755,33 +755,79 @@ function buildMapHtml(
             }
             popupHtml += '</div>';
 
-            new goongjs.Marker(markerEl, { offset: [0, -16] })
+            new goongjs.Marker(markerEl, { anchor: 'bottom' })
               .setLngLat([point.lon, point.lat])
-              .setPopup(new goongjs.Popup({ offset: [0, -28], closeButton: true, maxWidth: '280px' }).setHTML(popupHtml))
+              .setPopup(new goongjs.Popup({ offset: [0, -32], closeButton: true, maxWidth: '280px' }).setHTML(popupHtml))
               .addTo(map);
 
             bounds.extend([point.lon, point.lat]);
           });
 
+          function snapToRoute(lon, lat, coords) {
+            if (!coords || coords.length < 2) return [lon, lat];
+            var minDistanceSq = Infinity;
+            var bestPoint = [lon, lat];
+
+            for (var i = 0; i < coords.length - 1; i++) {
+              var p1 = coords[i];
+              var p2 = coords[i + 1];
+
+              var x = lon;
+              var y = lat;
+              var x1 = p1[0];
+              var y1 = p1[1];
+              var x2 = p2[0];
+              var y2 = p2[1];
+
+              var dx = x2 - x1;
+              var dy = y2 - y1;
+              var lenSq = dx * dx + dy * dy;
+
+              if (lenSq === 0) continue;
+
+              var t = Math.max(0, Math.min(1, ((x - x1) * dx + (y - y1) * dy) / lenSq));
+              var projX = x1 + t * dx;
+              var projY = y1 + t * dy;
+
+              var distSq = (x - projX) * (x - projX) + (y - projY) * (y - projY);
+              if (distSq < minDistanceSq) {
+                minDistanceSq = distSq;
+                bestPoint = [projX, projY];
+              }
+            }
+
+            // Snap vào tim đường nếu tọa độ GPS cách tuyến đường < 150m (~0.0015 độ)
+            var SNAP_THRESHOLD_SQ = 0.0015 * 0.0015;
+            if (minDistanceSq <= SNAP_THRESHOLD_SQ) {
+              return bestPoint;
+            }
+            return [lon, lat];
+          }
+
           let vehicleMarker = null;
           window.updateVehicleMarker = function(lat, lon) {
-            const numLat = parseFloat(lat);
-            const numLon = parseFloat(lon);
-            if (isNaN(numLat) || isNaN(numLon) || numLat < -90 || numLat > 90 || numLon < -180 || numLon > 180) return;
+            const rawLat = parseFloat(lat);
+            const rawLon = parseFloat(lon);
+            if (isNaN(rawLat) || isNaN(rawLon) || rawLat < -90 || rawLat > 90 || rawLon < -180 || rawLon > 180) return;
+
+            const snapped = snapToRoute(rawLon, rawLat, payload.routeCoordinates);
+            const finalLon = snapped[0];
+            const finalLat = snapped[1];
+
             if (vehicleMarker) {
-              vehicleMarker.setLngLat([numLon, numLat]);
+              vehicleMarker.setLngLat([finalLon, finalLat]);
             } else if (map) {
               const vehicleEl = document.createElement('div');
               vehicleEl.className = 'vehicle-marker';
               vehicleEl.textContent = '🚚';
 
-              vehicleMarker = new goongjs.Marker(vehicleEl)
-                .setLngLat([numLon, numLat])
+              vehicleMarker = new goongjs.Marker(vehicleEl, { anchor: 'center' })
+                .setLngLat([finalLon, finalLat])
                 .setPopup(new goongjs.Popup({ offset: [0, -18], closeButton: true, maxWidth: '260px' }).setHTML(
                   '<div class="custom-popup-card">' +
                     '<div class="popup-badge-row"><span class="popup-badge" style="background:#DBEAFE; color:#1D4ED8;">🚚 Đang vận chuyển</span></div>' +
                     '<div class="popup-title">Vị trí xe hiện tại</div>' +
-                    '<div class="popup-address">Tọa độ: ' + numLat.toFixed(5) + ', ' + numLon.toFixed(5) + '</div>' +
+                    '<div class="popup-address">Tọa độ: ' + rawLat.toFixed(5) + ', ' + rawLon.toFixed(5) + '</div>' +
                   '</div>'
                 ))
                 .addTo(map);
