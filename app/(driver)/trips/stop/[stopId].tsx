@@ -249,20 +249,7 @@ export default function StopDetailScreen() {
       const route = routeResponse.data;
       const routeStop = route.optimizedStops?.find((stop) => stop.stopId === stopId)
         || route.optimizedStops?.find((s) => (s as { locationId?: string }).locationId === stopId)
-        || route.optimizedStops?.find((_, idx) => `stop-${idx}` === stopId)
-        || (trackingResponse.data?.orders?.some((o) => o.orderId === stopId)
-          ? {
-              stopId,
-              address: trackingResponse.data.orders.find((o) => o.orderId === stopId)?.itemName || 'Điểm giao hàng',
-              orders: trackingResponse.data.orders.filter((o) => o.orderId === stopId).map((o) => ({
-                orderId: o.orderId,
-                trackingCode: o.trackingCode,
-                itemName: o.itemName,
-                tempCondition: o.tempCondition,
-              })),
-              lpns: [],
-            }
-          : undefined);
+        || route.optimizedStops?.find((_, idx) => `stop-${idx}` === stopId);
 
       // 1. Tìm trực tiếp theo stopId hoặc locationId trong tripDetail.stops nếu có
       let matchedStop = tripDetail.stops?.find((stop) => stop.stopId === stopId || (Boolean(stop.locationId) && stop.locationId === stopId));
@@ -470,16 +457,15 @@ export default function StopDetailScreen() {
         || latestDetail.stops?.find((s) => s.stopSequence === driverStop?.stopSequence)
         || (latestDetail.stops?.length === 1 ? latestDetail.stops[0] : null);
 
-      const checkinId = verifiedStop?.stopId || driverStop?.stopId || stopId;
-      if (!checkinId) {
+      if (!verifiedStop?.stopId) {
         Alert.alert(
-          'Không tìm thấy điểm dừng',
-          'Không tìm thấy mã điểm dừng (TripStopId) hợp lệ. Vui lòng tải lại chi tiết chuyến.'
+          'Không thể check-in',
+          'Chuyến xe chưa có dữ liệu điểm dừng (TripStop) trong cơ sở dữ liệu. Vui lòng liên hệ điều phối viên hoặc tải lại chi tiết chuyến.'
         );
         return;
       }
 
-      await deliveryApi.checkInStop(checkinId, toDeliveryUploadFile(checkinProofAsset, 'checkin-proof.jpg'));
+      await deliveryApi.checkInStop(verifiedStop.stopId, toDeliveryUploadFile(checkinProofAsset, 'checkin-proof.jpg'));
       const reloaded = await loadData(false);
       Alert.alert(
         'Đã xác nhận đến điểm giao',
