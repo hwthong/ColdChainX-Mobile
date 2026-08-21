@@ -61,8 +61,8 @@ export async function getTripTracking(token: string, tripId: string) {
   } satisfies ApiResponse<TripTracking>;
 }
 
-export function getTripRoute(token: string, tripId: string) {
-  return getPlannedTripRoute(token, tripId) as Promise<ApiResponse<TripRouteResponse>>;
+export function getTripRoute(token: string, tripId: string, signal?: AbortSignal) {
+  return getPlannedTripRoute(token, tripId, signal) as Promise<ApiResponse<TripRouteResponse>>;
 }
 
 export function getTripSmartAlerts(token: string, tripId: string) {

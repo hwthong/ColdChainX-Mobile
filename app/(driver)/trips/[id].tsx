@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -19,16 +19,17 @@ import { TemperatureChart } from '../../../components/customer/TemperatureChart'
 import { TripAlertsSection } from '../../../components/driver/TripAlertsSection';
 import { TripOrdersSection } from '../../../components/driver/TripOrdersSection';
 import { StatusBadge } from '../../../components/StatusBadge';
-import { getApiErrorMessage } from '../../../services/apiClient';
+import { ApiClientError, getApiErrorMessage } from '../../../services/apiClient';
 import {
   getTripAlerts, getTripRoute, getTripTemperatureChart, getTripTracking,
   SmartAlert, TemperatureChart as TemperatureChartData, TripTracking,
 } from '../../../services/monitoringApi';
-import { TripRouteResponse } from '../../../services/trackingApi';
+import { sanitizeTripId, TripRouteResponse } from '../../../services/trackingApi';
 import { getIncidents, IncidentResponse } from '../../../services/incidentApi';
 import { getVehicleDetail } from '../../../services/vehicleApi';
 import { driverApi, DriverTripDetailResponseDto, DriverTripStopDto } from '../../../services/driverApi';
 import { getOrderById, OrderResponse } from '../../../services/orderApi';
+import { isValidMapCoordinate } from '../../../services/routeUtils';
 import { colors } from '../../../constants/colors';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -77,8 +78,11 @@ export default function DriverTripDetailScreen() {
   const [orderDetailsMap, setOrderDetailsMap] = useState<Record<string, OrderResponse>>({});
   const [loadingOrderDetails, setLoadingOrderDetails] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [routeLoading, setRouteLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [errors, setErrors] = useState<Record<string, string | null>>({});
+  const routeRequestRef = useRef<AbortController | null>(null);
+  const routeRequestVersionRef = useRef(0);
 
   const setError = useCallback((key: string, value: string | null) => {
     setErrors((current) => ({ ...current, [key]: value }));
@@ -159,16 +163,39 @@ export default function DriverTripDetailScreen() {
   }, [tripId, setError]);
 
   const loadRoute = useCallback(async () => {
-    if (!token || !tripId) return;
+    if (!token || !tripId || !sanitizeTripId(tripId)) {
+      setError('route', 'TripId không hợp lệ.');
+      return;
+    }
+
+    routeRequestRef.current?.abort();
+    const controller = new AbortController();
+    const requestVersion = ++routeRequestVersionRef.current;
+    routeRequestRef.current = controller;
+    setRouteLoading(true);
     try {
-      const response = await getTripRoute(token, tripId);
-      if (!response.success || !response.data) { setError('route', response.message || 'Chưa có dữ liệu tuyến đường.'); return; }
-      setRoute(response.data); setError('route', null);
+      const response = await getTripRoute(token, tripId, controller.signal);
+      if (controller.signal.aborted || requestVersion !== routeRequestVersionRef.current) return;
+      if (!response.success || !response.data) {
+        setRoute(null);
+        setError('route', response.message || 'Chưa có dữ liệu tuyến đường.');
+        return;
+      }
+      setRoute(response.data);
+      setError('route', null);
       const routeOrders = response.data.optimizedStops.flatMap((s) => s.orders ?? []);
       if (routeOrders.length > 0) {
         void loadOrderDetails(routeOrders);
       }
-    } catch (error) { setError('route', getApiErrorMessage(error)); }
+    } catch (error) {
+      if (controller.signal.aborted || requestVersion !== routeRequestVersionRef.current) return;
+      setRoute(null);
+      setError('route', getRouteErrorMessage(error));
+    } finally {
+      if (requestVersion === routeRequestVersionRef.current) {
+        setRouteLoading(false);
+      }
+    }
   }, [setError, token, tripId, loadOrderDetails]);
 
   const loadChart = useCallback(async () => {
@@ -270,7 +297,14 @@ export default function DriverTripDetailScreen() {
       appState = nextState;
       if (nextState !== 'active') clear(); else if (!terminal) void poll();
     });
-    return () => { disposed = true; clear(); subscription.remove(); };
+    return () => {
+      disposed = true;
+      clear();
+      routeRequestVersionRef.current += 1;
+      routeRequestRef.current?.abort();
+      routeRequestRef.current = null;
+      subscription.remove();
+    };
   }, [loadTrip, loadAlerts, loadChart, loadRoute, loadTracking, loadIncident, setError, token, tripId]));
 
   const refresh = useCallback(async () => {
@@ -278,34 +312,8 @@ export default function DriverTripDetailScreen() {
   }, [loadTrip, loadAlerts, loadChart, loadRoute, loadTracking, loadIncident]);
 
   const displayStops = useMemo<DriverTripStopDto[]>(() => {
-    if (trip?.stops && trip.stops.length > 0) {
-      return trip.stops;
-    }
-    if (route?.optimizedStops && route.optimizedStops.length > 0) {
-      return route.optimizedStops.map((s, idx) => ({
-        stopId: s.stopId || (s as { locationId?: string }).locationId || `stop-${idx}`,
-        locationId: (s as { locationId?: string }).locationId,
-        stopSequence: s.optimizedSequence ?? s.originalStopSequence ?? idx + 1,
-        address: s.address || 'Điểm giao hàng',
-        plannedArrivalTime: (s as { plannedArrivalTime?: string }).plannedArrivalTime ?? null,
-        plannedDepartureTime: (s as { plannedDepartureTime?: string }).plannedDepartureTime ?? null,
-        status: (s as { status?: string }).status || 'PLANNED',
-        stopType: s.stopType || 'DELIVERY',
-      }));
-    }
-    if (tracking?.orders && tracking.orders.length > 0) {
-      return tracking.orders.map((o, idx) => ({
-        stopId: o.orderId,
-        stopSequence: idx + 1,
-        address: `Điểm giao hàng: ${o.itemName} (${o.trackingCode})`,
-        plannedArrivalTime: null,
-        plannedDepartureTime: null,
-        status: 'PLANNED',
-        stopType: 'DELIVERY',
-      }));
-    }
-    return [];
-  }, [trip?.stops, route?.optimizedStops, tracking?.orders]);
+    return trip?.stops?.filter((stop) => Boolean(stop.stopId)) ?? [];
+  }, [trip?.stops]);
 
   const nextStopIndex = useMemo(() => {
     const finishedStatuses = new Set(['DEPARTED', 'COMPLETED', 'SKIPPED_NOSHOW', 'FAILED_DELIVERY']);
@@ -400,45 +408,85 @@ export default function DriverTripDetailScreen() {
   const vehiclePosition = useMemo(() => getVehiclePosition(tracking), [tracking]);
 
   const effectiveRoute = useMemo<TripRouteResponse | null>(() => {
-    if (route) return route;
+    if (route) {
+      return {
+        ...route,
+        overviewPolyline: route.overviewPolyline || trip?.encodedPolyline || undefined,
+      };
+    }
     if (!trip && !tracking && !vehiclePosition) return null;
+
+    const validStops = (trip?.stops || []).filter(
+      (stop) =>
+        stop.latitude !== null &&
+        stop.latitude !== undefined &&
+        stop.longitude !== null &&
+        stop.longitude !== undefined &&
+        isValidMapCoordinate(Number(stop.latitude), Number(stop.longitude))
+    );
+
+    const originStop =
+      validStops.find(
+        (s) =>
+          s.stopType?.toUpperCase() === 'PICKUP' ||
+          s.stopType?.toUpperCase() === 'ORIGIN' ||
+          s.stopType?.toUpperCase() === 'WAREHOUSE'
+      ) || validStops[0];
+
+    const destinationStop =
+      validStops.length > 1 ? validStops[validStops.length - 1] : undefined;
+
     return {
       tripId: tripId || '',
       totalDistanceMeters: (trip?.totalDistanceKm ?? 0) * 1000,
       totalDurationSeconds: (trip?.estimatedDurationHours ?? 0) * 3600,
       overviewPolyline: trip?.encodedPolyline || undefined,
       waypointOrder: [],
-      origin: trip?.stops?.[0]?.latitude && trip?.stops?.[0]?.longitude ? {
-        locationId: trip.stops[0].locationId || 'origin',
-        address: trip.stops[0].address || 'Điểm xuất phát',
-        lat: Number(trip.stops[0].latitude),
-        lon: Number(trip.stops[0].longitude),
-      } : vehiclePosition ? {
-        locationId: 'vehicle',
-        address: 'Vị trí xe hiện tại',
-        lat: vehiclePosition.latitude,
-        lon: vehiclePosition.longitude,
-      } : undefined,
-      destination: trip?.stops && trip.stops.length > 1 && trip.stops[trip.stops.length - 1].latitude ? {
-        locationId: trip.stops[trip.stops.length - 1].locationId || 'destination',
-        address: trip.stops[trip.stops.length - 1].address || 'Điểm kết thúc',
-        lat: Number(trip.stops[trip.stops.length - 1].latitude),
-        lon: Number(trip.stops[trip.stops.length - 1].longitude),
-      } : undefined,
-      optimizedStops: (trip?.stops || []).map((s, idx) => ({
-        stopId: s.stopId,
-        locationId: s.locationId,
-        address: s.address,
-        lat: s.latitude ? Number(s.latitude) : 0,
-        lon: s.longitude ? Number(s.longitude) : 0,
-        optimizedSequence: s.stopSequence ?? idx + 1,
-        stopType: s.stopType,
-        status: s.status,
-        orders: [],
-        lpns: [],
-      })).filter((s) => s.lat !== 0 && s.lon !== 0),
+      origin: originStop
+        ? {
+            locationId: originStop.locationId || 'origin',
+            address: originStop.address || 'Kho xuất phát',
+            lat: Number(originStop.latitude),
+            lon: Number(originStop.longitude),
+          }
+        : vehiclePosition
+        ? {
+            locationId: 'vehicle',
+            address: 'Vị trí xe hiện tại',
+            lat: vehiclePosition.latitude,
+            lon: vehiclePosition.longitude,
+          }
+        : undefined,
+      destination: destinationStop
+        ? {
+            locationId: destinationStop.locationId || 'destination',
+            address: destinationStop.address || 'Điểm kết thúc',
+            lat: Number(destinationStop.latitude),
+            lon: Number(destinationStop.longitude),
+          }
+        : undefined,
+      optimizedStops: validStops
+        .map((s, idx) => {
+          const stopOrders = getOrdersForStop(s);
+          return {
+            stopId: s.stopId,
+            locationId: s.locationId,
+            address: s.address,
+            lat: Number(s.latitude),
+            lon: Number(s.longitude),
+            optimizedSequence: s.stopSequence ?? idx + 1,
+            stopType: s.stopType,
+            status: s.status,
+            orders: stopOrders.map((o) => ({
+              orderId: o.orderId,
+              trackingCode: o.trackingCode || '',
+              itemName: o.itemName,
+            })),
+            lpns: [],
+          };
+        }),
     };
-  }, [route, trip, tracking, vehiclePosition, tripId]);
+  }, [route, trip, tracking, vehiclePosition, tripId, getOrdersForStop]);
 
   const safeOpenURL = useCallback(async (primaryUrl: string, fallbackUrl?: string) => {
     try {
@@ -719,8 +767,15 @@ export default function DriverTripDetailScreen() {
             ) : null
           }
         >
-          {errors.route && !effectiveRoute ? <ErrorMessage message={errors.route} onRetry={loadRoute} /> : null}
-          {effectiveRoute ? (
+          {errors.route && !routeLoading ? <ErrorMessage message={errors.route} onRetry={loadRoute} /> : null}
+          {routeLoading && !effectiveRoute ? (
+            <View className="items-center justify-center gap-2 rounded-2xl bg-slate-50 py-10">
+              <ActivityIndicator size="small" color={colors.brand.primary} />
+              <Text style={{ color: colors.text.secondary }} className="text-xs font-medium">
+                Đang tải lộ trình nhiều điểm đến...
+              </Text>
+            </View>
+          ) : effectiveRoute ? (
             <>
               <InfoRow
                 label="Mã chuyến (Trip ID)"
@@ -729,7 +784,11 @@ export default function DriverTripDetailScreen() {
               />
               <InfoRow label="Quãng đường" value={formatDistance(effectiveRoute.totalDistanceMeters)} />
               <InfoRow label="Thời gian dự kiến" value={formatDuration(effectiveRoute.totalDurationSeconds)} />
-              <GoongRouteMap route={effectiveRoute} vehiclePosition={vehiclePosition} />
+              <GoongRouteMap
+                route={effectiveRoute}
+                vehiclePosition={vehiclePosition}
+                showRouteDataNotice
+              />
               {!vehiclePosition ? <Empty message="Chưa nhận được vị trí từ thiết bị." /> : null}
 
               {/* Phím tắt mở nhanh bản đồ ngoài */}
@@ -763,7 +822,7 @@ export default function DriverTripDetailScreen() {
                 </Pressable>
               </View>
             </>
-          ) : !errors.route ? (
+          ) : !errors.route && !routeLoading ? (
             <Empty message="Chưa có dữ liệu tuyến đường." />
           ) : null}
         </Section>
@@ -828,11 +887,17 @@ export default function DriverTripDetailScreen() {
             isNextStop={index === nextStopIndex}
             onPress={() => router.push({
               pathname: '/(driver)/trips/stop/[stopId]',
-              params: { stopId: stop.stopId, tripId },
+              params: {
+                stopId: stop.stopId,
+                tripId,
+                locationId: stop.locationId,
+              },
             } as never)}
           />
         ))}
-        {!displayStops.length ? <Empty message="Chưa có điểm dừng." /> : null}
+        {!displayStops.length ? (
+          <Empty message="Chuyến chưa có điểm dừng nghiệp vụ hợp lệ. Vui lòng tải lại để đồng bộ TripStop trước khi check-in." />
+        ) : null}
       </Section>
     </ScrollView>
 
@@ -1227,3 +1292,9 @@ function formatDoor(value?: boolean) { return value === true ? 'Đang mở' : va
 function formatDateTime(value?: string | null) { if (!value) return '--'; const date = new Date(value); return Number.isNaN(date.getTime()) ? '--' : date.toLocaleString('vi-VN'); }
 function formatDistance(value: number) { if (!Number.isFinite(value) || value <= 0) return '--'; return value >= 1000 ? `${(value / 1000).toFixed(1)} km` : `${Math.round(value)} m`; }
 function formatDuration(value: number) { if (!Number.isFinite(value) || value <= 0) return '--'; const minutes = Math.round(value / 60); const hours = Math.floor(minutes / 60); return hours ? `${hours} giờ ${minutes % 60} phút` : `${minutes} phút`; }
+function getRouteErrorMessage(error: unknown) {
+  if (error instanceof ApiClientError && error.status === 404) {
+    return 'Không tìm thấy chuyến đi.';
+  }
+  return getApiErrorMessage(error);
+}

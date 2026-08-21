@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
@@ -131,9 +132,11 @@ export default function StopDetailScreen() {
   const params = useLocalSearchParams<{
     stopId?: string | string[];
     tripId?: string | string[];
+    locationId?: string | string[];
   }>();
   const stopId = firstParam(params.stopId);
   const tripId = firstParam(params.tripId);
+  const requestedLocationId = firstParam(params.locationId);
   const router = useRouter();
   const token = useAuthStore((state) => state.token);
   const mutationLock = useRef(false);
@@ -239,11 +242,19 @@ export default function StopDetailScreen() {
     setLoadError(null);
 
     try {
-      const [tripDetail, routeResponse, trackingResponse] = await Promise.all([
+      const [tripDetailRes, routeRes, trackingRes] = await Promise.allSettled([
         driverApi.getMyTripDetail(tripId),
         getPlannedTripRoute(token, tripId),
         getTrackingByTripId(token, tripId),
       ]);
+
+      if (tripDetailRes.status !== 'fulfilled') {
+        throw tripDetailRes.reason;
+      }
+      const tripDetail = tripDetailRes.value;
+      const routeResponse = routeRes.status === 'fulfilled' ? routeRes.value : { success: false, data: null };
+      const trackingResponse = trackingRes.status === 'fulfilled' ? trackingRes.value : { success: false, data: null };
+
       const route: TripRouteResponse = routeResponse.data || {
         tripId,
         totalDistanceMeters: 0,
@@ -253,61 +264,24 @@ export default function StopDetailScreen() {
       };
       const routeStop = route.optimizedStops?.find((stop) => stop.stopId === stopId)
         || route.optimizedStops?.find((s) => (s as { locationId?: string }).locationId === stopId)
-        || route.optimizedStops?.find((_, idx) => `stop-${idx}` === stopId)
-        || (trackingResponse.data?.orders?.some((o) => o.orderId === stopId)
-          ? {
-              stopId,
-              address: trackingResponse.data.orders.find((o) => o.orderId === stopId)?.itemName || 'Điểm giao hàng',
-              orders: trackingResponse.data.orders.filter((o) => o.orderId === stopId).map((o) => ({
-                orderId: o.orderId,
-                trackingCode: o.trackingCode,
-                itemName: o.itemName,
-                tempCondition: o.tempCondition,
-              })),
-              lpns: [],
-            }
-          : undefined);
+        || route.optimizedStops?.find((s) => Boolean(requestedLocationId) && s.locationId === requestedLocationId)
+        || route.optimizedStops?.find((s) => s.locationId === matchedLocationId(tripDetail.stops, stopId));
 
       // 1. Tìm trực tiếp theo stopId hoặc locationId trong tripDetail.stops nếu có
-      let matchedStop = tripDetail.stops?.find((stop) => stop.stopId === stopId || (Boolean(stop.locationId) && stop.locationId === stopId));
+      const matchedStop = tripDetail.stops?.find(
+        (stop) =>
+          stop.stopId === stopId
+          || (Boolean(stop.locationId) && stop.locationId === stopId)
+          || (Boolean(requestedLocationId) && stop.locationId === requestedLocationId)
+      );
 
-      // 2. Nếu không thấy theo ID trực tiếp, tìm theo stopSequence của routeStop
-      if (!matchedStop && routeStop) {
-        const seq = (routeStop as { optimizedSequence?: number; originalStopSequence?: number }).optimizedSequence
-          ?? (routeStop as { originalStopSequence?: number }).originalStopSequence;
-        if (seq !== undefined) {
-          matchedStop = tripDetail.stops?.find((s) => s.stopSequence === seq);
-        }
+      if (!matchedStop?.stopId) {
+        throw new ApiClientError(
+          'Không tìm thấy TripStop hợp lệ trong chi tiết chuyến. Vui lòng quay lại và tải lại chuyến.',
+          404
+        );
       }
-
-      // 3. Nếu vẫn không thấy và tripDetail.stops có dữ liệu, ánh xạ theo index
-      if (!matchedStop && tripDetail.stops && tripDetail.stops.length > 0) {
-        if (tripDetail.stops.length === 1) {
-          matchedStop = tripDetail.stops[0];
-        } else {
-          const routeIndex = route.optimizedStops?.findIndex(
-            (s) => s.stopId === stopId || (s as { locationId?: string }).locationId === stopId
-          );
-          if (routeIndex !== undefined && routeIndex >= 0 && tripDetail.stops[routeIndex]) {
-            matchedStop = tripDetail.stops[routeIndex];
-          }
-        }
-      }
-
-      const currentStop: DriverTripStopDto | null = matchedStop ??
-        (routeStop
-          ? ({
-              stopId: routeStop.stopId || stopId,
-              stopSequence: (routeStop as { optimizedSequence?: number; originalStopSequence?: number }).optimizedSequence ?? (routeStop as { originalStopSequence?: number }).originalStopSequence ?? 1,
-              address: (routeStop as { address?: string }).address || 'Điểm giao hàng',
-              status: (routeStop as { status?: string }).status || 'PLANNED',
-              stopType: (routeStop as { stopType?: string }).stopType || 'DELIVERY',
-            } as DriverTripStopDto)
-          : null);
-
-      if (!currentStop && !routeStop) {
-        throw new ApiClientError('Stop không thuộc chuyến được giao.', 404);
-      }
+      const currentStop = matchedStop;
 
       let routeOrders: TripRouteOrderDto[];
       let stopLocationId: string | null | undefined;
@@ -319,7 +293,7 @@ export default function StopDetailScreen() {
         routeLpns = routeStop.lpns || [];
       } else {
         const boundaryPoint = resolveBoundaryPoint(
-          currentStop!,
+          currentStop,
           tripDetail.stops ?? [],
           route.origin,
           route.destination
@@ -427,7 +401,7 @@ export default function StopDetailScreen() {
     } finally {
       if (showSpinner) setLoading(false);
     }
-  }, [stopId, token, tripId]);
+  }, [requestedLocationId, stopId, token, tripId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -441,14 +415,6 @@ export default function StopDetailScreen() {
       return;
     }
 
-    if (distanceToStopKm !== null && distanceToStopKm > MAX_CHECKIN_DISTANCE_KM) {
-      Alert.alert(
-        '⚠️ Chưa đến phạm vi điểm giao',
-        `Xe hiện đang cách điểm giao hàng ${distanceToStopKm} km (vượt quá bán kính 10 km cho phép check-in theo quy định hệ thống).\n\nVui lòng di chuyển xe đến gần điểm giao hơn để xác nhận.`
-      );
-      return;
-    }
-
     const validTripId = typeof tripId === 'string' ? tripId : Array.isArray(tripId) ? tripId[0] : '';
     if (!validTripId) {
       Alert.alert('Thiếu TripId', 'Không xác định được chuyến đi. Vui lòng tải lại màn hình.');
@@ -458,13 +424,37 @@ export default function StopDetailScreen() {
     try {
       setIsProcessing(true);
 
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== 'granted') {
+        Alert.alert(
+          'Cần quyền vị trí',
+          'Vui lòng cho phép ứng dụng truy cập vị trí khi sử dụng để xác thực check-in.'
+        );
+        return;
+      }
+      if (!(await Location.hasServicesEnabledAsync())) {
+        Alert.alert('Chưa bật định vị', 'Vui lòng bật dịch vụ vị trí trên thiết bị rồi thử lại.');
+        return;
+      }
+      const deviceLocation = await withTimeout(
+        Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+          mayShowUserSettingsDialog: true,
+        }),
+        CHECKIN_LOCATION_TIMEOUT_MS
+      );
+
       // Resolve targetStopId từ chi tiết chuyến mới nhất từ database
       const latestDetail = await driverApi.getMyTripDetail(validTripId);
       const verifiedStop = latestDetail.stops?.find(
-        (s) => s.stopId === driverStop?.stopId || s.stopId === stopId || (Boolean(s.locationId) && (s.locationId === stopId || s.locationId === driverStop?.locationId))
-      )
-        || latestDetail.stops?.find((s) => s.stopSequence === driverStop?.stopSequence)
-        || (latestDetail.stops?.length === 1 ? latestDetail.stops[0] : null);
+        (s) =>
+          s.stopId === driverStop?.stopId
+          || s.stopId === stopId
+          || (Boolean(s.locationId)
+            && (s.locationId === stopId
+              || s.locationId === driverStop?.locationId
+              || s.locationId === requestedLocationId))
+      );
 
       if (!verifiedStop?.stopId) {
         Alert.alert(
@@ -474,7 +464,16 @@ export default function StopDetailScreen() {
         return;
       }
 
-      await deliveryApi.checkInStop(verifiedStop.stopId, toDeliveryUploadFile(checkinProofAsset, 'checkin-proof.jpg'));
+      await deliveryApi.checkInStop(
+        verifiedStop.stopId,
+        toDeliveryUploadFile(checkinProofAsset, 'checkin-proof.jpg'),
+        {
+          latitude: deviceLocation.coords.latitude,
+          longitude: deviceLocation.coords.longitude,
+          locationTimestamp: new Date(deviceLocation.timestamp).toISOString(),
+          accuracyMeters: deviceLocation.coords.accuracy,
+        }
+      );
       const reloaded = await loadData(false);
       Alert.alert(
         'Đã xác nhận đến điểm giao',
@@ -1299,7 +1298,7 @@ export default function StopDetailScreen() {
                 Xác nhận đã đến điểm giao
               </Text>
               <Text style={{ color: colors.text.secondary }} className="mb-4 text-center text-xs leading-5">
-                Chụp ảnh điểm giao để xác nhận có mặt. Vị trí check-in được hệ thống đối chiếu từ thiết bị IoT của xe (bán kính hợp lệ tối đa 10 km).
+                Chụp ảnh điểm giao để xác nhận có mặt. Hệ thống đối chiếu GPS mới nhất của xe và điện thoại trong bán kính tối đa 200 m.
               </Text>
 
               {/* Thông tin khoảng cách xe hiện tại tới điểm giao */}
@@ -1313,7 +1312,7 @@ export default function StopDetailScreen() {
                       </Text>
                     </View>
                     <Text className="mt-1 text-[11px] text-emerald-800 leading-4">
-                      Hợp lệ theo quy định hệ thống (trong bán kính cho phép 10 km).
+                      Đang nằm trong bán kính tham khảo 200 m. Backend sẽ xác thực lại GPS mới nhất khi gửi.
                     </Text>
                   </View>
                 ) : (
@@ -1325,7 +1324,7 @@ export default function StopDetailScreen() {
                       </Text>
                     </View>
                     <Text className="mt-1 text-[11px] text-amber-800 leading-4">
-                      Vượt quá bán kính 10 km quy định. Xe cần đến gần hơn để check-in.
+                      Ngoài bán kính 200 m. Đây là vị trí tham khảo; backend sẽ xác thực lại khi gửi.
                     </Text>
                   </View>
                 )
@@ -1345,7 +1344,7 @@ export default function StopDetailScreen() {
                   label="Xác nhận đã đến"
                   onPress={() => void handleCheckIn()}
                   loading={isProcessing}
-                  disabled={!checkinProofAsset || (distanceToStopKm !== null && distanceToStopKm > MAX_CHECKIN_DISTANCE_KM)}
+                  disabled={!checkinProofAsset}
                 />
               </View>
             </View>
@@ -2644,10 +2643,10 @@ function formatActionError(
       return 'Vui lòng thêm ảnh xác nhận trước khi check-in.';
     }
     if (action === 'CHECK_IN' && /distance|geofence|meter|metre|radius/.test(message)) {
-      return 'Xe chưa ở trong phạm vi điểm giao hàng.';
+      return 'Xe chưa ở trong phạm vi 200 m của điểm giao hàng.';
     }
     if (action === 'CHECK_IN' && /iot|telemetry|gps|location/.test(message)) {
-      return 'Chưa nhận được vị trí xe từ thiết bị IoT. Vui lòng thử lại.';
+      return 'Chưa nhận được GPS mới và đủ chính xác từ xe hoặc điện thoại. Vui lòng bật định vị và thử lại.';
     }
     if (action === 'CHECK_IN' && /already|check.?in/.test(message)) {
       return 'Điểm giao này đã được xác nhận đến.';
@@ -2876,7 +2875,31 @@ function formatTripStatus(status?: string | null) {
   }
 }
 
-const MAX_CHECKIN_DISTANCE_KM = 10;
+const MAX_CHECKIN_DISTANCE_KM = 0.2;
+const CHECKIN_LOCATION_TIMEOUT_MS = 15_000;
+
+function matchedLocationId(stops: DriverTripStopDto[] | undefined, requestedStopId: string) {
+  return stops?.find((stop) => stop.stopId === requestedStopId)?.locationId;
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error('Không lấy được vị trí GPS mới trong thời gian cho phép.')),
+      timeoutMs
+    );
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
 
 function calculateHaversineDistanceKm(
   lat1: number,
@@ -2894,5 +2917,5 @@ function calculateHaversineDistanceKm(
       Math.sin(dLon / 2) *
       Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return Math.round(R * c * 10) / 10;
+  return Math.round(R * c * 100) / 100;
 }
