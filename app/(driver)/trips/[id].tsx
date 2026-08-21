@@ -281,25 +281,8 @@ export default function DriverTripDetailScreen() {
     if (trip?.stops && trip.stops.length > 0) {
       return trip.stops;
     }
-    if (route?.optimizedStops && route.optimizedStops.length > 0) {
-      return route.optimizedStops.map((s, idx) => {
-        const matchingTripStop = trip?.stops?.find(
-          (ts) => ts.stopId === s.stopId || (ts.locationId && (ts.locationId === s.stopId || ts.locationId === (s as { locationId?: string }).locationId)) || ts.stopSequence === (s.optimizedSequence ?? s.originalStopSequence ?? idx + 1)
-        ) || trip?.stops?.[idx];
-        return {
-          stopId: matchingTripStop?.stopId || s.stopId || (s as { locationId?: string }).locationId || `stop-${idx}`,
-          locationId: matchingTripStop?.locationId || (s as { locationId?: string }).locationId,
-          stopSequence: s.optimizedSequence ?? s.originalStopSequence ?? idx + 1,
-          address: s.address || matchingTripStop?.address || 'Điểm giao hàng',
-          plannedArrivalTime: (s as { plannedArrivalTime?: string }).plannedArrivalTime ?? matchingTripStop?.plannedArrivalTime ?? null,
-          plannedDepartureTime: (s as { plannedDepartureTime?: string }).plannedDepartureTime ?? matchingTripStop?.plannedDepartureTime ?? null,
-          status: matchingTripStop?.status || (s as { status?: string }).status || 'PLANNED',
-          stopType: s.stopType || matchingTripStop?.stopType || 'DELIVERY',
-        };
-      });
-    }
     return [];
-  }, [trip?.stops, route?.optimizedStops]);
+  }, [trip?.stops]);
 
   const nextStopIndex = useMemo(() => {
     const finishedStatuses = new Set(['DEPARTED', 'COMPLETED', 'SKIPPED_NOSHOW', 'FAILED_DELIVERY']);
