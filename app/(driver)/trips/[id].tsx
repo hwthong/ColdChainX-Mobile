@@ -678,6 +678,11 @@ export default function DriverTripDetailScreen() {
           {errors.route ? <ErrorMessage message={errors.route} onRetry={loadRoute} /> : null}
           {route ? (
             <>
+              <InfoRow
+                label="Mã chuyến (Trip ID)"
+                value={tripId ? `#${tripId.slice(0, 8).toUpperCase()}` : '--'}
+                highlight
+              />
               <InfoRow label="Quãng đường" value={formatDistance(route.totalDistanceMeters)} />
               <InfoRow label="Thời gian dự kiến" value={formatDuration(route.totalDurationSeconds)} />
               <GoongRouteMap route={route} vehiclePosition={vehiclePosition} />
@@ -733,6 +738,11 @@ export default function DriverTripDetailScreen() {
               <Metric label="Nhiệt độ" value={formatTemperature(tracking.telemetry?.temperatureC)} />
               <Metric label="Cửa xe" value={formatDoor(tracking.telemetry?.doorOpen)} />
             </View>
+            <InfoRow
+              label="Mã chuyến (Trip ID)"
+              value={tripId ? `#${tripId.slice(0, 8).toUpperCase()}` : '--'}
+              highlight
+            />
             <InfoRow
               label="Biển số xe"
               value={
@@ -924,11 +934,16 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function InfoRow({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }) {
   return (
     <View style={{ borderBottomColor: colors.border.default }} className="flex-row items-start justify-between gap-4 border-b pb-2">
       <Text style={{ color: colors.text.secondary }} className="text-sm">{label}</Text>
-      <Text style={{ color: colors.text.primary }} className="flex-1 text-right text-sm font-semibold">{value}</Text>
+      <Text
+        style={{ color: highlight ? colors.brand.primary : colors.text.primary }}
+        className={`flex-1 text-right text-sm ${highlight ? 'font-bold' : 'font-semibold'}`}
+      >
+        {value}
+      </Text>
     </View>
   );
 }
