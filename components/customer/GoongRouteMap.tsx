@@ -207,8 +207,8 @@ export function buildRoutePoints(route?: TripRouteResponse | null): RouteMapPoin
 function disperseOverlappingPoints(points: RouteMapPoint[]): RouteMapPoint[] {
   if (points.length <= 1) return points;
 
-  const CLUSTER_THRESHOLD = 0.00035; // Khoảng ~35m
-  const DISPERSION_RADIUS = 0.00028; // Bán kính xòe ~28m
+  const CLUSTER_THRESHOLD = 0.00015; // Khoảng ~15m (tọa độ gần như trùng nhau)
+  const DISPERSION_RADIUS = 0.0002;  // Bán kính xòe nhẹ ~20m
 
   const clusters: RouteMapPoint[][] = [];
   const visited = new Set<string>();
@@ -240,22 +240,21 @@ function disperseOverlappingPoints(points: RouteMapPoint[]): RouteMapPoint[] {
       result.push(cluster[0]);
     } else {
       const count = cluster.length;
-      const centerLat = cluster.reduce((sum, p) => sum + p.lat, 0) / count;
-      const centerLon = cluster.reduce((sum, p) => sum + p.lon, 0) / count;
+      const primary = cluster[0];
 
-      cluster.forEach((point, idx) => {
-        // Điểm xuất phát giữ nguyên vị trí trung tâm nếu có thể
-        if (point.type === 'origin' && count > 1) {
-          result.push(point);
-          return;
-        }
-        const angle = (2 * Math.PI * idx) / count - Math.PI / 2;
+      // Điểm đầu tiên luôn giữ nguyên tọa độ gốc
+      result.push(primary);
+
+      // Các điểm trùng tiếp theo sẽ được xòe nhẹ xung quanh
+      for (let idx = 1; idx < count; idx++) {
+        const point = cluster[idx];
+        const angle = (2 * Math.PI * (idx - 1)) / (count - 1) - Math.PI / 2;
         result.push({
           ...point,
-          lat: centerLat + DISPERSION_RADIUS * Math.sin(angle),
-          lon: centerLon + DISPERSION_RADIUS * Math.cos(angle),
+          lat: primary.lat + DISPERSION_RADIUS * Math.sin(angle),
+          lon: primary.lon + DISPERSION_RADIUS * Math.cos(angle),
         });
-      });
+      }
     }
   }
 
@@ -442,9 +441,12 @@ function buildMapHtml(
     
     /* ─── CUSTOM PIN MARKER STYLES ─── */
     .custom-pin-container {
+      position: relative;
+      width: 24px;
+      height: 32px;
       display: flex;
-      flex-direction: column;
       align-items: center;
+      justify-content: center;
       cursor: pointer;
       user-select: none;
       margin-top: -32px;
@@ -736,7 +738,7 @@ function buildMapHtml(
                 '</defs>' +
                 '<path d="M12 0C5.37258 0 0 5.37258 0 12C0 21 12 32 12 32C12 32 24 21 24 12C24 5.37258 18.6274 0 12 0Z" fill="url(#grad-' + point.id + ')" stroke="#FFFFFF" stroke-width="2" />' +
                 '<circle cx="12" cy="11.5" r="7" fill="#FFFFFF" />' +
-                '<text x="12" y="15" text-anchor="middle" font-size="' + fontSize + '" font-weight="900" fill="' + textFill + '" font-family="system-ui, -apple-system, sans-serif">' + labelText + '</text>' +
+                '<text x="12" y="11.5" text-anchor="middle" dominant-baseline="central" font-size="' + fontSize + '" font-weight="900" fill="' + textFill + '" font-family="system-ui, -apple-system, sans-serif">' + labelText + '</text>' +
               '</svg>';
 
             let popupHtml = '<div class="custom-popup-card">';
