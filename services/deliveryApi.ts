@@ -225,33 +225,14 @@ function unwrap<T>(response: ApiResponse<T>, fallbackMessage: string): T {
 
 export const deliveryApi = {
   checkInStop: async (stopId: string, proofImageFile: DeliveryUploadFile) => {
-    const endpoints = [
+    const formData = new FormData();
+    appendFile(formData, 'ProofImageFile', proofImageFile);
+
+    const response = await apiRequest<ApiResponse<CheckinDriverResponse>>(
       `/api/stops/${stopId}/check-ins`,
-      `/api/Delivery/stops/${stopId}/check-ins`,
-      `/api/Delivery/${stopId}/check-in`,
-      `/api/stops/${stopId}/checkin`,
-    ];
-
-    let lastError: unknown;
-    for (const endpoint of endpoints) {
-      try {
-        const formData = new FormData();
-        appendFile(formData, 'ProofImageFile', proofImageFile);
-
-        const response = await apiRequest<ApiResponse<CheckinDriverResponse>>(
-          endpoint,
-          { method: 'POST', headers: getAuthHeaders(), body: formData }
-        );
-        return unwrap(response, 'Không thể xác nhận đã đến điểm giao.');
-      } catch (err: any) {
-        lastError = err;
-        if (err?.status !== 404) {
-          throw err;
-        }
-      }
-    }
-
-    throw lastError || new Error('Không thể xác nhận đã đến điểm giao.');
+      { method: 'POST', headers: getAuthHeaders(), body: formData }
+    );
+    return unwrap(response, 'Không thể xác nhận đã đến điểm giao.');
   },
 
   cutSeal: async (tripId: string, stopId: string) => {
