@@ -360,7 +360,7 @@ export const deliveryApi = {
       `/api/Delivery/nearest-return-warehouses?tripId=${encodeURIComponent(tripId)}`,
       { method: 'GET', headers: getAuthHeaders() }
     );
-    return unwrap(response, 'Không thể tải danh sách kho quy đầu.');
+    return unwrap(response, 'Không thể tải danh sách kho trả hàng.');
   },
 
   closeShift: async (tripId: string, warehouseId: string) => {

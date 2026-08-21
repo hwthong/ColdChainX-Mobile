@@ -42,6 +42,10 @@ import {
   DriverTripStopDto,
 } from '../../../../services/driverApi';
 import {
+  hasRemainingDeliveryStops,
+  tripHasNoShowStop,
+} from '../../../../services/driverReturnFlow';
+import {
   getStopTemperatureChart,
   getTripTemperatureChart,
   StopTemperatureChart,
@@ -204,10 +208,7 @@ export default function StopDetailScreen() {
   const isLegacyCompletedStop = stopStatus === 'DEPARTED';
   const serverSealIsCut = isCutSealNumber(serverSealNumber);
   const hasCutSeal = Boolean(cutSeal) || serverSealIsCut;
-  const hasRemainingStops = tripStops.some(
-    (stop) => stop.stopSequence > (driverStop?.stopSequence ?? Number.MAX_SAFE_INTEGER)
-      && stop.status?.toUpperCase() !== 'DEPARTED'
-  );
+  const hasRemainingStops = hasRemainingDeliveryStops(tripStops, driverStop?.stopId);
   const hasAppliedSeal = Boolean(appliedSeal)
     || (allOrdersHandedOver && hasRemainingStops && Boolean(serverSealNumber) && !serverSealIsCut);
   const deliveryActionState = getDriverDeliveryActionState({
@@ -221,9 +222,11 @@ export default function StopDetailScreen() {
     tripStatus,
   });
   const isReturnFlow = returnFlowActive
+    || tripHasNoShowStop(tripStops)
     || stopStatus === 'SKIPPED_NOSHOW'
     || orders.some((order) => RETURN_ORDER_STATUSES.has(order.status.toUpperCase()));
-  const showCloseShiftPanel = (isReturnFlow || (allOrdersHandedOver && !hasRemainingStops))
+  const showCloseShiftPanel = allOrdersHandedOver
+    && !hasRemainingStops
     && tripStatus.toUpperCase() !== 'COMPLETED';
   const canCloseShift = allOrdersHandedOver
     && allPaymentsReady
@@ -882,6 +885,13 @@ export default function StopDetailScreen() {
   };
 
   const startNoShow = () => {
+    if (!hasCheckedIn) {
+      Alert.alert(
+        'Chưa check-in điểm giao',
+        'Driver phải xác nhận đã đến điểm giao trước khi báo khách không có mặt.'
+      );
+      return;
+    }
     setSelectedOrderId(null);
     setNoShowEvidenceAsset(null);
     setStep('NO_SHOW');
@@ -890,6 +900,13 @@ export default function StopDetailScreen() {
   const submitNoShow = async () => {
     const targetStopId = driverStop?.stopId || stopId;
     if (mutationLock.current || isProcessing || !targetStopId) return;
+    if (!hasCheckedIn) {
+      Alert.alert(
+        'Chưa check-in điểm giao',
+        'Driver phải xác nhận đã đến điểm giao trước khi báo khách không có mặt.'
+      );
+      return;
+    }
     if (!noShowEvidenceAsset) {
       Alert.alert('Thiếu ảnh minh chứng', 'Vui lòng thêm ảnh minh chứng.');
       return;
@@ -941,7 +958,7 @@ export default function StopDetailScreen() {
     );
   };
 
-  const loadReturnWarehouses = async () => {
+  const loadReturnWarehouses = useCallback(async () => {
     if (!tripId || !showCloseShiftPanel || isLoadingWarehouses) return;
     try {
       setIsLoadingWarehouses(true);
@@ -953,7 +970,28 @@ export default function StopDetailScreen() {
     } finally {
       setIsLoadingWarehouses(false);
     }
-  };
+  }, [isLoadingWarehouses, showCloseShiftPanel, tripId]);
+
+  React.useEffect(() => {
+    if (
+      !tripId
+      || !showCloseShiftPanel
+      || hasRemainingStops
+      || warehouses !== null
+      || warehouseError
+      || isLoadingWarehouses
+    ) return;
+
+    void loadReturnWarehouses();
+  }, [
+    hasRemainingStops,
+    isLoadingWarehouses,
+    loadReturnWarehouses,
+    showCloseShiftPanel,
+    tripId,
+    warehouseError,
+    warehouses,
+  ]);
 
   const loadTemperatureChart = async () => {
     if (!token || !stopId || isLoadingTemperature) return;
@@ -1061,11 +1099,20 @@ export default function StopDetailScreen() {
       const warehouse = warehouses?.find((item) => item.warehouseId === selectedWarehouseId);
       const locationName = result.newLocation || warehouse?.warehouseName || 'kho trả hàng';
       const successTitle = '✅ Đóng ca thành công';
-      const successMessage = result.message || (
-        `Đã bàn giao luồng trả hàng về ${locationName}.\n` +
-        `Nhân viên kho sẽ nhập lại hàng bằng seal tại màn hình Inbound sự cố.\n` +
-        `Hàng không cần thực hiện QC lại.`
-      );
+      const successMessage = isReturnFlow
+        ? [
+            `Đã bàn giao luồng trả hàng về ${locationName}.`,
+            result.message,
+            result.requiresWarehouseInboundBySeal !== false
+              ? 'Nhân viên kho sẽ nhập lại hàng bằng seal tại màn hình Inbound sự cố.'
+              : null,
+            'Hàng không cần thực hiện QC lại.',
+          ].filter(Boolean).join('\n\n')
+        : result.message || (
+            `Đã bàn giao luồng trả hàng về ${locationName}.\n` +
+            `Nhân viên kho sẽ nhập lại hàng bằng seal tại màn hình Inbound sự cố.\n` +
+            `Hàng không cần thực hiện QC lại.`
+          );
 
       Alert.alert(
         successTitle,
@@ -1531,9 +1578,14 @@ export default function StopDetailScreen() {
                 <AppButton
                   label="Báo khách hàng không có mặt (No-Show)"
                   variant="secondary"
-                  disabled={isProcessing}
+                  disabled={isProcessing || !hasCheckedIn}
                   onPress={startNoShow}
                 />
+                {!hasCheckedIn ? (
+                  <Text className="mt-2 text-center text-xs text-amber-800">
+                    Cần check-in điểm giao trước khi báo khách không có mặt.
+                  </Text>
+                ) : null}
               </View>
             ) : null}
 
@@ -1616,29 +1668,34 @@ export default function StopDetailScreen() {
                   </View>
                 </View>
 
-                {/* Thanh tiến trình quy trình trả hàng */}
-                <View className="mt-3 rounded-xl bg-orange-100/80 p-2.5">
-                  <Text className="text-[11px] font-bold text-orange-950 mb-1.5">Quy trình trả hàng:</Text>
-                  <View className="flex-row items-center justify-between">
-                    <Text className="text-[10.5px] font-bold text-emerald-800">1. Khách vắng mặt ✓</Text>
-                    <Text className="text-slate-400">→</Text>
-                    <Text className={`text-[10.5px] font-bold ${selectedWarehouseId ? 'text-emerald-800' : 'text-orange-900'}`}>2. Chọn kho</Text>
-                    <Text className="text-slate-400">→</Text>
-                    <Text className="text-[10.5px] font-medium text-orange-800">3. Về kho</Text>
-                    <Text className="text-slate-400">→</Text>
-                    <Text className="text-[10.5px] font-medium text-orange-800">4. Đóng ca</Text>
-                  </View>
-                </View>
-
-                {/* Cảnh báo đưa hàng về đúng kho đã chọn */}
-                <View className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3">
-                  <View className="flex-row items-center gap-2">
-                    <Ionicons name="alert-circle" size={18} color="#D97706" />
-                    <Text className="text-xs font-bold text-amber-900 flex-1">
-                      Vui lòng đưa hàng về đúng kho đã chọn. Chỉ đóng ca khi xe đã đến kho.
+                {isReturnFlow ? (
+                  <View className="mt-3 rounded-xl bg-orange-100/80 p-3">
+                    <Text className="text-xs font-bold text-orange-950">Tiến trình trả hàng</Text>
+                    <Text className="mt-2 text-xs font-bold text-emerald-800">
+                      1. Khách vắng mặt ✓
+                    </Text>
+                    <Text className={`mt-1 text-xs font-bold ${selectedWarehouseId ? 'text-emerald-800' : 'text-orange-900'}`}>
+                      2. Chọn kho trả hàng {selectedWarehouseId ? '✓' : '← đang thực hiện'}
+                    </Text>
+                    <Text className={`mt-1 text-xs font-bold ${selectedWarehouseId ? 'text-orange-900' : 'text-orange-700'}`}>
+                      3. Di chuyển về kho {selectedWarehouseId ? '← bước tiếp theo' : ''}
+                    </Text>
+                    <Text className="mt-1 text-xs font-medium text-orange-700">
+                      4. Đóng ca
                     </Text>
                   </View>
-                </View>
+                ) : null}
+
+                {selectedWarehouseId ? (
+                  <View className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3">
+                    <View className="flex-row items-center gap-2">
+                      <Ionicons name="alert-circle" size={18} color="#D97706" />
+                      <Text className="flex-1 text-xs font-bold text-amber-900">
+                        Vui lòng đưa hàng về đúng kho đã chọn. Chỉ đóng ca khi xe đã đến kho.
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
 
                 {warehouses === null && !warehouseError ? (
                   <View className="mt-4">
@@ -1664,10 +1721,10 @@ export default function StopDetailScreen() {
                   return (
                     <Pressable
                       key={warehouse.warehouseId}
-                      disabled={!canCloseShift || isProcessing}
+                      disabled={isProcessing}
                       onPress={() => setSelectedWarehouseId(warehouse.warehouseId)}
                       className={`mt-3 rounded-xl border p-3.5 ${selected ? 'border-orange-700 bg-white shadow-sm' : 'border-orange-200 bg-white/80'}`}
-                      style={({ pressed }) => ({ opacity: !canCloseShift ? 0.8 : pressed ? 0.7 : 1 })}
+                      style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
                     >
                       <View className="flex-row items-start justify-between gap-3">
                         <View className="flex-1">
@@ -2588,6 +2645,24 @@ function formatActionError(
       }
       return 'Bạn không có quyền thực hiện thao tác này.';
     }
+    if (error.status === 409) {
+      if (action === 'NO_SHOW') {
+        return 'Không thể báo khách vắng mặt vì đơn hàng tại điểm dừng đã có ePOD hoàn tất.';
+      }
+      return 'Thao tác xung đột với trạng thái hiện tại. Dữ liệu sẽ được tải lại.';
+    }
+    if (error.status === 400 || error.status === 422) {
+      if (action === 'CLOSE_SHIFT') {
+        return 'Không thể đóng ca: còn điểm giao hoặc đơn chưa hoàn tất, LPN chưa ở RETURN_PENDING, hoặc kho trả hàng không hoạt động.';
+      }
+      if (action === 'NO_SHOW') {
+        if (/check.?in|arrival|arrived/i.test(error.message)) {
+          return 'Driver phải check-in điểm giao trước khi báo khách không có mặt.';
+        }
+        return error.message || 'Yêu cầu báo khách không có mặt chưa đáp ứng điều kiện nghiệp vụ.';
+      }
+      return error.message || 'Backend từ chối yêu cầu do điều kiện nghiệp vụ chưa hợp lệ.';
+    }
     if (error.status === 404) {
       if (action === 'CHECK_IN') {
         return 'Không tìm thấy thông tin điểm dừng trên hệ thống hoặc điểm dừng chưa sẵn sàng để check-in. Vui lòng tải lại.';
@@ -2649,21 +2724,6 @@ function formatActionError(
     if (action === 'CLOSE_SHIFT' && /status|state|pending|unconfirmed|handover/.test(message)) {
       return 'Thao tác này chưa thể thực hiện ở trạng thái hiện tại.';
     }
-    if (error.status === 409) {
-      if (action === 'NO_SHOW') {
-        return 'Đơn hàng tại điểm dừng đã có ePOD hoàn tất trước đó.';
-      }
-      return 'Thao tác xung đột với trạng thái hiện tại. Dữ liệu sẽ được tải lại.';
-    }
-    if (error.status === 400 || error.status === 422) {
-      if (action === 'CLOSE_SHIFT') {
-        return 'Không thể đóng ca: còn đơn chưa hoàn tất, kiện hàng chưa ở trạng thái chờ trả kho (RETURN_PENDING) hoặc kho trả hàng không hoạt động.';
-      }
-      if (action === 'NO_SHOW') {
-        return error.message || 'Yêu cầu báo khách không có mặt không hợp lệ. Vui lòng kiểm tra lại ảnh minh chứng.';
-      }
-      return error.message || 'Backend từ chối yêu cầu do điều kiện nghiệp vụ chưa hợp lệ.';
-    }
   }
 
   switch (action) {
@@ -2684,7 +2744,7 @@ function formatActionError(
     case 'NO_SHOW':
       return 'Không thể báo khách không có mặt. Vui lòng thử lại.';
     case 'WAREHOUSE':
-      return 'Không thể tải danh sách kho quy đầu. Vui lòng thử lại.';
+      return 'Không thể tải danh sách kho trả hàng. Vui lòng thử lại.';
     case 'TEMPERATURE':
       return 'Không thể tải dữ liệu nhiệt độ. Vui lòng thử lại.';
     case 'CLOSE_SHIFT':
