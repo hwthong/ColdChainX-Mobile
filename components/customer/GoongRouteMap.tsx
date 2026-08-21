@@ -92,7 +92,7 @@ export function GoongRouteMap({
   return (
     <View
       style={isFullScreen ? { flex: 1, width: '100%', height: '100%' } : undefined}
-      className={`overflow-hidden rounded-2xl border border-[#DAC2B6]/60 bg-[#F8F9FA] ${isFullScreen ? 'flex-1' : ''}`}
+      className={isFullScreen ? 'flex-1 bg-[#F8F9FA]' : 'overflow-hidden rounded-2xl border border-[#DAC2B6]/60 bg-[#F8F9FA]'}
     >
       <WebView
         ref={webViewRef}
@@ -456,9 +456,9 @@ function buildMapHtml(
   <link href="https://cdn.jsdelivr.net/npm/@goongmaps/goong-js@1.0.9/dist/goong-js.css" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/@goongmaps/goong-js@1.0.9/dist/goong-js.js"></script>
   <style>
-    html, body, #map { height: 100%; margin: 0; padding: 0; background: #eef2f5; overflow: hidden; touch-action: none; -webkit-overflow-scrolling: auto; }
+    html, body { position: fixed; inset: 0; margin: 0; padding: 0; background: #eef2f5; overflow: hidden; touch-action: none; -webkit-overflow-scrolling: auto; }
+    #map { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
     .goongjs-canvas-container, .goongjs-canvas { touch-action: none; }
-    .goongjs-marker { will-change: transform; }
     
     /* ─── CUSTOM PIN MARKER STYLES ─── */
     .custom-pin {
@@ -602,6 +602,15 @@ function buildMapHtml(
   <div id="map"></div>
   <div id="map-error">Không thể tải bản đồ Goong.</div>
   <script>
+    // Chặn tuyệt đối mọi scroll offset của WebView native scroll view trên iOS
+    // để Goong JS markers không bao giờ bị lệch khỏi bản đồ khi kéo/zoom
+    document.addEventListener('scroll', function() { window.scrollTo(0, 0); }, true);
+    document.body.addEventListener('touchmove', function(e) {
+      if (!e.target.closest('.goongjs-canvas-container') && !e.target.closest('.goongjs-marker')) {
+        e.preventDefault();
+      }
+    }, { passive: false });
+
     const mapTilesKey = ${safeMapKey};
     const payload = ${payload};
 
