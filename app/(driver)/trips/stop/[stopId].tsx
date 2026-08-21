@@ -134,6 +134,16 @@ export default function StopDetailScreen() {
   const token = useAuthStore((state) => state.token);
   const mutationLock = useRef(false);
 
+  const handleGoBack = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+    } else if (tripId) {
+      router.replace(`/(driver)/trips/${tripId}` as never);
+    } else {
+      router.replace('/(driver)/trips' as never);
+    }
+  }, [router, tripId]);
+
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [driverStop, setDriverStop] = useState<DriverTripStopDto | null>(null);
@@ -970,7 +980,7 @@ export default function StopDetailScreen() {
         >
           <View className="flex-row items-center justify-between">
             <Pressable
-              onPress={() => router.back()}
+              onPress={handleGoBack}
               style={{ backgroundColor: colors.brand.primarySoft }}
               className="rounded-full p-2.5 active:opacity-70"
             >
@@ -1008,7 +1018,7 @@ export default function StopDetailScreen() {
       >
         <View className="flex-row items-center justify-between">
           <Pressable
-            onPress={() => router.back()}
+            onPress={handleGoBack}
             style={{ backgroundColor: colors.brand.primarySoft }}
             className="rounded-full p-2.5 active:opacity-70"
           >
@@ -1549,29 +1559,31 @@ export default function StopDetailScreen() {
       </ScrollView>
 
       {/* ── FULLSCREEN IMAGE PREVIEW MODAL ── */}
-      <Modal
-        visible={Boolean(previewImageUrl)}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPreviewImageUrl(null)}
-      >
-        <View className="flex-1 bg-black/90 items-center justify-center p-4">
-          <Pressable
-            onPress={() => setPreviewImageUrl(null)}
-            style={{ top: Math.max(insets.top + 10, 40) }}
-            className="absolute right-5 z-50 rounded-full bg-white/20 p-2.5 active:bg-white/40"
-          >
-            <Ionicons name="close" size={24} color="#FFFFFF" />
-          </Pressable>
-          {previewImageUrl ? (
-            <Image
-              source={{ uri: previewImageUrl }}
-              className="h-4/5 w-full rounded-2xl"
-              resizeMode="contain"
-            />
-          ) : null}
-        </View>
-      </Modal>
+      {Boolean(previewImageUrl) && (
+        <Modal
+          visible={true}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setPreviewImageUrl(null)}
+        >
+          <View className="flex-1 bg-black/90 items-center justify-center p-4">
+            <Pressable
+              onPress={() => setPreviewImageUrl(null)}
+              style={{ top: Math.max(insets.top + 10, 40) }}
+              className="absolute right-5 z-50 rounded-full bg-white/20 p-2.5 active:bg-white/40"
+            >
+              <Ionicons name="close" size={24} color="#FFFFFF" />
+            </Pressable>
+            {previewImageUrl ? (
+              <Image
+                source={{ uri: previewImageUrl }}
+                className="h-4/5 w-full rounded-2xl"
+                resizeMode="contain"
+              />
+            ) : null}
+          </View>
+        </Modal>
+      )}
     </View>
   );
 }
@@ -1711,9 +1723,7 @@ function OrderCard({
   const status = getOrderStatus(order.status);
 
   return (
-    <Pressable
-      disabled={disabled || confirmed}
-      onPress={onSelect}
+    <View
       style={{
         backgroundColor: colors.surface.card,
         borderColor: selected ? colors.brand.primary : colors.border.default,
@@ -1724,10 +1734,7 @@ function OrderCard({
       <View className="flex-row items-start gap-3">
         {order.imageUrl ? (
           <Pressable
-            onPress={(e) => {
-              e.stopPropagation();
-              onPreviewImage?.(order.imageUrl!);
-            }}
+            onPress={() => onPreviewImage?.(order.imageUrl!)}
             className="h-16 w-16 overflow-hidden rounded-xl border border-slate-200 bg-slate-100 active:opacity-75"
           >
             <Image
@@ -1847,10 +1854,7 @@ function OrderCard({
             {order.documentUrls.map((imgUrl, imgIdx) => (
               <Pressable
                 key={imgIdx}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  onPreviewImage?.(imgUrl);
-                }}
+                onPress={() => onPreviewImage?.(imgUrl)}
                 className="h-14 w-14 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 active:opacity-75"
               >
                 <Image source={{ uri: imgUrl }} className="h-full w-full" resizeMode="cover" />
@@ -1873,10 +1877,7 @@ function OrderCard({
 
           {order.receiverPhone ? (
             <Pressable
-              onPress={(e) => {
-                e.stopPropagation();
-                void Linking.openURL(`tel:${order.receiverPhone}`);
-              }}
+              onPress={() => void Linking.openURL(`tel:${order.receiverPhone}`)}
               style={{ backgroundColor: '#DCFCE7', borderColor: '#86EFAC' }}
               className="flex-row items-center gap-1.5 rounded-xl border px-3 py-1.5 active:opacity-75"
             >
@@ -1900,10 +1901,7 @@ function OrderCard({
 
             {order.customerPhone ? (
               <Pressable
-                onPress={(e) => {
-                  e.stopPropagation();
-                  void Linking.openURL(`tel:${order.customerPhone}`);
-                }}
+                onPress={() => void Linking.openURL(`tel:${order.customerPhone}`)}
                 style={{ backgroundColor: '#DBEAFE', borderColor: '#BFDBFE' }}
                 className="flex-row items-center gap-1 rounded-lg border px-2 py-1 active:opacity-75"
               >
@@ -1917,12 +1915,19 @@ function OrderCard({
         ) : null}
       </View>
 
+      {/* ── NÚT BÀN GIAO ĐƠN NÀY (KHI ĐÃ CHECK-IN) ── */}
       {!confirmed && !disabled ? (
-        <Text style={{ color: colors.brand.primary }} className="mt-3 text-xs font-bold">
-          {selected ? '✓ Đang chọn Order này' : 'Chạm để xử lý bàn giao →'}
-        </Text>
+        <Pressable
+          onPress={onSelect}
+          style={{ backgroundColor: selected ? colors.brand.primary : colors.brand.primarySoft }}
+          className="mt-3 flex-row items-center justify-center rounded-xl py-2.5 px-3 active:opacity-80"
+        >
+          <Text style={{ color: selected ? '#FFFFFF' : colors.brand.primary }} className="text-xs font-bold">
+            {selected ? '✓ Đang chọn đơn này' : 'Chạm để xử lý bàn giao →'}
+          </Text>
+        </Pressable>
       ) : null}
-    </Pressable>
+    </View>
   );
 }
 

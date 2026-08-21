@@ -68,12 +68,14 @@ export default function DriverLayout() {
           tabBarIcon: ({ color }) => <Ionicons name="map-outline" size={24} color={color} />,
           popToTopOnBlur: true,
         }}
-        listeners={{
+        listeners={({ navigation }) => ({
           tabPress: (e) => {
-            e.preventDefault();
-            router.replace('/(driver)/trips');
+            if (navigation.isFocused()) {
+              e.preventDefault();
+              router.replace('/(driver)/trips');
+            }
           },
-        }}
+        })}
       />
       <Tabs.Screen
         name="history"
