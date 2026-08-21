@@ -16,7 +16,7 @@ import {
 
 import { StatusBadge } from '../../components/StatusBadge';
 import { colors } from '../../constants/colors';
-import { getApiErrorMessage } from '../../services/apiClient';
+import { ApiClientError, getApiErrorMessage } from '../../services/apiClient';
 import {
   getIncidentDetail,
   getIncidents,
@@ -56,7 +56,7 @@ export default function WarehouseEmergencyInboundScreen() {
         if (res.success && res.data) {
           setIncident(res.data);
         } else {
-          Alert.alert('Lỗi', res.message || 'Không thể tải thông tin sự cố.');
+          setIncident(null);
         }
       } else {
         // Query incidents in transit
@@ -73,7 +73,17 @@ export default function WarehouseEmergencyInboundScreen() {
         }
       }
     } catch (e: unknown) {
-      Alert.alert('Lỗi', getApiErrorMessage(e));
+      const is404 =
+        (e instanceof ApiClientError && e.status === 404) ||
+        (e instanceof Error &&
+          (e.message.includes('404') ||
+            e.message.toLowerCase().includes('not found') ||
+            e.message.toLowerCase().includes('không tìm thấy')));
+
+      if (!is404) {
+        Alert.alert('Lỗi', getApiErrorMessage(e));
+      }
+      setIncident(null);
     } finally {
       setLoading(false);
     }

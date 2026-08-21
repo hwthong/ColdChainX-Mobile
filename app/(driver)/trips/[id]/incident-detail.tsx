@@ -22,7 +22,7 @@ import {
 } from '../../../../components/driver/IncidentWorkflowStepper';
 import { StatusBadge } from '../../../../components/StatusBadge';
 import { colors } from '../../../../constants/colors';
-import { getApiErrorMessage } from '../../../../services/apiClient';
+import { ApiClientError, getApiErrorMessage } from '../../../../services/apiClient';
 import {
   assessIncidentRisk,
   confirmTransload,
@@ -85,6 +85,7 @@ export default function DriverIncidentDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isNotFound, setIsNotFound] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
   // ── Tua xem lại các bước trên Stepper ──────────────────────────────────────
@@ -166,6 +167,7 @@ export default function DriverIncidentDetailScreen() {
       const incData = response.data;
       setIncident(incData);
       setError(null);
+      setIsNotFound(false);
 
       // Tải chi tiết xe gặp sự cố & xe thay thế
       if (incData.brokenVehicleId) {
@@ -214,7 +216,19 @@ export default function DriverIncidentDetailScreen() {
 
       return incData;
     } catch (e: unknown) {
-      setError(getApiErrorMessage(e));
+      const is404 =
+        (e instanceof ApiClientError && e.status === 404) ||
+        (e instanceof Error &&
+          (e.message.includes('404') ||
+            e.message.toLowerCase().includes('not found') ||
+            e.message.toLowerCase().includes('không tìm thấy')));
+
+      if (is404) {
+        setIsNotFound(true);
+        setError(null);
+      } else {
+        setError(getApiErrorMessage(e));
+      }
       return null;
     }
   }, [token, incidentId, currentTripId]);
@@ -222,7 +236,7 @@ export default function DriverIncidentDetailScreen() {
   useFocusEffect(
     useCallback(() => {
       if (!token || !incidentId) {
-        setError('Thiếu phiên đăng nhập hoặc IncidentId hợp lệ.');
+        setError('Thiếu phiên đăng nhập hoặc mã sự cố hợp lệ.');
         setLoading(false);
         return;
       }
@@ -242,7 +256,12 @@ export default function DriverIncidentDetailScreen() {
         inFlight = false;
         setLoading(false);
         if (disposed) return;
-        if (current?.status === 'RESOLVED' || current?.status === 'CONTINUED') {
+        // Dừng polling khi sự cố không tồn tại hoặc đã kết thúc
+        if (!current) {
+          clear();
+          return;
+        }
+        if (current.status === 'RESOLVED' || current.status === 'CONTINUED') {
           clear();
           return;
         }
@@ -267,6 +286,7 @@ export default function DriverIncidentDetailScreen() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
+    setIsNotFound(false);
     await loadIncident();
     setRefreshing(false);
   };
@@ -450,6 +470,18 @@ export default function DriverIncidentDetailScreen() {
     }
   };
 
+  const handleGoBack = () => {
+    if (params.from === 'home') {
+      router.replace('/(driver)/home' as never);
+    } else if (currentTripId && currentTripId !== 'active') {
+      router.replace(`/(driver)/trips/${currentTripId}` as never);
+    } else if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(driver)/trips' as never);
+    }
+  };
+
   // ─────────────────────────────────────────────────────────────────────────
   if (loading) {
     return (
@@ -464,26 +496,100 @@ export default function DriverIncidentDetailScreen() {
 
   if (error) {
     return (
-      <View style={{ backgroundColor: colors.surface.page }} className="flex-1 items-center justify-center p-5">
-        <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="items-center rounded-3xl border p-6 shadow-sm">
-          <Ionicons name="alert-circle-outline" size={48} color={colors.status.danger.main} />
-          <Text style={{ color: colors.status.danger.main }} className="mt-4 text-center font-semibold">
-            {error}
-          </Text>
-          <Pressable onPress={handleRefresh} style={{ backgroundColor: colors.brand.primary }} className="mt-6 rounded-2xl px-6 py-3 shadow-sm">
-            <Text style={{ color: colors.text.onPrimary }} className="font-bold">Thử lại</Text>
-          </Pressable>
+      <View style={{ backgroundColor: colors.surface.page, paddingTop: insets.top }} className="flex-1">
+        {/* Header */}
+        <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="border-b px-4 py-3 shadow-sm">
+          <View className="flex-row items-center justify-between">
+            <Pressable onPress={handleGoBack} style={{ backgroundColor: colors.brand.primarySoft }} className="rounded-full p-2 active:opacity-70">
+              <Ionicons name="arrow-back" size={20} color={colors.brand.primary} />
+            </Pressable>
+            <Text style={{ color: colors.text.primary }} className="text-base font-bold">
+              Chi tiết sự cố
+            </Text>
+            <View style={{ width: 36 }} />
+          </View>
+        </View>
+
+        <View className="flex-1 items-center justify-center p-6">
+          <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="w-full max-w-sm items-center rounded-3xl border p-6 shadow-sm">
+            <Ionicons name="alert-circle-outline" size={48} color={colors.status.danger.main} />
+            <Text style={{ color: colors.status.danger.main }} className="mt-4 text-center font-semibold">
+              {error}
+            </Text>
+            <View className="mt-6 w-full flex-row gap-3">
+              <Pressable
+                onPress={handleGoBack}
+                style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default }}
+                className="flex-1 items-center justify-center rounded-2xl border py-3 active:opacity-80"
+              >
+                <Text style={{ color: colors.text.primary }} className="font-semibold">Quay lại</Text>
+              </Pressable>
+              <Pressable
+                onPress={handleRefresh}
+                style={{ backgroundColor: colors.brand.primary }}
+                className="flex-1 items-center justify-center rounded-2xl py-3 shadow-sm active:opacity-80"
+              >
+                <Text style={{ color: colors.text.onPrimary }} className="font-bold">Thử lại</Text>
+              </Pressable>
+            </View>
+          </View>
         </View>
       </View>
     );
   }
 
-  if (!incident) {
+  if (isNotFound || !incident) {
     return (
-      <View style={{ backgroundColor: colors.surface.page }} className="flex-1 items-center justify-center">
-        <Text style={{ color: colors.text.secondary }} className="font-medium">
-          Không tìm thấy dữ liệu sự cố.
-        </Text>
+      <View style={{ backgroundColor: colors.surface.page, paddingTop: insets.top }} className="flex-1">
+        {/* Header */}
+        <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="border-b px-4 py-3 shadow-sm">
+          <View className="flex-row items-center justify-between">
+            <Pressable onPress={handleGoBack} style={{ backgroundColor: colors.brand.primarySoft }} className="rounded-full p-2 active:opacity-70">
+              <Ionicons name="arrow-back" size={20} color={colors.brand.primary} />
+            </Pressable>
+            <Text style={{ color: colors.text.primary }} className="text-base font-bold">
+              Chi tiết sự cố
+            </Text>
+            <View style={{ width: 36 }} />
+          </View>
+        </View>
+
+        {/* Empty / Not Found State */}
+        <View className="flex-1 items-center justify-center p-6">
+          <View style={{ backgroundColor: colors.brand.primarySoft }} className="mb-4 h-20 w-20 items-center justify-center rounded-full">
+            <Ionicons name="shield-checkmark-outline" size={40} color={colors.brand.primary} />
+          </View>
+          <Text style={{ color: colors.text.primary }} className="text-center text-lg font-bold">
+            Sự cố không tồn tại hoặc đã được gỡ bỏ
+          </Text>
+          <Text style={{ color: colors.text.secondary }} className="mt-2 text-center text-sm leading-5">
+            Mã sự cố này không tìm thấy trên hệ thống hoặc đã hoàn tất xử lý. Vui lòng quay lại danh sách chuyến xe.
+          </Text>
+
+          <View className="mt-6 w-full max-w-xs flex-col gap-3">
+            <Pressable
+              onPress={handleGoBack}
+              style={{ backgroundColor: colors.brand.primary }}
+              className="w-full flex-row items-center justify-center rounded-2xl py-3.5 shadow-sm active:opacity-80"
+            >
+              <Ionicons name="arrow-back" size={18} color={colors.text.onPrimary} style={{ marginRight: 8 }} />
+              <Text style={{ color: colors.text.onPrimary }} className="font-bold">
+                Quay lại chuyến xe
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={handleRefresh}
+              style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }}
+              className="w-full flex-row items-center justify-center rounded-2xl border py-3 active:opacity-80"
+            >
+              <Ionicons name="refresh" size={18} color={colors.text.secondary} style={{ marginRight: 8 }} />
+              <Text style={{ color: colors.text.secondary }} className="font-medium">
+                Thử tải lại
+              </Text>
+            </Pressable>
+          </View>
+        </View>
       </View>
     );
   }
