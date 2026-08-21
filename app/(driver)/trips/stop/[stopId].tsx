@@ -264,8 +264,33 @@ export default function StopDetailScreen() {
             }
           : undefined);
 
-      const currentStop: DriverTripStopDto | null =
-        tripDetail.stops?.find((stop) => stop.stopId === stopId) ??
+      // 1. Tìm trực tiếp theo stopId trong tripDetail.stops
+      let matchedStop = tripDetail.stops?.find((stop) => stop.stopId === stopId);
+
+      // 2. Nếu không thấy theo ID trực tiếp, tìm theo stopSequence của routeStop
+      if (!matchedStop && routeStop) {
+        const seq = (routeStop as { optimizedSequence?: number; originalStopSequence?: number }).optimizedSequence
+          ?? (routeStop as { originalStopSequence?: number }).originalStopSequence;
+        if (seq !== undefined) {
+          matchedStop = tripDetail.stops?.find((s) => s.stopSequence === seq);
+        }
+      }
+
+      // 3. Nếu vẫn không thấy và tripDetail.stops có dữ liệu, ánh xạ theo index
+      if (!matchedStop && tripDetail.stops && tripDetail.stops.length > 0) {
+        if (tripDetail.stops.length === 1) {
+          matchedStop = tripDetail.stops[0];
+        } else {
+          const routeIndex = route.optimizedStops?.findIndex(
+            (s) => s.stopId === stopId || (s as { locationId?: string }).locationId === stopId
+          );
+          if (routeIndex !== undefined && routeIndex >= 0 && tripDetail.stops[routeIndex]) {
+            matchedStop = tripDetail.stops[routeIndex];
+          }
+        }
+      }
+
+      const currentStop: DriverTripStopDto | null = matchedStop ??
         (routeStop
           ? ({
               stopId: routeStop.stopId || stopId,
@@ -483,7 +508,8 @@ export default function StopDetailScreen() {
 
     try {
       setIsProcessing(true);
-      const result = await deliveryApi.confirmHandover(stopId, {
+      const targetStopId = driverStop?.stopId || stopId;
+      const result = await deliveryApi.confirmHandover(targetStopId, {
         tripId,
         customerId: selectedOrder.customerId,
         signatureFile: toDeliveryUploadFile(signatureAsset, 'receiver-signature.jpg'),
@@ -657,10 +683,11 @@ export default function StopDetailScreen() {
   };
 
   const handleCutSeal = async () => {
-    if (!stopId || !tripId) return;
+    const targetStopId = driverStop?.stopId || stopId;
+    if (!targetStopId || !tripId) return;
     try {
       setIsProcessing(true);
-      setCutSeal(await deliveryApi.cutSeal(tripId, stopId));
+      setCutSeal(await deliveryApi.cutSeal(tripId, targetStopId));
       await loadData(false);
     } catch (error) {
       Alert.alert('Không thể cắt seal', formatActionError(error, 'CUT_SEAL'));
@@ -707,7 +734,8 @@ export default function StopDetailScreen() {
 
   const submitPartialHandover = async (submission: PartialHandoverSubmission) => {
     if (mutationLock.current || isProcessing) return;
-    if (!stopId) {
+    const targetStopId = driverStop?.stopId || stopId;
+    if (!targetStopId) {
       Alert.alert('Thiếu StopId', 'Không xác định được điểm dừng. Vui lòng tải lại màn hình.');
       return;
     }
@@ -723,7 +751,7 @@ export default function StopDetailScreen() {
     try {
       mutationLock.current = true;
       setIsProcessing(true);
-      const result = await deliveryApi.processDynamicCod(stopId, {
+      const result = await deliveryApi.processDynamicCod(targetStopId, {
         tripId,
         customerId: selectedOrder.customerId,
         rejectedQuantity: submission.rejectedQuantity,
@@ -738,11 +766,12 @@ export default function StopDetailScreen() {
         orderId: selectedOrder.orderId,
         status: 'OSD_PARTIAL_DELIVER',
         paymentAmountDue: responseCodDue,
-        paymentStatus: responseCodDue > 0 ? 'AWAITING_PAYMENT' : 'PAID',
-        handoverConfirmedAt: result.handoverConfirmedAt ?? null,
+        paymentStatus: responseCodDue > 0 ? 'AWAITING_PAYMENT' : null,
+        handoverPdfUrl: (result as { handoverPdfUrl?: string | null }).handoverPdfUrl || null,
       };
       try {
-        resolvedEpod = await deliveryApi.getEpodByOrderId(selectedOrder.orderId);
+        const fetchedEpod = await deliveryApi.getEpodByOrderId(selectedOrder.orderId);
+        if (fetchedEpod) resolvedEpod = fetchedEpod;
       } catch {
         // Dynamic COD succeeded. Keep its typed response so the existing payment flow can retry.
       }
@@ -750,8 +779,7 @@ export default function StopDetailScreen() {
       setEpodId(result.epodId);
       setEpod(resolvedEpod);
       setPartialResult(result);
-      setPartialCodDue(resolvedEpod.paymentAmountDue ?? responseCodDue);
-      setReturnFlowActive(result.isReturnToWarehouse && result.rejectedQuantity > 0);
+      setReturnFlowActive(result.isReturnToWarehouse);
       setReturnCargoSummary(result.isReturnToWarehouse ? {
         lpnCode: result.lpnCode,
         quantity: result.rejectedQuantity,
@@ -769,9 +797,18 @@ export default function StopDetailScreen() {
   };
 
   const submitRejectEntireLpn = async () => {
-    if (mutationLock.current || isProcessing || !stopId || !tripId || !selectedOrder) return;
-    if (!selectedOrder.customerId) {
-      Alert.alert('Thiếu dữ liệu đơn hàng', 'Không xác định được khách hàng của đơn. Vui lòng tải lại điểm dừng.');
+    if (mutationLock.current || isProcessing) return;
+    const targetStopId = driverStop?.stopId || stopId;
+    if (!targetStopId) {
+      Alert.alert('Thiếu StopId', 'Không xác định được điểm dừng. Vui lòng tải lại màn hình.');
+      return;
+    }
+    if (!tripId) {
+      Alert.alert('Thiếu TripId', 'Không xác định được chuyến đi. Vui lòng tải lại màn hình.');
+      return;
+    }
+    if (!selectedOrder?.customerId) {
+      Alert.alert('Thiếu CustomerId', 'Không xác định được khách hàng của đơn. Vui lòng tải lại điểm dừng.');
       return;
     }
     if (!rejectionReason.trim()) {
@@ -786,7 +823,7 @@ export default function StopDetailScreen() {
     try {
       mutationLock.current = true;
       setIsProcessing(true);
-      const result = await deliveryApi.rejectEntireLpn(stopId, {
+      const result = await deliveryApi.rejectEntireLpn(targetStopId, {
         tripId,
         customerId: selectedOrder.customerId,
         rejectionReason: rejectionReason.trim(),
@@ -835,7 +872,8 @@ export default function StopDetailScreen() {
   };
 
   const submitNoShow = async () => {
-    if (mutationLock.current || isProcessing || !stopId) return;
+    const targetStopId = driverStop?.stopId || stopId;
+    if (mutationLock.current || isProcessing || !targetStopId) return;
     if (!noShowEvidenceAsset) {
       Alert.alert('Thiếu ảnh minh chứng', 'Vui lòng thêm ảnh minh chứng.');
       return;
@@ -848,7 +886,7 @@ export default function StopDetailScreen() {
       mutationLock.current = true;
       setIsProcessing(true);
       await deliveryApi.reportNoShow(
-        stopId,
+        targetStopId,
         toDeliveryUploadFile(noShowEvidenceAsset, 'customer-no-show-evidence.jpg')
       );
       setReturnFlowActive(true);
