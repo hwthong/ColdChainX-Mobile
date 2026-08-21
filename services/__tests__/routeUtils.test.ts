@@ -13,12 +13,24 @@ import type {
   TripRouteResponse,
 } from '../trackingApi';
 import {
+  normalizeTrackingData,
   normalizeTripRoute,
   normalizeTripRouteApiResponse,
 } from '../trackingApi';
 
 describe('Trip Route Utilities & Multi-Stop Delivery Mapping', () => {
   describe('1. API Normalization (camelCase and PascalCase support)', () => {
+    it('normalizes the active trip seal number for Driver LPN cards', () => {
+      const normalized = normalizeTrackingData({
+        TripId: '550e8400-e29b-41d4-a716-446655440000',
+        Status: 'IN_TRANSIT',
+        SealNumber: 'SEAL-DRIVER-001',
+        Orders: [],
+      });
+
+      assert.equal(normalized?.sealNumber, 'SEAL-DRIVER-001');
+    });
+
     it('should correctly normalize camelCase JSON response from backend', () => {
       const rawCamelCase = {
         tripId: '550e8400-e29b-41d4-a716-446655440000',

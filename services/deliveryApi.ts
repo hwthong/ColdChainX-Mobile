@@ -1,6 +1,9 @@
 import { apiRequest } from './apiClient';
 import type { ApiResponse } from './trackingApi';
 import { useAuthStore } from '../store/useAuthStore';
+import { normalizeNearestReturnWarehouses } from './returnWarehouse';
+
+export type { NearestReturnWarehousesResponse, ReturnWarehouse } from './returnWarehouse';
 
 export type DeliveryUploadFile = {
   uri: string;
@@ -165,22 +168,6 @@ export type ProcessDynamicCodResponse = {
   step1_EvidenceCapture?: DynamicCodEvidenceCapture | null;
   actualCodDue?: number | null;
   nextStep?: string | null;
-};
-
-export type ReturnWarehouse = {
-  warehouseId: string;
-  warehouseCode: string;
-  warehouseName: string;
-  address: string;
-  distanceKm: string;
-  estimatedTravelTimeMinutes: number;
-  status: string;
-};
-
-export type NearestReturnWarehousesResponse = {
-  totalWarehouses: number;
-  warehouses: ReturnWarehouse[];
-  message?: string;
 };
 
 export type CloseShiftResponse = {
@@ -356,11 +343,13 @@ export const deliveryApi = {
   },
 
   getNearestReturnWarehouses: async (tripId: string) => {
-    const response = await apiRequest<ApiResponse<NearestReturnWarehousesResponse>>(
+    const response = await apiRequest<ApiResponse<unknown>>(
       `/api/Delivery/nearest-return-warehouses?tripId=${encodeURIComponent(tripId)}`,
       { method: 'GET', headers: getAuthHeaders() }
     );
-    return unwrap(response, 'Không thể tải danh sách kho trả hàng.');
+    return normalizeNearestReturnWarehouses(
+      unwrap(response, 'Không thể tải danh sách kho trả hàng.')
+    );
   },
 
   closeShift: async (tripId: string, warehouseId: string) => {

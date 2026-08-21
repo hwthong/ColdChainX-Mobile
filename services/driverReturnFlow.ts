@@ -28,3 +28,28 @@ export function hasRemainingDeliveryStops(
 export function tripHasNoShowStop(stops: DeliveryStopProgress[]) {
   return stops.some((stop) => (stop.status || '').toUpperCase() === 'SKIPPED_NOSHOW');
 }
+
+export function getVisibleReturnWarehouses<T>(
+  warehouses: T[],
+  expanded: boolean,
+  initialCount = 5
+) {
+  return expanded ? warehouses : warehouses.slice(0, initialCount);
+}
+
+export function canCloseDriverShift({
+  allOrdersHandedOver,
+  allPaymentsReady,
+  hasRemainingStops,
+  tripStatus,
+}: {
+  allOrdersHandedOver: boolean;
+  allPaymentsReady: boolean;
+  hasRemainingStops: boolean;
+  tripStatus: string;
+}) {
+  return allOrdersHandedOver
+    && allPaymentsReady
+    && !hasRemainingStops
+    && tripStatus.toUpperCase() !== 'COMPLETED';
+}

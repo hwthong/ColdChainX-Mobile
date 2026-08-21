@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  canCloseDriverShift,
+  getVisibleReturnWarehouses,
   hasRemainingDeliveryStops,
   tripHasNoShowStop,
 } from '../driverReturnFlow';
@@ -42,4 +44,31 @@ test('an unfinished earlier delivery stop also blocks closing the shift', () => 
     ], 'current-last-stop'),
     true
   );
+});
+
+test('return warehouse list shows five nearest items before expanding', () => {
+  const warehouses = Array.from({ length: 8 }, (_, index) => `warehouse-${index + 1}`);
+
+  assert.deepEqual(
+    getVisibleReturnWarehouses(warehouses, false),
+    warehouses.slice(0, 5)
+  );
+  assert.deepEqual(getVisibleReturnWarehouses(warehouses, true), warehouses);
+});
+
+test('closing the shift is forbidden until the final order and stop are complete', () => {
+  const completedOrderState = {
+    allOrdersHandedOver: true,
+    allPaymentsReady: true,
+    tripStatus: 'IN_TRANSIT',
+  };
+
+  assert.equal(canCloseDriverShift({
+    ...completedOrderState,
+    hasRemainingStops: true,
+  }), false);
+  assert.equal(canCloseDriverShift({
+    ...completedOrderState,
+    hasRemainingStops: false,
+  }), true);
 });
