@@ -425,24 +425,24 @@ export default function DriverIncidentDetailScreen() {
       setIsContinueTripModalVisible(true);
     } else {
       // Nhánh cứu hộ: confirm-transload đã cập nhật trip → IN_TRANSIT, chỉ cần navigate
-      const targetTripId = incident?.tripId || currentTripId;
+      const targetTripId = incident?.tripId || (currentTripId !== 'active' ? currentTripId : null);
       setStep4ManuallyConfirmed(true);
       setSelectedStep(null);
       if (targetTripId) {
-        router.replace(`/trips/${targetTripId}` as never);
+        router.replace(`/(driver)/trips/${targetTripId}` as never);
       } else {
-        router.back();
+        router.replace('/(driver)/trips' as never);
       }
     }
   };
 
-  // Navigate thẳng về trang chuyến xe (dùng cho Step 5)
+  // Navigate thẳng về trang chuyến xe (dùng cho Step 5 hoặc khi sự cố đã xử lý xong)
   const handleOpenTripFromStep5 = () => {
-    const targetTripId = incident?.tripId || currentTripId;
+    const targetTripId = incident?.tripId || (currentTripId !== 'active' ? currentTripId : null);
     if (targetTripId) {
-      router.replace(`/trips/${targetTripId}` as never);
+      router.replace(`/(driver)/trips/${targetTripId}` as never);
     } else {
-      router.back();
+      router.replace('/(driver)/trips' as never);
     }
   };
 
@@ -1012,7 +1012,7 @@ export default function DriverIncidentDetailScreen() {
                 </View>
                 <View style={{ backgroundColor: colors.status.success.bg }} className="rounded-full px-2.5 py-1 shrink-0">
                   <Text style={{ color: colors.status.success.main }} className="text-[10px] font-bold">
-                    {incident.status === 'TRANSLOAD_COMPLETED' || currentStep > 3 ? '✓ Đã sang hàng' : 'Đang sang hàng'}
+                    {incident.status === 'TRANSLOAD_COMPLETED' || incident.status === 'RESOLVED' || incident.status === 'CONTINUED' || currentStep > 3 ? '✓ Đã sang hàng' : 'Đang sang hàng'}
                   </Text>
                 </View>
               </View>
@@ -1484,16 +1484,13 @@ export default function DriverIncidentDetailScreen() {
               </Pressable>
             ) : null}
 
-            {/* CTA: Bước 4: Tiếp tục chuyến xe
-                - requiresRescue === false → gọi API continue-trip qua modal
-                - requiresRescue === true (TRANSLOAD_COMPLETED) → trip đã IN_TRANSIT, navigate về trip
-            */}
-            {currentStep === 4 && incident.status !== 'RESOLVED' ? (
+            {/* CTA: Bước 4: Tiếp tục chuyến xe */}
+            {currentStep === 4 && incident.status !== 'RESOLVED' && incident.status !== 'CONTINUED' && incident.status !== 'TRANSLOAD_COMPLETED' ? (
               <Pressable
                 onPress={handleConfirmContinueFromStep4}
                 disabled={isContinueTripSubmitting}
                 style={{ backgroundColor: colors.brand.primary, minHeight: 48 }}
-                className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm px-4"
+                className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm px-4 active:opacity-80"
               >
                 {isContinueTripSubmitting ? (
                   <ActivityIndicator color="#fff" />
@@ -1510,16 +1507,16 @@ export default function DriverIncidentDetailScreen() {
               </Pressable>
             ) : null}
 
-            {/* CTA: Bước 5: Mở trang giao hàng các điểm dừng */}
-            {currentStep === 5 && incident.status !== 'RESOLVED' ? (
+            {/* CTA: Bước 5 hoặc Khi sự cố đã xử lý xong (RESOLVED, CONTINUED, TRANSLOAD_COMPLETED) */}
+            {(incident.status === 'RESOLVED' || incident.status === 'CONTINUED' || incident.status === 'TRANSLOAD_COMPLETED' || currentStep >= 5) && !canDriverSelfContinue ? (
               <Pressable
                 onPress={handleOpenTripFromStep5}
                 style={{ backgroundColor: colors.brand.primary, minHeight: 48 }}
-                className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm px-4"
+                className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm px-4 active:opacity-80"
               >
                 <Ionicons name="navigate" size={18} color="#ffffff" />
                 <Text className="text-base font-bold text-white">
-                  🚀 Mở chuyến xe để giao hàng các điểm dừng
+                  🚀 Tiếp tục chuyến xe & Giao hàng
                 </Text>
               </Pressable>
             ) : null}
