@@ -1331,15 +1331,10 @@ export default function DriverIncidentDetailScreen() {
             <Text style={{ color: colors.text.primary }} className="text-base font-bold">Chi tiết sự cố ban đầu</Text>
           </View>
           <InfoRow
-            label="Mã chuyến đi"
+            label="Mã chuyến đi (Trip ID)"
             value={
-              incident.tripCode
-                ? `#${incident.tripCode.replace(/^#/, '')}`
-                : incident.tripId
-                  ? `${incident.tripId.slice(0, 8)}...`
-                  : typeof params.id === 'string'
-                    ? `#${params.id.slice(0, 8).toUpperCase()}`
-                    : '--'
+              incident.tripId ||
+              (typeof params.id === 'string' ? params.id : '--')
             }
             highlight
           />

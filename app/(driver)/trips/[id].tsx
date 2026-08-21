@@ -680,7 +680,7 @@ export default function DriverTripDetailScreen() {
             <>
               <InfoRow
                 label="Mã chuyến (Trip ID)"
-                value={tripId ? `#${tripId.slice(0, 8).toUpperCase()}` : '--'}
+                value={tripId || '--'}
                 highlight
               />
               <InfoRow label="Quãng đường" value={formatDistance(route.totalDistanceMeters)} />
@@ -740,7 +740,7 @@ export default function DriverTripDetailScreen() {
             </View>
             <InfoRow
               label="Mã chuyến (Trip ID)"
-              value={tripId ? `#${tripId.slice(0, 8).toUpperCase()}` : '--'}
+              value={tripId || '--'}
               highlight
             />
             <InfoRow
