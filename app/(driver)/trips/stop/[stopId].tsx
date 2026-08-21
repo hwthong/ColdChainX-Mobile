@@ -397,18 +397,19 @@ export default function StopDetailScreen() {
   );
 
   const handleCheckIn = async () => {
-    if (!stopId || !checkinProofAsset) {
+    const targetStopId = driverStop?.stopId || stopId;
+    if (!targetStopId || !checkinProofAsset) {
       Alert.alert('Thiếu ảnh xác nhận', 'Vui lòng thêm ảnh xác nhận trước khi check-in.');
       return;
     }
 
     try {
       setIsProcessing(true);
-      await deliveryApi.checkInStop(stopId, toDeliveryUploadFile(checkinProofAsset, 'checkin-proof.jpg'));
+      await deliveryApi.checkInStop(targetStopId, toDeliveryUploadFile(checkinProofAsset, 'checkin-proof.jpg'));
       const reloaded = await loadData(false);
       Alert.alert(
         'Đã xác nhận đến điểm giao',
-        reloaded ? 'Stop đã được cập nhật.' : 'Yêu cầu đã được ghi nhận. Vui lòng tải lại để xem trạng thái mới.'
+        reloaded ? 'Điểm giao đã được xác nhận đến.' : 'Yêu cầu đã được ghi nhận. Vui lòng tải lại để xem trạng thái mới.'
       );
     } catch (error) {
       Alert.alert('Không thể xác nhận đến điểm giao', formatActionError(error, 'CHECK_IN'));
@@ -2474,6 +2475,9 @@ function formatActionError(
       return 'Bạn không có quyền thực hiện thao tác này.';
     }
     if (error.status === 404) {
+      if (action === 'CHECK_IN') {
+        return 'Không tìm thấy thông tin điểm dừng trên hệ thống hoặc điểm dừng chưa sẵn sàng để check-in. Vui lòng tải lại.';
+      }
       if (action === 'TEMPERATURE') {
         return 'Thiết bị IoT đang ghi nhận dữ liệu định kỳ. Chưa có lịch sử đo nhiệt độ cho chặng này.';
       }
