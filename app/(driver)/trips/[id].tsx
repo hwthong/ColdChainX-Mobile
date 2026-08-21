@@ -281,8 +281,20 @@ export default function DriverTripDetailScreen() {
     if (trip?.stops && trip.stops.length > 0) {
       return trip.stops;
     }
+    if (route?.optimizedStops && route.optimizedStops.length > 0) {
+      return route.optimizedStops.map((s, idx) => ({
+        stopId: s.stopId || (s as { locationId?: string }).locationId || `stop-${idx}`,
+        locationId: (s as { locationId?: string }).locationId,
+        stopSequence: s.optimizedSequence ?? s.originalStopSequence ?? idx + 1,
+        address: s.address || 'Điểm giao hàng',
+        plannedArrivalTime: (s as { plannedArrivalTime?: string }).plannedArrivalTime ?? null,
+        plannedDepartureTime: (s as { plannedDepartureTime?: string }).plannedDepartureTime ?? null,
+        status: (s as { status?: string }).status || 'PLANNED',
+        stopType: s.stopType || 'DELIVERY',
+      }));
+    }
     return [];
-  }, [trip?.stops]);
+  }, [trip?.stops, route?.optimizedStops]);
 
   const nextStopIndex = useMemo(() => {
     const finishedStatuses = new Set(['DEPARTED', 'COMPLETED', 'SKIPPED_NOSHOW', 'FAILED_DELIVERY']);
