@@ -550,8 +550,8 @@ function buildMapHtml(
       color: #BE123C;
     }
     .popup-badge.destination {
-      background: #EFF6FF;
-      color: #1D4ED8;
+      background: #FEE2E2;
+      color: #B91C1C;
     }
     .popup-title {
       font-size: 13px;
@@ -728,9 +728,9 @@ function buildMapHtml(
             const markerEl = document.createElement('div');
             markerEl.className = 'custom-pin ' + point.type;
 
-            const pinColorTop = isFinal ? '#3B82F6' : isOrigin ? '#10B981' : '#F43F5E';
-            const pinColorBottom = isFinal ? '#1E40AF' : isOrigin ? '#047857' : '#BE123C';
-            const textFill = isFinal ? '#1E40AF' : isOrigin ? '#047857' : '#BE123C';
+            const pinColorTop = isFinal ? '#EF4444' : isOrigin ? '#10B981' : '#F43F5E';
+            const pinColorBottom = isFinal ? '#B91C1C' : isOrigin ? '#047857' : '#BE123C';
+            const textFill = isFinal ? '#B91C1C' : isOrigin ? '#047857' : '#BE123C';
             const labelText = isOrigin ? 'A' : String(seqNumber);
             const fontSize = isOrigin ? '9' : (labelText.length > 1 ? '8.5' : '10.5');
 

@@ -42,7 +42,6 @@ import {
   type InboundScheduleResponse,
 } from '../../services/asnApi';
 import { getApiErrorMessage } from '../../services/apiClient';
-import { getDiscrepancyPdf } from '../../services/discrepancyApi';
 import {
   generateInboundReceipt,
   getInboundOrderQcReference,
@@ -73,14 +72,12 @@ import { getWarehouseIdFromToken } from '../../services/jwt';
 import { useAuthStore } from '../../store/useAuthStore';
 
 const STATUS_CHIPS = [
-  { key: '', label: 'Tất cả' },
+  { key: '', label: 'Tất cả chờ QC' },
   { key: 'SCHEDULED', label: 'Đã đặt lịch' },
   { key: 'ARRIVED', label: 'Hàng đã đến' },
-  { key: 'QC_PASSED', label: 'QC đạt' },
-  { key: 'RECEIVING', label: 'Đang nhận' },
-  { key: 'DISCREPANCY_HOLD', label: 'Sai lệch' },
-  { key: 'IN_STOCK', label: 'Đã nhập kho' },
 ];
+
+const QC_ACTIONABLE_ASN_STATUSES = new Set(['SCHEDULED', 'ARRIVED']);
 
 type ScheduleSource = 'LOADING' | 'PRIMARY' | 'FALLBACK' | 'ERROR';
 type InboundMode = 'ASN' | 'RETURNS';
@@ -99,7 +96,6 @@ export default function WarehouseInboundScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [schedule, setSchedule] = useState<InboundScheduleResponse[]>([]);
   const [selectedAsn, setSelectedAsn] = useState<InboundScheduleResponse | null>(null);
-  const [manualAsnId, setManualAsnId] = useState('');
   const [isLoadingSchedule, setIsLoadingSchedule] = useState(false);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [scheduleSource, setScheduleSource] = useState<ScheduleSource>('LOADING');
@@ -134,6 +130,7 @@ export default function WarehouseInboundScreen() {
   const [recheckEvidence, setRecheckEvidence] = useState<EvidenceImage[]>([]);
   const [recheckResult, setRecheckResult] = useState<InboundQcResponse | null>(null);
   const [recheckMeasurementsLoaded, setRecheckMeasurementsLoaded] = useState(false);
+  const [isEditingQcMeasurements, setIsEditingQcMeasurements] = useState(false);
   const [lpnStatus, setLpnStatus] = useState<string | null>(null);
   const [lpnWarehouseId, setLpnWarehouseId] = useState<string | null>(null);
   const [lpnHasWarehouseReceipt, setLpnHasWarehouseReceipt] = useState(false);
@@ -147,7 +144,7 @@ export default function WarehouseInboundScreen() {
   const [storageLocation, setStorageLocation] = useState('');
   const [putawayResult, setPutawayResult] = useState<PutawayResponse | null>(null);
 
-  const activeAsnId = useMemo(() => selectedAsn?.asnId ?? manualAsnId.trim(), [manualAsnId, selectedAsn]);
+  const activeAsnId = selectedAsn?.asnId ?? '';
   const latestInboundResult = recheckResult ?? qcResult;
   const latestResultForCurrentLpn =
     latestInboundResult?.lpnId && latestInboundResult.lpnId === lpnId.trim() ? latestInboundResult : null;
@@ -155,7 +152,7 @@ export default function WarehouseInboundScreen() {
   const hasReceiptForCurrentLpn =
     lpnHasWarehouseReceipt || Boolean(lpnReceiptPdfUrl?.trim() || receiptResult?.success || receiptResult?.pdfUrl);
   const canPutaway = currentLpnState === 'RECEIVING' && hasReceiptForCurrentLpn;
-  const canGenerateReceipt = (!currentLpnState || currentLpnState === 'RECEIVING') && !hasReceiptForCurrentLpn;
+  const canGenerateReceipt = currentLpnState === 'RECEIVING' && !hasReceiptForCurrentLpn;
   const canOfferQcCorrection = currentLpnState === 'RECEIVING' && !hasReceiptForCurrentLpn;
   const canSubmitQcCorrection = canOfferQcCorrection && recheckMeasurementsLoaded;
   const warehouseIdFromToken = useMemo(() => (token ? getWarehouseIdFromToken(token) : null), [token]);
@@ -169,12 +166,10 @@ export default function WarehouseInboundScreen() {
 
   const workflowStepsConfig: WorkflowStepConfig[] = useMemo(() => {
     const isQcCompleted = Boolean(qcResult?.success || recheckResult?.success || currentLpnState === 'RECEIVING' || currentLpnState === 'IN_STOCK');
-    const isRetestAvailable = Boolean(qcResult || lpnId.trim());
-    const isDiscrepancyAvailable = Boolean(currentLpnState === 'DISCREPANCY_HOLD' || latestInboundResult?.state === 'DISCREPANCY_HOLD');
     const isReceiptCompleted = Boolean(hasReceiptForCurrentLpn);
-    const isReceiptAvailable = Boolean(canGenerateReceipt || currentLpnState === 'RECEIVING');
+    const isReceiptAvailable = currentLpnState === 'RECEIVING';
     const isPutawayCompleted = Boolean(currentLpnState === 'IN_STOCK');
-    const isPutawayAvailable = Boolean(canPutaway || currentLpnState === 'RECEIVING');
+    const isPutawayAvailable = canPutaway;
 
     return [
       {
@@ -184,31 +179,19 @@ export default function WarehouseInboundScreen() {
         state: activeStep === 'qc' ? 'ACTIVE' : isQcCompleted ? 'COMPLETED' : 'AVAILABLE',
       },
       {
-        key: 'measurements',
-        label: 'Kiểm tra',
-        stepNumber: 2,
-        state: activeStep === 'measurements' ? 'ACTIVE' : recheckResult?.success ? 'COMPLETED' : isRetestAvailable ? 'AVAILABLE' : 'LOCKED',
-      },
-      {
-        key: 'discrepancy',
-        label: 'Sai lệch',
-        stepNumber: 3,
-        state: activeStep === 'discrepancy' ? 'ACTIVE' : isDiscrepancyAvailable ? 'AVAILABLE' : 'LOCKED',
-      },
-      {
         key: 'receipt',
         label: 'Phiếu nhập',
-        stepNumber: 4,
+        stepNumber: 2,
         state: activeStep === 'receipt' ? 'ACTIVE' : isReceiptCompleted ? 'COMPLETED' : isReceiptAvailable ? 'AVAILABLE' : 'LOCKED',
       },
       {
         key: 'putaway',
         label: 'Nhập kho',
-        stepNumber: 5,
+        stepNumber: 3,
         state: activeStep === 'putaway' ? 'ACTIVE' : isPutawayCompleted ? 'COMPLETED' : isPutawayAvailable ? 'AVAILABLE' : 'LOCKED',
       },
     ];
-  }, [activeStep, canGenerateReceipt, canPutaway, currentLpnState, hasReceiptForCurrentLpn, latestInboundResult?.state, lpnId, qcResult, recheckResult]);
+  }, [activeStep, canPutaway, currentLpnState, hasReceiptForCurrentLpn, qcResult, recheckResult]);
 
   const loadSchedule = useCallback(async () => {
     const requestId = ++scheduleRequestId.current;
@@ -321,8 +304,11 @@ export default function WarehouseInboundScreen() {
 
   const filteredSchedule = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return schedule;
-    return schedule.filter((asn) => {
+    const pendingQcSchedule = schedule.filter((asn) => (
+      QC_ACTIONABLE_ASN_STATUSES.has(asn.status.trim().toUpperCase())
+    ));
+    if (!query) return pendingQcSchedule;
+    return pendingQcSchedule.filter((asn) => {
       const codeMatch = asn.asnCode?.toLowerCase().includes(query);
       const trackingMatch = asn.trackingCode?.toLowerCase().includes(query);
       const itemMatch = asn.itemName?.toLowerCase().includes(query);
@@ -438,13 +424,17 @@ export default function WarehouseInboundScreen() {
     setRecheckEvidence([]);
     setRecheckResult(null);
     setRecheckMeasurementsLoaded(false);
+    setIsEditingQcMeasurements(false);
     setLpnId('');
     setReceiptId('');
+    setDelivererName('');
+    setVehiclePlate('');
+    setReceiptNote('');
+    setStorageLocation('');
   };
 
   const selectAsn = (asn: InboundScheduleResponse) => {
     setSelectedAsn(asn);
-    setManualAsnId(asn.asnId);
     resetQcWorkflow();
     setLpnStatus(null);
     setLpnWarehouseId(null);
@@ -466,6 +456,7 @@ export default function WarehouseInboundScreen() {
     setRecheckEvidence([]);
     setRecheckResult(null);
     setRecheckMeasurementsLoaded(false);
+    setIsEditingQcMeasurements(false);
     setLpnStatus(null);
     setLpnWarehouseId(null);
     setLpnHasWarehouseReceipt(false);
@@ -490,6 +481,7 @@ export default function WarehouseInboundScreen() {
   };
 
   const handleLoadQcForCorrection = async () => {
+    setIsEditingQcMeasurements(false);
     try {
       requireToken(token);
       requireGuid(lpnId.trim(), 'Mã LPN');
@@ -509,6 +501,7 @@ export default function WarehouseInboundScreen() {
       } else if ((lpn.actualPackageLines ?? []).length === 0) {
         setActionMessage('LPN chưa có dữ liệu quy cách thực tế để chỉnh sửa.');
       } else {
+        setIsEditingQcMeasurements(true);
         setActionMessage('Đã tải kết quả QC hiện tại. Bạn có thể chỉnh sửa từng số đo.');
       }
     } catch (error) {
@@ -589,7 +582,8 @@ export default function WarehouseInboundScreen() {
         }
       }
 
-      setActiveStep(response.state === 'DISCREPANCY_HOLD' ? 'measurements' : 'receipt');
+      setActiveStep('receipt');
+      void loadSchedule();
     } catch (error) {
       setActionMessage(getApiErrorMessage(error));
     } finally {
@@ -665,7 +659,8 @@ export default function WarehouseInboundScreen() {
         });
         setActionMessage(`${response.message} Không thể làm mới chi tiết LPN; vui lòng tải lại trạng thái.`);
       }
-      setActiveStep(response.state === 'DISCREPANCY_HOLD' ? 'discrepancy' : 'receipt');
+      setIsEditingQcMeasurements(false);
+      setActiveStep('receipt');
     } catch (error) {
       setActionMessage(getApiErrorMessage(error));
     } finally {
@@ -685,12 +680,11 @@ export default function WarehouseInboundScreen() {
       applyLpnSnapshot(lpn);
 
       if (lpn.state === 'RECEIVING') {
-        setActionMessage(
-          hasGeneratedWarehouseReceipt(lpn)
-            ? 'Trạng thái LPN: RECEIVING. Đã có phiếu nhập, có thể nhập vị trí kho.'
-            : 'LPN đang chờ tạo phiếu nhập kho. Vui lòng tạo phiếu nhập trước khi nhập vị trí kho.'
-        );
-        setActiveStep('putaway');
+        const hasReceipt = hasGeneratedWarehouseReceipt(lpn);
+        setActionMessage(hasReceipt
+          ? 'Trạng thái LPN: RECEIVING. Đã có phiếu nhập, có thể nhập vị trí kho.'
+          : 'LPN đang chờ tạo phiếu nhập kho.');
+        setActiveStep(hasReceipt ? 'putaway' : 'receipt');
       } else if (lpn.state === 'RETURN_PENDING') {
         setActionMessage('Lô hàng đang chờ trả hàng, không thể nhập kho.');
         setActiveStep('putaway');
@@ -699,7 +693,7 @@ export default function WarehouseInboundScreen() {
         setActiveStep('putaway');
       } else {
         const stateLabel = getStatusStyle(lpn.state || '').label;
-        setActionMessage(`Trạng thái LPN: ${stateLabel}. Sales/Admin cần xử lý sai lệch trước khi nhập kho.`);
+        setActionMessage(`LPN chưa sẵn sàng nhập kho. Trạng thái hiện tại: ${stateLabel}.`);
       }
     } catch (error) {
       setActionMessage(getApiErrorMessage(error));
@@ -868,22 +862,12 @@ export default function WarehouseInboundScreen() {
     const url =
       receiptResult?.pdfUrl ||
       lpnReceiptPdfUrl ||
-      recheckResult?.pdfUrl ||
-      qcResult?.pdfUrl ||
       (hasReceiptForCurrentLpn && receiptId ? getInboundReceiptPdf(receiptId) : null);
     if (!url) {
       setActionMessage('Chưa tạo phiếu nhập kho. Vui lòng tạo phiếu nhập trước khi mở PDF.');
       return;
     }
     await WebBrowser.openBrowserAsync(encodeURI(url));
-  };
-
-  const openDiscrepancyPdf = async () => {
-    if (!receiptId) {
-      setActionMessage('Cần mã phiếu nhập để mở biên bản bất thường.');
-      return;
-    }
-    await WebBrowser.openBrowserAsync(encodeURI(getDiscrepancyPdf(receiptId)));
   };
 
   const messageTone: MessageTone = actionMessage?.toLowerCase().includes('failed') || actionMessage?.toLowerCase().includes('error')
@@ -1131,39 +1115,6 @@ export default function WarehouseInboundScreen() {
                   />
                 ))}
 
-              {/* ── Manual ASN Input Box (De-emphasized Fallback) ── */}
-              <View
-                style={{
-                  borderRadius: 14,
-                  borderWidth: 1,
-                  borderStyle: 'dashed',
-                  borderColor: colors.border.default,
-                  backgroundColor: colors.surface.card,
-                  padding: 14,
-                  marginTop: 4,
-                }}
-              >
-                <AppInput label="Mã ASN thủ công" value={manualAsnId} onChangeText={setManualAsnId} placeholder="Nhập mã ASN (GUID)" />
-                <View style={{ marginTop: 10 }}>
-                  <AppButton
-                    icon="keypad-outline"
-                    label="Sử dụng ASN thủ công"
-                    variant="secondary"
-                    onPress={() => {
-                      setSelectedAsn(null);
-                      resetQcWorkflow();
-                      setLpnStatus(null);
-                      setLpnWarehouseId(null);
-                      setLpnHasWarehouseReceipt(false);
-                      setLpnReceiptPdfUrl(null);
-                      setReceiptResult(null);
-                      setPutawayResult(null);
-                      setActiveStep('qc');
-                      setActionMessage('Đã chọn ASN thủ công.');
-                    }}
-                  />
-                </View>
-              </View>
             </View>
           </Section>
 
@@ -1216,7 +1167,7 @@ export default function WarehouseInboundScreen() {
                 }}
               >
                 <Text style={{ fontSize: 12, color: colors.text.secondary, textAlign: 'center' }}>
-                  Vui lòng chọn một lô hàng từ danh sách phía trên hoặc nhập mã ASN thủ công để bắt đầu tiếp nhận.
+                  Vui lòng chọn một lô hàng chờ QC từ danh sách phía trên để bắt đầu tiếp nhận.
                 </Text>
               </View>
             )}
@@ -1239,9 +1190,7 @@ export default function WarehouseInboundScreen() {
                     <Text style={{ fontSize: 12, color: colors.text.secondary, fontWeight: '600' }}>Mã ASN tiếp nhận</Text>
                     <Text style={{ fontSize: 14, color: colors.text.primary, fontWeight: '700' }}>{selectedAsn.asnCode}</Text>
                   </View>
-                ) : (
-                  <AppInput label="Mã ASN (GUID)" value={manualAsnId} onChangeText={setManualAsnId} placeholder="Mã ASN" />
-                )}
+                ) : <AppMessage tone="warning" text="Chọn một lô hàng chờ QC trước khi nhập số đo." />}
 
                 {isLoadingOrderReference ? (
                   <View style={styles.referenceLoading}>
@@ -1294,7 +1243,7 @@ export default function WarehouseInboundScreen() {
                 <View
                   style={[
                     styles.qcSubmitVisual,
-                    isSubmitting && styles.qcSubmitVisualDisabled,
+                    (isSubmitting || !selectedAsn) && styles.qcSubmitVisualDisabled,
                   ]}
                 >
                   {isSubmitting ? (
@@ -1303,13 +1252,15 @@ export default function WarehouseInboundScreen() {
                       <Text style={styles.qcSubmitText}>Đang gửi kết quả...</Text>
                     </View>
                   ) : (
-                    <Text style={styles.qcSubmitText}>Gửi kết quả QC</Text>
+                    <Text style={[styles.qcSubmitText, !selectedAsn && styles.qcSubmitTextDisabled]}>
+                      Gửi kết quả QC
+                    </Text>
                   )}
 
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="Gửi kết quả QC"
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || !selectedAsn}
                     onPress={handleSubmitQc}
                     style={StyleSheet.absoluteFillObject}
                   />
@@ -1319,30 +1270,29 @@ export default function WarehouseInboundScreen() {
               </View>
             ) : null}
 
-            {/* ── 2. Re-check / Measurements Tab ── */}
-            {activeStep === 'measurements' ? (
+            {/* ── 2. Receipt Tab ── */}
+            {activeStep === 'receipt' ? (
               <View style={{ gap: 12 }}>
-                <AppInput label="Mã LPN" value={lpnId} onChangeText={updateLpnId} placeholder="Mã LPN" />
-                <AppButton
-                  icon="download-outline"
-                  label="Tải kết quả QC hiện tại"
-                  onPress={handleLoadQcForCorrection}
-                  loading={isSubmitting}
-                  variant="secondary"
-                />
-
-                {currentLpnState && !canOfferQcCorrection ? (
-                  <AppMessage
-                    tone="warning"
-                    text={hasReceiptForCurrentLpn
-                      ? 'Không thể chỉnh sửa vì PDF phiếu nhập kho đã được tạo.'
-                      : `Chỉ có thể chỉnh sửa khi LPN ở trạng thái RECEIVING. Hiện tại: ${getStatusStyle(currentLpnState).label}.`}
+                {latestResultForCurrentLpn?.state === 'RECEIVING' ? (
+                  <ResultBox title="Kết quả QC hiện hành" result={latestResultForCurrentLpn} />
+                ) : null}
+                {canOfferQcCorrection ? (
+                  <AppButton
+                    icon={isEditingQcMeasurements ? 'close-outline' : 'create-outline'}
+                    label={isEditingQcMeasurements ? 'Đóng chỉnh sửa số đo' : 'Chỉnh sửa số đo'}
+                    onPress={() => {
+                      if (isEditingQcMeasurements) {
+                        setIsEditingQcMeasurements(false);
+                      } else {
+                        void handleLoadQcForCorrection();
+                      }
+                    }}
+                    variant="secondary"
                   />
                 ) : null}
-
-                {canSubmitQcCorrection ? (
-                  <>
-                    <AppMessage tone="neutral" text="Đang chỉnh sửa kết quả QC" />
+                {isEditingQcMeasurements && canSubmitQcCorrection ? (
+                  <View style={{ gap: 12 }}>
+                    <AppMessage tone="neutral" text="Đang chỉnh sửa kết quả QC trước khi tạo phiếu nhập" />
                     <QcMeasurementEditor
                       heading="Số đo hiện tại"
                       description="Chỉnh đúng quy cách cần sửa; các giá trị còn lại được giữ nguyên."
@@ -1370,55 +1320,18 @@ export default function WarehouseInboundScreen() {
                         setRecheckTemperatureError(undefined);
                       }}
                     />
-                    <EvidencePicker images={recheckEvidence} onPick={() => pickEvidenceImages('recheck')} onClear={() => setRecheckEvidence([])} />
+                    <EvidencePicker
+                      images={recheckEvidence}
+                      onPick={() => pickEvidenceImages('recheck')}
+                      onClear={() => setRecheckEvidence([])}
+                    />
                     <AppButton
                       icon="save-outline"
                       label="Lưu số đo đã chỉnh sửa"
                       onPress={handleReEvaluate}
                       loading={isSubmitting}
                     />
-                  </>
-                ) : null}
-                {recheckResult ? <ResultBox title="Kết quả kiểm tra lại" result={recheckResult} /> : null}
-              </View>
-            ) : null}
-
-            {/* ── 3. Discrepancy Tab ── */}
-            {activeStep === 'discrepancy' ? (
-              <View style={{ gap: 12 }}>
-                <AppMessage
-                  tone={currentLpnState === 'DISCREPANCY_HOLD' ? 'warning' : 'neutral'}
-                  text={`Trạng thái hiện tại: ${currentLpnState ? getStatusStyle(currentLpnState).label : 'N/A'} | Chênh lệch: ${latestInboundResult?.diffPercent ?? 0}%`}
-                />
-                <AppMessage
-                  tone="warning"
-                  text="Lô hàng đang bị giữ do sai lệch. Sales/Admin cần xử lý sai lệch trước khi nhập kho."
-                />
-                <AppInput label="Mã LPN" value={lpnId} onChangeText={updateLpnId} placeholder="Mã LPN" />
-                {canOfferQcCorrection ? (
-                  <AppButton icon="create-outline" label="Chỉnh sửa số đo" onPress={() => setActiveStep('measurements')} variant="secondary" />
-                ) : null}
-                <AppButton icon="document-attach-outline" label="Mở biên bản bất thường" onPress={openDiscrepancyPdf} variant="secondary" />
-                <AppButton icon="refresh-outline" label="Làm mới trạng thái LPN" onPress={refreshLpnStatus} loading={isSubmitting} variant="secondary" />
-              </View>
-            ) : null}
-
-            {/* ── 4. Receipt Tab ── */}
-            {activeStep === 'receipt' ? (
-              <View style={{ gap: 12 }}>
-                {latestResultForCurrentLpn?.state === 'RECEIVING' ? (
-                  <ResultBox title="Kết quả QC hiện hành" result={latestResultForCurrentLpn} />
-                ) : null}
-                {canOfferQcCorrection ? (
-                  <AppButton
-                    icon="create-outline"
-                    label="Chỉnh sửa số đo"
-                    onPress={() => {
-                      setActiveStep('measurements');
-                      void handleLoadQcForCorrection();
-                    }}
-                    variant="secondary"
-                  />
+                  </View>
                 ) : null}
                 {currentLpnState === 'IN_STOCK' ? (
                   <AppMessage tone="success" text="LPN này đã nhập kho, không thể tạo phiếu nhập lại." />
@@ -1431,9 +1344,7 @@ export default function WarehouseInboundScreen() {
                     <Text style={{ fontSize: 12, color: colors.text.secondary, fontWeight: '600' }}>Mã ASN</Text>
                     <Text style={{ fontSize: 14, color: colors.text.primary, fontWeight: '700' }}>{selectedAsn.asnCode}</Text>
                   </View>
-                ) : (
-                  <AppInput label="Mã ASN" value={manualAsnId} onChangeText={setManualAsnId} placeholder="Mã ASN" />
-                )}
+                ) : <AppMessage tone="warning" text="Chưa có ASN được chọn cho phiếu nhập." />}
                 <AppInput label="Người giao hàng" value={delivererName} onChangeText={setDelivererName} placeholder="Tên tài xế hoặc khách hàng" />
                 <AppInput label="Biển số xe" value={vehiclePlate} onChangeText={setVehiclePlate} placeholder="Không bắt buộc" />
                 <AppInput label="Ghi chú" value={receiptNote} onChangeText={setReceiptNote} placeholder="Không bắt buộc" multiline />
@@ -1514,17 +1425,11 @@ export default function WarehouseInboundScreen() {
               </View>
             ) : null}
 
-            {/* ── 5. Putaway Tab ── */}
+            {/* ── 3. Putaway Tab ── */}
             {activeStep === 'putaway' ? (
               <View style={{ gap: 12 }}>
                 <AppInput label="Mã LPN" value={lpnId} onChangeText={updateLpnId} placeholder="Mã LPN" />
                 <AppButton icon="refresh-outline" label="Làm mới trạng thái" onPress={refreshLpnStatus} loading={isSubmitting} variant="secondary" />
-                {currentLpnState === 'DISCREPANCY_HOLD' ? (
-                  <AppMessage
-                    tone="warning"
-                    text="Lô hàng đang chờ xử lý sai lệch. Sales/Admin cần hoàn tất phụ lục trước khi nhập kho."
-                  />
-                ) : null}
                 {currentLpnState === 'RETURN_PENDING' ? (
                   <AppMessage
                     tone="warning"
@@ -1549,7 +1454,7 @@ export default function WarehouseInboundScreen() {
                     text="Chưa xác định trạng thái LPN. Vui lòng làm mới trạng thái trước khi nhập kho."
                   />
                 ) : null}
-                {currentLpnState && !canPutaway && currentLpnState !== 'RECEIVING' && !['DISCREPANCY_HOLD', 'RETURN_PENDING', 'IN_STOCK'].includes(currentLpnState) ? (
+                {currentLpnState && !canPutaway && currentLpnState !== 'RECEIVING' && !['RETURN_PENDING', 'IN_STOCK'].includes(currentLpnState) ? (
                   <AppMessage
                     tone="warning"
                     text={`Chưa thể nhập kho. Trạng thái LPN hiện tại: ${getStatusStyle(currentLpnState).label}.`}
@@ -1560,11 +1465,6 @@ export default function WarehouseInboundScreen() {
                     <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text.primary }}>Nhập vị trí kho</Text>
                     <AppInput label="Vị trí lưu kho" value={storageLocation} onChangeText={setStorageLocation} placeholder="A-01-01" />
                     <AppButton icon="archive-outline" label="Xác nhận nhập kho" onPress={handlePutaway} loading={isSubmitting} />
-                  </View>
-                ) : null}
-                {currentLpnState === 'DISCREPANCY_HOLD' ? (
-                  <View style={{ gap: 12 }}>
-                    <AppButton icon="document-attach-outline" label="Mở biên bản bất thường" onPress={openDiscrepancyPdf} variant="secondary" />
                   </View>
                 ) : null}
                 {putawayResult && !putawayResult.success ? <AppMessage tone="error" text={putawayResult.message} /> : null}
@@ -1700,7 +1600,6 @@ function ResultBox({ title, result }: { title: string; result: InboundQcResponse
         <Text style={{ width: 90, fontSize: 12, fontWeight: '700', color: colors.text.secondary }}>Trạng thái</Text>
         {result.state ? <StatusBadge status={result.state} showVietnameseLabel /> : <Text style={{ fontSize: 12, color: colors.text.primary }}>N/A</Text>}
       </View>
-      <AppInfoRow label="Chênh lệch" value={`${result.diffPercent}%`} />
       {result.actualQuantity !== undefined ? (
         <AppInfoRow label="Tổng số kiện" value={`${result.actualQuantity} kiện`} />
       ) : null}
@@ -1712,9 +1611,8 @@ function ResultBox({ title, result }: { title: string; result: InboundQcResponse
       ) : null}
       <AppInfoRow
         label="Kết quả"
-        value={result.state === 'RECEIVING' ? 'Đạt' : result.state === 'DISCREPANCY_HOLD' ? 'Cần xử lý sai lệch' : 'N/A'}
+        value={result.success ? 'Đạt' : 'Không đạt'}
       />
-      <AppInfoRow label="PDF" value={result.pdfUrl || 'N/A'} />
     </View>
   );
 }

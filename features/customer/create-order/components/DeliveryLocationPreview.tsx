@@ -86,14 +86,34 @@ export function DeliveryLocationPreview({
     });
   };
 
+  const isManualLocation =
+    location.placeId.startsWith('manual-') ||
+    (location.latitude === 0 && location.longitude === 0);
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 58 : 0}
       style={styles.container}
     >
-      <View style={styles.mapContainer}>
-        <GoongRouteMap route={mapRoute} isFullScreen showRouteDataNotice={false} />
+      <View style={isManualLocation ? styles.manualContainer : styles.mapContainer}>
+        {isManualLocation ? (
+          <View style={styles.manualAddressHero}>
+            <View style={styles.manualIconWrapper}>
+              <Ionicons name="location" size={30} color={colors.brand.primary} />
+            </View>
+            <Text style={styles.manualAddressLabel}>ĐỊA CHỈ GIAO HÀNG ĐÃ NHẬP</Text>
+            <Text style={styles.manualAddressTitle} numberOfLines={3}>{location.address}</Text>
+            <View style={styles.manualNoticeBadge}>
+              <Ionicons name="information-circle-outline" size={15} color="#0369A1" />
+              <Text style={styles.manualNoticeText}>
+                Địa chỉ được nhập trực tiếp. Tài xế sẽ liên hệ số điện thoại người nhận khi giao hàng.
+              </Text>
+            </View>
+          </View>
+        ) : (
+          <GoongRouteMap route={mapRoute} isFullScreen showRouteDataNotice={false} />
+        )}
       </View>
 
       <View style={[styles.confirmPanel, { paddingBottom: Math.max(insets.bottom, 16) + 4 }]}>
@@ -171,22 +191,29 @@ export function DeliveryLocationPreview({
               </Text>
             ) : null}
           </View>
-
-          {/* Prominent Confirm CTA Button */}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Xác nhận điểm giao hàng"
-            onPress={handleConfirm}
-            style={({ pressed }) => [
-              styles.confirmButton,
-              hasAttemptedSubmit && !isFormValid ? styles.confirmButtonDisabled : null,
-              pressed && isFormValid ? styles.confirmButtonPressed : null,
-            ]}
-          >
-            <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-            <Text style={styles.confirmButtonText}>Xác nhận điểm giao hàng</Text>
-          </Pressable>
         </ScrollView>
+
+        {/* Sticky Confirm CTA Button - ALWAYS VISIBLE ABOVE KEYBOARD */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Xác nhận điểm giao hàng"
+          onPress={handleConfirm}
+          style={styles.confirmButton}
+        >
+          {({ pressed }) => (
+            <View
+              pointerEvents="none"
+              style={[
+                styles.confirmButtonSurface,
+                hasAttemptedSubmit && !isFormValid ? styles.confirmButtonDisabled : null,
+                pressed && isFormValid ? styles.confirmButtonPressed : null,
+              ]}
+            >
+              <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+              <Text style={styles.confirmButtonText}>Xác nhận điểm giao hàng</Text>
+            </View>
+          )}
+        </Pressable>
       </View>
     </KeyboardAvoidingView>
   );
@@ -200,6 +227,67 @@ const styles = StyleSheet.create({
   mapContainer: {
     flex: 1,
     minHeight: 120,
+  },
+  manualContainer: {
+    backgroundColor: '#EEF6FC',
+    flex: 1,
+    justifyContent: 'center',
+    padding: 20,
+  },
+  manualAddressHero: {
+    alignItems: 'center',
+    backgroundColor: colors.surface.card,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    padding: 20,
+    shadowColor: '#173B59',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  manualIconWrapper: {
+    alignItems: 'center',
+    backgroundColor: colors.brand.primarySoft,
+    borderRadius: 20,
+    height: 56,
+    justifyContent: 'center',
+    marginBottom: 10,
+    width: 56,
+  },
+  manualAddressLabel: {
+    color: colors.text.muted,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  manualAddressTitle: {
+    color: colors.text.primary,
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 21,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  manualNoticeBadge: {
+    alignItems: 'center',
+    backgroundColor: '#F0F9FF',
+    borderColor: '#BAE6FD',
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  manualNoticeText: {
+    color: '#0369A1',
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '500',
   },
   confirmPanel: {
     backgroundColor: colors.surface.card,
@@ -281,19 +369,27 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   confirmButton: {
-    alignItems: 'center',
-    backgroundColor: '#1E68A8',
     borderRadius: 16,
-    flexDirection: 'row',
-    gap: 8,
     height: 54,
-    justifyContent: 'center',
     marginTop: 6,
     shadowColor: '#1E68A8',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 10,
+    width: '100%',
+    zIndex: 1,
     elevation: 8,
+  },
+  confirmButtonSurface: {
+    alignItems: 'center',
+    backgroundColor: '#1E68A8',
+    borderRadius: 16,
+    flex: 1,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    minHeight: 54,
+    width: '100%',
   },
   confirmButtonPressed: {
     backgroundColor: '#174f80',

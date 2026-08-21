@@ -156,11 +156,43 @@ export function AddressAutocompleteField({
       setPendingLocation(location);
       setStage('confirm');
     } catch {
-      setLocationError('Chưa thể xác định vị trí này. Vui lòng thử lại hoặc chọn địa chỉ khác.');
+      setLocationError('Chưa thể xác định tọa độ. Bạn có thể chọn "Sử dụng địa chỉ này" bên dưới để tiếp tục.');
     } finally {
       setIsResolvingLocation(false);
     }
   };
+
+  const handleUseManualAddress = (addressText: string) => {
+    const trimmed = addressText.trim();
+    if (!trimmed) return;
+    Keyboard.dismiss();
+    setLocationError(null);
+    const manualLocation: GoongPlaceDetail = {
+      placeId: `manual-${Date.now()}`,
+      address: trimmed,
+      name: trimmed.split(',')[0]?.trim() || trimmed,
+      latitude: 0,
+      longitude: 0,
+    };
+    setPendingLocation(manualLocation);
+    setStage('confirm');
+  };
+
+  const handleEditAddress = () => {
+    if (pendingLocation?.address) {
+      setQuery(pendingLocation.name?.trim() || pendingLocation.address);
+    }
+    setStage('search');
+  };
+
+  useEffect(() => {
+    if (isOpen && stage === 'search') {
+      const timer = setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 80);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, stage]);
 
   const handleConfirmDeliveryContact = (contact: { receiverName: string; receiverPhone: string }) => {
     if (!pendingLocation) return;
@@ -173,7 +205,7 @@ export function AddressAutocompleteField({
   };
 
   const primaryAddress = getPrimaryAddress(selectedLocation, value);
-  const secondaryAddress = getSecondaryAddress(selectedLocation, value);
+  const receiverSummary = [receiverName.trim(), receiverPhone.trim()].filter(Boolean).join(' • ') || 'Chưa có thông tin người nhận';
 
   return (
     <>
@@ -186,7 +218,7 @@ export function AddressAutocompleteField({
           /* Confirmed Delivery Destination & Receiver Card */
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`Sửa điểm giao hàng ${primaryAddress}, người nhận ${receiverName || ''}`}
+            accessibilityLabel={`Sửa điểm giao hàng ${primaryAddress}, người nhận ${receiverSummary}`}
             accessibilityHint="Mở màn hình xác nhận và chỉnh sửa thông tin giao hàng"
             disabled={disabled}
             onPress={openPicker}
@@ -197,44 +229,19 @@ export function AddressAutocompleteField({
               pressed && !disabled ? styles.destinationCardPressed : null,
             ]}
           >
-            {/* Top Row: Address */}
-            <View style={styles.cardAddressRow}>
-              <View style={styles.cardIcon}>
-                <Ionicons name="location" size={20} color={colors.brand.primary} />
-              </View>
-              <View style={styles.cardCopy}>
-                <Text numberOfLines={1} style={styles.selectedTitle}>
+            <View style={styles.cardMainContent}>
+              <View style={styles.cardTitleRow}>
+                <Ionicons name="location" size={17} color={colors.brand.primary} />
+                <Text numberOfLines={1} style={styles.confirmedTitle}>
                   {primaryAddress}
                 </Text>
-                {secondaryAddress ? (
-                  <Text numberOfLines={2} style={styles.selectedSubtitle}>
-                    {secondaryAddress}
-                  </Text>
-                ) : null}
               </View>
+              <Text numberOfLines={1} style={styles.confirmedSubtitle}>
+                {receiverSummary}
+              </Text>
             </View>
 
-            {/* Divider */}
-            <View style={styles.cardDivider} />
-
-            {/* Bottom Row: Receiver */}
-            <View style={styles.cardReceiverRow}>
-              <View style={styles.receiverIcon}>
-                <Ionicons name="person-outline" size={17} color={colors.brand.primary} />
-              </View>
-              <View style={styles.receiverCopy}>
-                <Text numberOfLines={1} style={styles.receiverNameText}>
-                  {receiverName || 'Chưa nhập họ tên'}
-                </Text>
-                <Text numberOfLines={1} style={styles.receiverPhoneText}>
-                  {receiverPhone || 'Chưa nhập số điện thoại'}
-                </Text>
-              </View>
-              <View style={styles.editBadge}>
-                <Text style={styles.editText}>Sửa</Text>
-                <Ionicons name="chevron-forward" size={15} color={colors.brand.primary} />
-              </View>
-            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.text.muted} />
           </Pressable>
         ) : (
           /* Empty state: Select destination */
@@ -252,18 +259,19 @@ export function AddressAutocompleteField({
               pressed && !disabled ? styles.destinationCardPressed : null,
             ]}
           >
-            <View style={styles.cardIcon}>
-              <Ionicons name="location" size={20} color={colors.brand.primary} />
-            </View>
-            <View style={styles.cardCopy}>
-              <Text numberOfLines={1} style={styles.emptyCardTitle}>
-                {disabled ? 'Chọn điểm dừng trên tuyến trước' : 'Chọn điểm giao hàng'}
-              </Text>
+            <View style={styles.cardMainContent}>
+              <View style={styles.cardTitleRow}>
+                <Ionicons name="location-outline" size={17} color={disabled ? colors.text.muted : colors.brand.primary} />
+                <Text numberOfLines={1} style={[styles.emptyCardTitle, disabled ? styles.emptyCardTitleDisabled : null]}>
+                  {disabled ? 'Chọn điểm dừng trên tuyến trước' : 'Chọn điểm giao hàng'}
+                </Text>
+              </View>
               <Text numberOfLines={1} style={styles.emptyCardSubtitle}>
                 {disabled ? 'Cần chọn điểm dừng để mở bản đồ' : 'Địa chỉ, tên và SĐT người nhận'}
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.text.secondary} />
+
+            <Ionicons name="chevron-forward" size={18} color={colors.text.muted} />
           </Pressable>
         )}
 
@@ -292,19 +300,47 @@ export function AddressAutocompleteField({
             >
               <Ionicons name="arrow-back" size={22} color={colors.text.primary} />
             </Pressable>
-            <View style={styles.headerCenter}>
-              <Text numberOfLines={1} style={styles.headerTitle}>
-                {stage === 'confirm' && pendingLocation
-                  ? (pendingLocation.name?.trim() || primaryAddress)
-                  : 'Chọn điểm giao hàng'}
-              </Text>
-              {stage === 'confirm' && pendingLocation && pendingLocation.address ? (
-                <Text numberOfLines={2} style={styles.headerSubtitle}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={stage === 'confirm' ? 'Chỉnh sửa địa chỉ giao hàng' : undefined}
+              accessibilityHint={stage === 'confirm' ? 'Chuyển sang màn hình tìm kiếm để đổi địa chỉ' : undefined}
+              disabled={stage !== 'confirm'}
+              onPress={handleEditAddress}
+              style={({ pressed }) => [
+                styles.headerCenter,
+                stage === 'confirm' && pressed ? styles.headerCenterPressed : null,
+              ]}
+            >
+              <View style={styles.headerTitleRow}>
+                <Text numberOfLines={1} style={styles.headerTitle}>
+                  {stage === 'confirm' && pendingLocation
+                    ? (pendingLocation.name?.trim() || primaryAddress)
+                    : 'Chọn điểm giao hàng'}
+                </Text>
+                {stage === 'confirm' ? (
+                  <Ionicons name="pencil" size={13} color={colors.brand.primary} />
+                ) : null}
+              </View>
+              {stage === 'confirm' && pendingLocation ? (
+                <Text numberOfLines={1} style={styles.headerSubtitle}>
                   {pendingLocation.address}
                 </Text>
               ) : null}
-            </View>
-            <View style={styles.headerSpacer} />
+            </Pressable>
+
+            {stage === 'confirm' ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Sửa địa chỉ giao hàng"
+                hitSlop={8}
+                onPress={handleEditAddress}
+                style={styles.headerEditButton}
+              >
+                <Text style={styles.headerEditText}>Sửa</Text>
+              </Pressable>
+            ) : (
+              <View style={styles.headerSpacer} />
+            )}
           </View>
 
           {stage === 'search' ? (
@@ -313,30 +349,25 @@ export function AddressAutocompleteField({
                 <Ionicons name="search-outline" size={20} color={colors.brand.primary} />
                 <TextInput
                   ref={searchInputRef}
-                  autoFocus
                   value={query}
-                  onChangeText={(nextQuery) => {
-                    setQuery(nextQuery);
-                    setLocationError(null);
-                  }}
+                  onChangeText={setQuery}
                   placeholder="Nhập địa chỉ giao hàng..."
                   placeholderTextColor={colors.text.muted}
                   selectionColor={colors.brand.primary}
                   returnKeyType="search"
-                  accessibilityLabel="Tìm địa chỉ giao hàng"
+                  autoCorrect={false}
+                  accessibilityLabel="Tìm kiếm địa chỉ giao hàng"
                   style={styles.searchInput}
                 />
-                {searchState === 'loading' ? (
-                  <ActivityIndicator size="small" color={colors.brand.primary} />
-                ) : query ? (
+                {query ? (
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="Xóa nội dung tìm kiếm"
-                    hitSlop={6}
+                    hitSlop={8}
                     onPress={() => setQuery('')}
                     style={styles.clearButton}
                   >
-                    <Ionicons name="close-circle" size={20} color={colors.text.muted} />
+                    <Ionicons name="close-circle" size={18} color={colors.text.muted} />
                   </Pressable>
                 ) : null}
               </View>
@@ -352,12 +383,36 @@ export function AddressAutocompleteField({
                 keyboardDismissMode="on-drag"
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={suggestions.length ? styles.resultsContent : styles.emptyContent}
-                ListHeaderComponent={suggestions.length ? <Text style={styles.resultsHeading}>Kết quả</Text> : null}
+                ListHeaderComponent={suggestions.length ? <Text style={styles.resultsHeading}>Kết quả gợi ý</Text> : null}
+                ListFooterComponent={
+                  suggestions.length > 0 && query.trim().length >= 2 ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Sử dụng địa chỉ ${query.trim()}`}
+                      onPress={() => handleUseManualAddress(query.trim())}
+                      style={styles.manualFooterRow}
+                    >
+                      <View style={styles.manualFooterIcon}>
+                        <Ionicons name="pencil" size={15} color={colors.brand.primary} />
+                      </View>
+                      <View style={styles.resultCopy}>
+                        <Text numberOfLines={1} style={styles.manualFooterTitle}>
+                          Sử dụng chính xác: "{query.trim()}"
+                        </Text>
+                        <Text numberOfLines={1} style={styles.manualFooterSubtitle}>
+                          Dùng địa chỉ này không cần chọn danh sách gợi ý
+                        </Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={16} color={colors.text.secondary} />
+                    </Pressable>
+                  ) : null
+                }
                 ListEmptyComponent={
                   <SearchEmptyState
                     query={query}
                     searchState={searchState}
                     onRetry={() => setRetryTrigger((c) => c + 1)}
+                    onUseManualAddress={handleUseManualAddress}
                   />
                 }
                 renderItem={({ item, index }) => (
@@ -411,27 +466,49 @@ function SearchEmptyState({
   query,
   searchState,
   onRetry,
+  onUseManualAddress,
 }: {
   query: string;
   searchState: SearchState;
   onRetry?: () => void;
+  onUseManualAddress: (address: string) => void;
 }) {
-  if (query.trim().length < 2) {
+  const trimmedQuery = query.trim();
+
+  if (trimmedQuery.length < 2) {
     return (
       <View style={styles.emptyState}>
-        <Ionicons name="location-outline" size={26} color={colors.text.muted} />
+        <Ionicons name="location-outline" size={28} color={colors.text.muted} />
         <Text style={styles.emptyTitle}>Tìm điểm giao hàng</Text>
-        <Text style={styles.emptySubtitle}>Nhập ít nhất 2 ký tự để tìm địa chỉ.</Text>
+        <Text style={styles.emptySubtitle}>Nhập tên đường, địa điểm hoặc phường/quận.</Text>
       </View>
     );
   }
+
   if (searchState === 'loading') return null;
+
   if (searchState === 'error') {
     return (
       <View style={styles.emptyState}>
-        <Ionicons name="cloud-offline-outline" size={26} color={colors.text.muted} />
-        <Text style={styles.emptyTitle}>Không thể tải kết quả</Text>
-        <Text style={styles.emptySubtitle}>Kiểm tra kết nối hoặc thử tìm lại.</Text>
+        <Ionicons name="cloud-offline-outline" size={32} color={colors.text.muted} />
+        <Text style={styles.emptyTitle}>Không thể tải gợi ý tự động</Text>
+        <Text style={styles.emptySubtitle}>
+          Dịch vụ tìm kiếm đang bận hoặc quá tải quota. Bạn có thể sử dụng trực tiếp địa chỉ vừa nhập để tiếp tục.
+        </Text>
+
+        {/* Primary Action: Use typed address directly */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Sử dụng địa chỉ ${trimmedQuery}`}
+          onPress={() => onUseManualAddress(trimmedQuery)}
+          style={styles.manualUseButton}
+        >
+          <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
+          <Text style={styles.manualUseButtonText} numberOfLines={1}>
+            Dùng địa chỉ: "{trimmedQuery}"
+          </Text>
+        </Pressable>
+
         {onRetry ? (
           <Pressable
             accessibilityRole="button"
@@ -440,31 +517,42 @@ function SearchEmptyState({
             style={styles.retryButton}
           >
             <Ionicons name="refresh" size={14} color={colors.brand.primary} />
-            <Text style={styles.retryButtonText}>Thử lại</Text>
+            <Text style={styles.retryButtonText}>Thử lại tìm kiếm</Text>
           </Pressable>
         ) : null}
       </View>
     );
   }
+
   if (searchState === 'empty') {
     return (
       <View style={styles.emptyState}>
-        <Ionicons name="search-outline" size={26} color={colors.text.muted} />
-        <Text style={styles.emptyTitle}>Không tìm thấy địa chỉ</Text>
-        <Text style={styles.emptySubtitle}>Thử thêm tên đường, phường hoặc quận.</Text>
+        <Ionicons name="search-outline" size={28} color={colors.text.muted} />
+        <Text style={styles.emptyTitle}>Không tìm thấy địa chỉ gợi ý</Text>
+        <Text style={styles.emptySubtitle}>
+          Bạn có thể sử dụng chính xác địa chỉ đã nhập dưới đây:
+        </Text>
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Sử dụng địa chỉ ${trimmedQuery}`}
+          onPress={() => onUseManualAddress(trimmedQuery)}
+          style={styles.manualUseButton}
+        >
+          <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
+          <Text style={styles.manualUseButtonText} numberOfLines={1}>
+            Dùng địa chỉ: "{trimmedQuery}"
+          </Text>
+        </Pressable>
       </View>
     );
   }
+
   return null;
 }
 
 function getPrimaryAddress(location: GoongPlaceDetail | null, value: string) {
   return location?.name?.trim() || value.split(',')[0]?.trim() || value;
-}
-
-function getSecondaryAddress(location: GoongPlaceDetail | null, value: string) {
-  if (location?.name) return value;
-  return value.split(',').slice(1).join(',').trim();
 }
 
 const styles = StyleSheet.create({
@@ -487,63 +575,44 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: 'row',
     gap: 12,
-    minHeight: 64,
-    paddingHorizontal: 14,
+    minHeight: 62,
+    paddingHorizontal: 16,
     paddingVertical: 12,
   },
   confirmedDestinationCard: {
+    alignItems: 'center',
     backgroundColor: colors.surface.card,
     borderColor: colors.border.default,
     borderRadius: 16,
     borderWidth: 1,
-    paddingHorizontal: 14,
+    flexDirection: 'row',
+    gap: 12,
+    minHeight: 62,
+    paddingHorizontal: 16,
     paddingVertical: 12,
-    gap: 10,
   },
-  cardAddressRow: {
-    alignItems: 'flex-start',
-    flexDirection: 'row',
-    gap: 12,
-  },
-  cardDivider: {
-    backgroundColor: colors.border.default,
-    height: StyleSheet.hairlineWidth,
-    marginLeft: 46,
-  },
-  cardReceiverRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 12,
-  },
-  receiverIcon: {
-    alignItems: 'center',
-    backgroundColor: colors.brand.primarySoft,
-    borderRadius: 10,
-    height: 34,
-    justifyContent: 'center',
-    width: 34,
-  },
-  receiverCopy: {
+  cardMainContent: {
     flex: 1,
+    gap: 3,
     minWidth: 0,
   },
-  receiverNameText: {
-    color: colors.text.primary,
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 18,
+  cardTitleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
   },
-  receiverPhoneText: {
+  confirmedTitle: {
+    color: colors.text.primary,
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
+  confirmedSubtitle: {
     color: colors.text.secondary,
     fontSize: 12,
     lineHeight: 16,
-    marginTop: 1,
-  },
-  editBadge: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 2,
-    paddingLeft: 6,
+    paddingLeft: 23,
   },
   destinationCardError: {
     borderColor: '#FCA5A5',
@@ -555,45 +624,21 @@ const styles = StyleSheet.create({
   destinationCardPressed: {
     backgroundColor: colors.brand.primarySoft,
   },
-  cardIcon: {
-    alignItems: 'center',
-    backgroundColor: colors.brand.primarySoft,
-    borderRadius: 12,
-    height: 42,
-    justifyContent: 'center',
-    width: 42,
-  },
-  cardCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
   emptyCardTitle: {
     color: colors.text.primary,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  emptyCardSubtitle: {
-    color: colors.text.secondary,
-    fontSize: 12,
-    lineHeight: 17,
-    marginTop: 2,
-  },
-  selectedTitle: {
-    color: colors.text.primary,
+    flex: 1,
     fontSize: 14,
     fontWeight: '700',
     lineHeight: 20,
   },
-  selectedSubtitle: {
+  emptyCardTitleDisabled: {
+    color: colors.text.muted,
+  },
+  emptyCardSubtitle: {
     color: colors.text.secondary,
     fontSize: 12,
-    lineHeight: 17,
-    marginTop: 2,
-  },
-  editText: {
-    color: colors.brand.primary,
-    fontSize: 13,
-    fontWeight: '700',
+    lineHeight: 16,
+    paddingLeft: 23,
   },
   errorText: {
     color: '#DC2626',
@@ -626,6 +671,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 6,
   },
+  headerCenterPressed: {
+    opacity: 0.65,
+  },
+  headerTitleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 4,
+    justifyContent: 'center',
+  },
   headerTitle: {
     color: colors.text.primary,
     fontSize: 16,
@@ -641,6 +695,20 @@ const styles = StyleSheet.create({
   },
   headerSpacer: {
     width: 44,
+  },
+  headerEditButton: {
+    alignItems: 'center',
+    backgroundColor: colors.brand.primarySoft,
+    borderRadius: 10,
+    height: 32,
+    justifyContent: 'center',
+    minWidth: 44,
+    paddingHorizontal: 10,
+  },
+  headerEditText: {
+    color: colors.brand.primary,
+    fontSize: 13,
+    fontWeight: '700',
   },
   searchStage: {
     flex: 1,
@@ -763,6 +831,59 @@ const styles = StyleSheet.create({
     color: colors.brand.primary,
     fontSize: 13,
     fontWeight: '700',
+  },
+  manualUseButton: {
+    alignItems: 'center',
+    backgroundColor: '#1E68A8',
+    borderRadius: 14,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    marginTop: 14,
+    maxWidth: 320,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    shadowColor: '#1E68A8',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 4,
+    width: '100%',
+  },
+  manualUseButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+    flexShrink: 1,
+  },
+  manualFooterRow: {
+    alignItems: 'center',
+    backgroundColor: colors.surface.card,
+    borderColor: colors.border.default,
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 12,
+    padding: 12,
+  },
+  manualFooterIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.brand.primarySoft,
+    borderRadius: 10,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
+  },
+  manualFooterTitle: {
+    color: colors.brand.primary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  manualFooterSubtitle: {
+    color: colors.text.secondary,
+    fontSize: 11,
+    marginTop: 1,
   },
   resolvingOverlay: {
     alignItems: 'center',

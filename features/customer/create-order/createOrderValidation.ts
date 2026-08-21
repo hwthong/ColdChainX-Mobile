@@ -334,11 +334,13 @@ function isValidSelectedFile(file: DocumentImage) {
 }
 
 function hasValidCoordinates(location: GoongPlaceDetail) {
+  if (location.placeId?.startsWith('manual-') || (location.latitude === 0 && location.longitude === 0)) {
+    return Boolean(location.address && location.address.trim().length >= 3);
+  }
   return Number.isFinite(location.latitude)
     && location.latitude >= -90
     && location.latitude <= 90
     && Number.isFinite(location.longitude)
     && location.longitude >= -180
-    && location.longitude <= 180
-    && !(location.latitude === 0 && location.longitude === 0);
+    && location.longitude <= 180;
 }

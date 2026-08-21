@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { colors } from '../../constants/colors';
 
-export type StepKey = 'qc' | 'measurements' | 'discrepancy' | 'receipt' | 'putaway';
+export type StepKey = 'qc' | 'receipt' | 'putaway';
 
 export type StepState = 'ACTIVE' | 'COMPLETED' | 'AVAILABLE' | 'LOCKED';
 
@@ -38,6 +38,9 @@ export function InboundWorkflowStepper({ steps, activeStep, onStepPress }: Inbou
           return (
             <View key={step.key} style={styles.stepWrapper}>
               <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ disabled: isLocked, selected: isActive }}
+                disabled={isLocked}
                 onPress={() => onStepPress(step.key)}
                 style={[
                   styles.chip,
