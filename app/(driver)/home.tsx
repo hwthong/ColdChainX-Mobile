@@ -420,7 +420,7 @@ export default function DriverHomeScreen() {
                     backgroundColor: colors.surface.card,
                   }}
                   className="mt-2 items-center rounded-xl border py-3"
-                  onPress={() => router.push('/trips')}
+                  onPress={() => router.push('/(driver)/trips')}
                 >
                   <Text style={{ color: colors.brand.primary }} className="text-sm font-bold">
                     Xem danh sách chuyến

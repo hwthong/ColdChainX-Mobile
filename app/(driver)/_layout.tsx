@@ -1,11 +1,12 @@
 import React from 'react';
-import { Tabs, usePathname } from 'expo-router';
+import { Tabs, usePathname, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { DriverHeader } from '../../components/DriverHeader';
 import { colors } from '../../constants/colors';
 
 export default function DriverLayout() {
   const pathname = usePathname();
+  const router = useRouter();
 
   // Detect if we are on a full-screen subroute (nested trip pages, incident details, notifications)
   const isNestedTrip =
@@ -68,7 +69,8 @@ export default function DriverLayout() {
           popToTopOnBlur: true,
         }}
         listeners={({ navigation }) => ({
-          tabPress: () => {
+          tabPress: (e) => {
+            e.preventDefault();
             navigation.navigate('trips', { screen: 'index' });
           },
         })}

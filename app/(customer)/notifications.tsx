@@ -347,109 +347,113 @@ export default function NotificationsScreen() {
       )}
 
       {/* Detail Modal */}
-      <Modal visible={!!selectedNotification} transparent animationType="fade" onRequestClose={() => setSelectedNotification(null)}>
-        <View className="flex-1 items-center justify-center bg-black/60 px-5">
-          <View style={{ backgroundColor: colors.surface.card }} className="w-full rounded-3xl p-6">
-            <View className="mb-3 flex-row items-start justify-between gap-3">
-              <View className="flex-1">
-                <Text style={{ color: colors.text.primary }} className="text-lg font-bold">
-                  {selectedP?.title || ''}
-                </Text>
-                {selectedP?.itemName ? (
-                  <Text style={{ color: colors.brand.primary }} className="mt-0.5 text-xs font-semibold">
-                    {selectedP.itemName}
+      {Boolean(selectedNotification) && (
+        <Modal visible={true} transparent animationType="fade" onRequestClose={() => setSelectedNotification(null)}>
+          <View className="flex-1 items-center justify-center bg-black/60 px-5">
+            <View style={{ backgroundColor: colors.surface.card }} className="w-full rounded-3xl p-6">
+              <View className="mb-3 flex-row items-start justify-between gap-3">
+                <View className="flex-1">
+                  <Text style={{ color: colors.text.primary }} className="text-lg font-bold">
+                    {selectedP?.title || ''}
+                  </Text>
+                  {selectedP?.itemName ? (
+                    <Text style={{ color: colors.brand.primary }} className="mt-0.5 text-xs font-semibold">
+                      {selectedP.itemName}
+                    </Text>
+                  ) : null}
+                </View>
+                <Pressable onPress={() => setSelectedNotification(null)} className="h-9 w-9 items-center justify-center rounded-full bg-gray-100 active:opacity-70">
+                  <Ionicons name="close" size={20} color={colors.text.secondary} />
+                </Pressable>
+              </View>
+
+              <ScrollView className="max-h-[400px]" showsVerticalScrollIndicator={false}>
+                {selectedP?.description ? (
+                  <Text style={{ color: colors.text.secondary }} className="text-sm leading-6">
+                    {cleanNotificationBody(selectedP.description)}
                   </Text>
                 ) : null}
-              </View>
-              <Pressable onPress={() => setSelectedNotification(null)} className="h-9 w-9 items-center justify-center rounded-full bg-gray-100">
-                <Ionicons name="close" size={20} color={colors.text.secondary} />
-              </Pressable>
-            </View>
 
-            <ScrollView className="max-h-[400px]" showsVerticalScrollIndicator={false}>
-              {selectedP?.description ? (
-                <Text style={{ color: colors.text.secondary }} className="text-sm leading-6">
-                  {cleanNotificationBody(selectedP.description)}
-                </Text>
-              ) : null}
-
-              {modalImageUrl ? (
-                <View className="mt-3 rounded-2xl border border-gray-200 bg-gray-50 p-2.5">
-                  <View className="flex-row items-center justify-between mb-1.5">
-                    <View className="flex-row items-center gap-1.5">
-                      <Ionicons name="receipt-outline" size={15} color={colors.brand.primary} />
-                      <Text style={{ color: colors.text.primary }} className="text-xs font-bold">
-                        Chứng từ đính kèm
+                {modalImageUrl ? (
+                  <View className="mt-3 rounded-2xl border border-gray-200 bg-gray-50 p-2.5">
+                    <View className="flex-row items-center justify-between mb-1.5">
+                      <View className="flex-row items-center gap-1.5">
+                        <Ionicons name="receipt-outline" size={15} color={colors.brand.primary} />
+                        <Text style={{ color: colors.text.primary }} className="text-xs font-bold">
+                          Chứng từ đính kèm
+                        </Text>
+                      </View>
+                      <Text style={{ color: colors.brand.primary }} className="text-[11px] font-medium">
+                        Nhấn để phóng to
                       </Text>
                     </View>
-                    <Text style={{ color: colors.brand.primary }} className="text-[11px] font-medium">
-                      Nhấn để phóng to
+
+                    <Pressable
+                      onPress={() => setPreviewImageUrl(modalImageUrl)}
+                      className="relative overflow-hidden rounded-xl bg-gray-200 items-center justify-center active:opacity-75"
+                      style={{ height: 160 }}
+                    >
+                      <Image
+                        source={{ uri: modalImageUrl }}
+                        style={{ width: '100%', height: '100%' }}
+                        contentFit="cover"
+                      />
+                      <View className="absolute bottom-2 right-2 rounded-lg bg-black/60 px-2 py-0.5 flex-row items-center gap-1">
+                        <Ionicons name="scan-outline" size={12} color="#FFFFFF" />
+                        <Text className="text-[10px] font-bold text-white">Xem ảnh lớn</Text>
+                      </View>
+                    </Pressable>
+                  </View>
+                ) : null}
+
+                {selectedP?.importantValue ? (
+                  <Text style={{ color: colors.brand.primary }} className="mt-2 text-sm font-bold">
+                    {selectedP.importantValue}
+                  </Text>
+                ) : null}
+
+                <View style={{ borderTopColor: colors.border.default }} className="mt-4 flex-row items-center justify-between border-t pt-3">
+                  <Text style={{ color: colors.text.muted }} className="text-xs font-medium">
+                    {selectedP?.orderRef ? `${selectedP.orderRef} · ` : ''}{selectedP?.formattedTime || ''}
+                  </Text>
+                  <View style={{ backgroundColor: colors.brand.primarySoft }} className="rounded-full px-2.5 py-0.5">
+                    <Text style={{ color: colors.brand.primary }} className="text-[10px] font-bold">
+                      {selectedP?.categoryBadge || ''}
                     </Text>
                   </View>
-
-                  <Pressable
-                    onPress={() => setPreviewImageUrl(modalImageUrl)}
-                    className="relative overflow-hidden rounded-xl bg-gray-200 items-center justify-center"
-                    style={{ height: 160 }}
-                  >
-                    <Image
-                      source={{ uri: modalImageUrl }}
-                      style={{ width: '100%', height: '100%' }}
-                      contentFit="cover"
-                    />
-                    <View className="absolute bottom-2 right-2 rounded-lg bg-black/60 px-2 py-0.5 flex-row items-center gap-1">
-                      <Ionicons name="scan-outline" size={12} color="#FFFFFF" />
-                      <Text className="text-[10px] font-bold text-white">Xem ảnh lớn</Text>
-                    </View>
-                  </Pressable>
                 </View>
-              ) : null}
-
-              {selectedP?.importantValue ? (
-                <Text style={{ color: colors.brand.primary }} className="mt-2 text-sm font-bold">
-                  {selectedP.importantValue}
-                </Text>
-              ) : null}
-
-              <View style={{ borderTopColor: colors.border.default }} className="mt-4 flex-row items-center justify-between border-t pt-3">
-                <Text style={{ color: colors.text.muted }} className="text-xs font-medium">
-                  {selectedP?.orderRef ? `${selectedP.orderRef} · ` : ''}{selectedP?.formattedTime || ''}
-                </Text>
-                <View style={{ backgroundColor: colors.brand.primarySoft }} className="rounded-full px-2.5 py-0.5">
-                  <Text style={{ color: colors.brand.primary }} className="text-[10px] font-bold">
-                    {selectedP?.categoryBadge || ''}
-                  </Text>
-                </View>
-              </View>
-            </ScrollView>
+              </ScrollView>
+            </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      )}
 
       {/* Fullscreen Image Lightbox Modal */}
-      <Modal visible={Boolean(previewImageUrl)} transparent animationType="fade" onRequestClose={() => setPreviewImageUrl(null)}>
-        <View className="flex-1 bg-black/95 items-center justify-center p-4">
-          <Pressable
-            onPress={() => setPreviewImageUrl(null)}
-            className="absolute top-12 right-6 z-50 rounded-full bg-white/20 p-2.5"
-            hitSlop={15}
-          >
-            <Ionicons name="close" size={24} color="#FFFFFF" />
-          </Pressable>
+      {Boolean(previewImageUrl) && (
+        <Modal visible={true} transparent animationType="fade" onRequestClose={() => setPreviewImageUrl(null)}>
+          <View className="flex-1 bg-black/95 items-center justify-center p-4">
+            <Pressable
+              onPress={() => setPreviewImageUrl(null)}
+              className="absolute top-12 right-6 z-50 rounded-full bg-white/20 p-2.5 active:bg-white/40"
+              hitSlop={15}
+            >
+              <Ionicons name="close" size={24} color="#FFFFFF" />
+            </Pressable>
 
-          {previewImageUrl ? (
-            <Image
-              source={{ uri: previewImageUrl }}
-              style={{ width: '100%', height: '80%' }}
-              contentFit="contain"
-            />
-          ) : null}
+            {previewImageUrl ? (
+              <Image
+                source={{ uri: previewImageUrl }}
+                style={{ width: '100%', height: '80%' }}
+                contentFit="contain"
+              />
+            ) : null}
 
-          <Text className="absolute bottom-10 text-center text-xs text-white/70">
-            Chạm dấu ✕ hoặc nhấn nút đóng để quay lại
-          </Text>
-        </View>
-      </Modal>
+            <Text className="absolute bottom-10 text-center text-xs text-white/70">
+              Chạm dấu ✕ hoặc nhấn nút đóng để quay lại
+            </Text>
+          </View>
+        </Modal>
+      )}
     </View>
   );
 }

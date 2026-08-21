@@ -8,6 +8,7 @@ export default function DriverTripsLayout() {
       <Stack.Screen name="[id]/documents" />
       <Stack.Screen name="[id]/incident" />
       <Stack.Screen name="[id]/incident-detail" />
+      <Stack.Screen name="stop/[stopId]" />
     </Stack>
   );
 }

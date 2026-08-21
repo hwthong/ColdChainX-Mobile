@@ -283,7 +283,8 @@ export default function DriverTripDetailScreen() {
     }
     if (route?.optimizedStops && route.optimizedStops.length > 0) {
       return route.optimizedStops.map((s, idx) => ({
-        stopId: s.stopId || `route-stop-${idx}`,
+        stopId: s.stopId || (s as { locationId?: string }).locationId || `stop-${idx}`,
+        locationId: (s as { locationId?: string }).locationId,
         stopSequence: s.optimizedSequence ?? s.originalStopSequence ?? idx + 1,
         address: s.address || 'Điểm giao hàng',
         plannedArrivalTime: (s as { plannedArrivalTime?: string }).plannedArrivalTime ?? null,
@@ -312,6 +313,8 @@ export default function DriverTripDetailScreen() {
       (stop) => !finishedStatuses.has(stop.status?.toUpperCase() || '')
     );
   }, [displayStops]);
+
+
 
   const getOrdersForStop = useCallback(
     (stop: DriverTripStopDto): StopOrderDisplayInfo[] => {
@@ -395,6 +398,47 @@ export default function DriverTripDetailScreen() {
   );
 
   const vehiclePosition = useMemo(() => getVehiclePosition(tracking), [tracking]);
+
+  const effectiveRoute = useMemo<TripRouteResponse | null>(() => {
+    if (route) return route;
+    if (!trip && !tracking && !vehiclePosition) return null;
+    return {
+      tripId: tripId || '',
+      totalDistanceMeters: (trip?.totalDistanceKm ?? 0) * 1000,
+      totalDurationSeconds: (trip?.estimatedDurationHours ?? 0) * 3600,
+      overviewPolyline: trip?.encodedPolyline || undefined,
+      waypointOrder: [],
+      origin: trip?.stops?.[0]?.latitude && trip?.stops?.[0]?.longitude ? {
+        locationId: trip.stops[0].locationId || 'origin',
+        address: trip.stops[0].address || 'Điểm xuất phát',
+        lat: Number(trip.stops[0].latitude),
+        lon: Number(trip.stops[0].longitude),
+      } : vehiclePosition ? {
+        locationId: 'vehicle',
+        address: 'Vị trí xe hiện tại',
+        lat: vehiclePosition.latitude,
+        lon: vehiclePosition.longitude,
+      } : undefined,
+      destination: trip?.stops && trip.stops.length > 1 && trip.stops[trip.stops.length - 1].latitude ? {
+        locationId: trip.stops[trip.stops.length - 1].locationId || 'destination',
+        address: trip.stops[trip.stops.length - 1].address || 'Điểm kết thúc',
+        lat: Number(trip.stops[trip.stops.length - 1].latitude),
+        lon: Number(trip.stops[trip.stops.length - 1].longitude),
+      } : undefined,
+      optimizedStops: (trip?.stops || []).map((s, idx) => ({
+        stopId: s.stopId,
+        locationId: s.locationId,
+        address: s.address,
+        lat: s.latitude ? Number(s.latitude) : 0,
+        lon: s.longitude ? Number(s.longitude) : 0,
+        optimizedSequence: s.stopSequence ?? idx + 1,
+        stopType: s.stopType,
+        status: s.status,
+        orders: [],
+        lpns: [],
+      })).filter((s) => s.lat !== 0 && s.lon !== 0),
+    };
+  }, [route, trip, tracking, vehiclePosition, tripId]);
 
   const safeOpenURL = useCallback(async (primaryUrl: string, fallbackUrl?: string) => {
     try {
@@ -502,14 +546,12 @@ export default function DriverTripDetailScreen() {
   const isCompleted = TERMINAL.has(status.toUpperCase());
 
   const handleGoBack = () => {
-    if (params.from === 'home') {
-      router.navigate('/(driver)/home');
-    } else if (params.from === 'trips') {
-      router.navigate('/(driver)/trips');
-    } else if (router.canGoBack()) {
+    if (router.canGoBack()) {
       router.back();
+    } else if (params.from === 'home') {
+      router.replace('/(driver)/home');
     } else {
-      router.navigate('/(driver)/home');
+      router.replace('/(driver)/trips');
     }
   };
 
@@ -663,7 +705,7 @@ export default function DriverTripDetailScreen() {
           title="Bản đồ tuyến đường"
           icon="map-outline"
           rightAction={
-            route ? (
+            effectiveRoute ? (
               <Pressable
                 onPress={() => setIsMapFullscreen(true)}
                 style={{ backgroundColor: colors.brand.primarySoft }}
@@ -677,12 +719,17 @@ export default function DriverTripDetailScreen() {
             ) : null
           }
         >
-          {errors.route ? <ErrorMessage message={errors.route} onRetry={loadRoute} /> : null}
-          {route ? (
+          {errors.route && !effectiveRoute ? <ErrorMessage message={errors.route} onRetry={loadRoute} /> : null}
+          {effectiveRoute ? (
             <>
-              <InfoRow label="Quãng đường" value={formatDistance(route.totalDistanceMeters)} />
-              <InfoRow label="Thời gian dự kiến" value={formatDuration(route.totalDurationSeconds)} />
-              <GoongRouteMap route={route} vehiclePosition={vehiclePosition} />
+              <InfoRow
+                label="Mã chuyến (Trip ID)"
+                value={trip?.tripId || effectiveRoute?.tripId || tracking?.tripId || tripId || '--'}
+                highlight
+              />
+              <InfoRow label="Quãng đường" value={formatDistance(effectiveRoute.totalDistanceMeters)} />
+              <InfoRow label="Thời gian dự kiến" value={formatDuration(effectiveRoute.totalDurationSeconds)} />
+              <GoongRouteMap route={effectiveRoute} vehiclePosition={vehiclePosition} />
               {!vehiclePosition ? <Empty message="Chưa nhận được vị trí từ thiết bị." /> : null}
 
               {/* Phím tắt mở nhanh bản đồ ngoài */}
@@ -736,6 +783,11 @@ export default function DriverTripDetailScreen() {
               <Metric label="Cửa xe" value={formatDoor(tracking.telemetry?.doorOpen)} />
             </View>
             <InfoRow
+              label="Mã chuyến (Trip ID)"
+              value={trip?.tripId || tracking?.tripId || route?.tripId || tripId || '--'}
+              highlight
+            />
+            <InfoRow
               label="Biển số xe"
               value={
                 replacementPlate
@@ -785,91 +837,93 @@ export default function DriverTripDetailScreen() {
     </ScrollView>
 
     {/* ── MODAL BẢN ĐỒ TOÀN MÀN HÌNH ── */}
-    <Modal
-      visible={isMapFullscreen}
-      animationType="slide"
-      onRequestClose={() => setIsMapFullscreen(false)}
-    >
-      <View style={{ backgroundColor: colors.surface.page }} className="flex-1">
-        {/* Header với Safe Area Insets */}
-        <View
-          style={{
-            backgroundColor: colors.surface.card,
-            borderColor: colors.border.default,
-            paddingTop: Math.max(insets.top + 6, 48),
-          }}
-          className="border-b px-4 pb-3 shadow-sm"
-        >
-          <View className="flex-row items-center justify-between">
-            <Pressable
-              onPress={() => setIsMapFullscreen(false)}
-              style={{ backgroundColor: colors.brand.primarySoft }}
-              className="rounded-full p-2.5"
-            >
-              <Ionicons name="close" size={20} color={colors.brand.primary} />
-            </Pressable>
+    {isMapFullscreen && (
+      <Modal
+        visible={true}
+        animationType="slide"
+        onRequestClose={() => setIsMapFullscreen(false)}
+      >
+        <View style={{ backgroundColor: colors.surface.page }} className="flex-1">
+          {/* Header với Safe Area Insets */}
+          <View
+            style={{
+              backgroundColor: colors.surface.card,
+              borderColor: colors.border.default,
+              paddingTop: Math.max(insets.top + 6, 48),
+            }}
+            className="border-b px-4 pb-3 shadow-sm"
+          >
+            <View className="flex-row items-center justify-between">
+              <Pressable
+                onPress={() => setIsMapFullscreen(false)}
+                style={{ backgroundColor: colors.brand.primarySoft }}
+                className="rounded-full p-2.5"
+              >
+                <Ionicons name="close" size={20} color={colors.brand.primary} />
+              </Pressable>
 
-            <View className="flex-1 px-3">
-              <Text style={{ color: colors.text.secondary }} className="text-[10px] font-bold uppercase tracking-wider">
-                Bản đồ lộ trình toàn màn hình
-              </Text>
-              <Text numberOfLines={1} style={{ color: colors.text.primary }} className="text-sm font-bold">
-                {tripId ? `Chuyến #${tripId.slice(0, 8).toUpperCase()}` : '--'}
-              </Text>
+              <View className="flex-1 px-3">
+                <Text style={{ color: colors.text.secondary }} className="text-[10px] font-bold uppercase tracking-wider">
+                  Bản đồ lộ trình toàn màn hình
+                </Text>
+                <Text numberOfLines={1} style={{ color: colors.text.primary }} className="text-sm font-bold">
+                  {tripId ? `Chuyến #${tripId.slice(0, 8).toUpperCase()}` : '--'}
+                </Text>
+              </View>
+
+              <Pressable
+                onPress={() => setIsMapFullscreen(false)}
+                style={{ backgroundColor: colors.surface.muted }}
+                className="rounded-xl px-3 py-1.5"
+              >
+                <Text style={{ color: colors.text.primary }} className="text-xs font-semibold">Đóng</Text>
+              </Pressable>
             </View>
 
-            <Pressable
-              onPress={() => setIsMapFullscreen(false)}
-              style={{ backgroundColor: colors.surface.muted }}
-              className="rounded-xl px-3 py-1.5"
-            >
-              <Text style={{ color: colors.text.primary }} className="text-xs font-semibold">Đóng</Text>
-            </Pressable>
+            {/* Thanh nút điều hướng bên ngoài (Google Map, Apple Map, Goong Map) */}
+            <View className="mt-2.5 flex-row items-center justify-between gap-1.5">
+              <Pressable
+                onPress={openGoogleMaps}
+                style={{ backgroundColor: '#EEF2FF', borderColor: '#C7D2FE' }}
+                className="flex-1 flex-row items-center justify-center gap-1 rounded-xl border py-2 shadow-xs"
+              >
+                <Ionicons name="navigate-outline" size={13} color="#4338CA" />
+                <Text className="text-[11px] font-bold text-indigo-800">Google Map</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={openAppleMaps}
+                style={{ backgroundColor: '#F1F5F9', borderColor: '#CBD5E1' }}
+                className="flex-1 flex-row items-center justify-center gap-1 rounded-xl border py-2 shadow-xs"
+              >
+                <Ionicons name="compass-outline" size={13} color="#334155" />
+                <Text className="text-[11px] font-bold text-slate-700">Apple Map</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={openGoongMap}
+                style={{ backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }}
+                className="flex-1 flex-row items-center justify-center gap-1 rounded-xl border py-2 shadow-xs"
+              >
+                <Ionicons name="map-outline" size={13} color="#B45309" />
+                <Text className="text-[11px] font-bold text-amber-800">Goong Map</Text>
+              </Pressable>
+            </View>
           </View>
 
-          {/* Thanh nút điều hướng bên ngoài (Google Map, Apple Map, Goong Map) */}
-          <View className="mt-2.5 flex-row items-center justify-between gap-1.5">
-            <Pressable
-              onPress={openGoogleMaps}
-              style={{ backgroundColor: '#EEF2FF', borderColor: '#C7D2FE' }}
-              className="flex-1 flex-row items-center justify-center gap-1 rounded-xl border py-2 shadow-xs"
-            >
-              <Ionicons name="navigate-outline" size={13} color="#4338CA" />
-              <Text className="text-[11px] font-bold text-indigo-800">Google Map</Text>
-            </Pressable>
-
-            <Pressable
-              onPress={openAppleMaps}
-              style={{ backgroundColor: '#F1F5F9', borderColor: '#CBD5E1' }}
-              className="flex-1 flex-row items-center justify-center gap-1 rounded-xl border py-2 shadow-xs"
-            >
-              <Ionicons name="compass-outline" size={13} color="#334155" />
-              <Text className="text-[11px] font-bold text-slate-700">Apple Map</Text>
-            </Pressable>
-
-            <Pressable
-              onPress={openGoongMap}
-              style={{ backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }}
-              className="flex-1 flex-row items-center justify-center gap-1 rounded-xl border py-2 shadow-xs"
-            >
-              <Ionicons name="map-outline" size={13} color="#B45309" />
-              <Text className="text-[11px] font-bold text-amber-800">Goong Map</Text>
-            </Pressable>
+          {/* Bản đồ Goong toàn màn hình */}
+          <View className="flex-1 p-2">
+            {effectiveRoute ? (
+              <GoongRouteMap
+                route={effectiveRoute}
+                vehiclePosition={vehiclePosition}
+                isFullScreen
+              />
+            ) : null}
           </View>
         </View>
-
-        {/* Bản đồ Goong toàn màn hình */}
-        <View className="flex-1 p-2">
-          {route && isMapFullscreen ? (
-            <GoongRouteMap
-              route={route}
-              vehiclePosition={vehiclePosition}
-              isFullScreen
-            />
-          ) : null}
-        </View>
-      </View>
-    </Modal>
+      </Modal>
+    )}
   </View>
   );
 }
@@ -924,11 +978,16 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function InfoRow({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }) {
   return (
     <View style={{ borderBottomColor: colors.border.default }} className="flex-row items-start justify-between gap-4 border-b pb-2">
       <Text style={{ color: colors.text.secondary }} className="text-sm">{label}</Text>
-      <Text style={{ color: colors.text.primary }} className="flex-1 text-right text-sm font-semibold">{value}</Text>
+      <Text
+        style={{ color: highlight ? colors.brand.primary : colors.text.primary }}
+        className={`flex-1 text-right text-sm ${highlight ? 'font-bold' : 'font-semibold'}`}
+      >
+        {value}
+      </Text>
     </View>
   );
 }
@@ -990,22 +1049,24 @@ function StopRow({
                 style={{ backgroundColor: '#FFFFFF', borderColor: '#BBF7D0' }}
                 className="rounded-xl border p-2.5 gap-1.5 shadow-2xs"
               >
-                <View className="flex-row items-center justify-between">
-                  <View className="flex-row items-center gap-1.5 flex-1 mr-2">
+                <View className="flex-row items-center justify-between gap-2">
+                  <View className="flex-row items-center gap-1.5 flex-1 min-w-0">
                     <Ionicons name="cube-outline" size={14} color="#16A34A" />
-                    <Text style={{ color: colors.text.primary }} className="text-xs font-bold" numberOfLines={1}>
+                    <Text style={{ color: colors.text.primary }} className="text-xs font-bold flex-1 min-w-0" numberOfLines={1} ellipsizeMode="tail">
                       {ord.itemName}
+                      {ord.quantity ? (
+                        <Text style={{ color: colors.text.secondary, fontWeight: 'normal' }} className="text-[11px]">
+                          {' '}({ord.quantity} kiện)
+                        </Text>
+                      ) : null}
                     </Text>
-                    {ord.quantity ? (
-                      <Text style={{ color: colors.text.secondary }} className="text-[11px]">
-                        ({ord.quantity} kiện)
-                      </Text>
-                    ) : null}
                   </View>
                   {ord.trackingCode ? (
-                    <Text style={{ color: '#15803D' }} className="text-[11px] font-bold">
-                      #{ord.trackingCode}
-                    </Text>
+                    <View style={{ backgroundColor: '#DCFCE7' }} className="rounded-md px-1.5 py-0.5 shrink-0">
+                      <Text style={{ color: '#15803D' }} className="text-[10px] font-bold">
+                        #{ord.trackingCode}
+                      </Text>
+                    </View>
                   ) : null}
                 </View>
 
@@ -1068,7 +1129,7 @@ function StopRow({
             {isDeparted ? '✓' : stop.stopSequence ?? index + 1}
           </Text>
         </View>
-        <View className="flex-1">
+        <View className="flex-1 min-w-0">
           <View className="flex-row items-center justify-between">
             <Text
               style={{
@@ -1089,14 +1150,16 @@ function StopRow({
             <View className="mt-2 gap-1.5 border-t border-slate-100 pt-2">
               {orders.map((ord, oIdx) => (
                 <View key={ord.orderId || oIdx} className="gap-1">
-                  <View className="flex-row items-center justify-between">
-                    <Text style={{ color: colors.text.primary }} className="text-[11px] font-semibold flex-1 mr-1" numberOfLines={1}>
+                  <View className="flex-row items-center justify-between gap-2">
+                    <Text style={{ color: colors.text.primary }} className="text-[11px] font-semibold flex-1 min-w-0" numberOfLines={1} ellipsizeMode="tail">
                       📦 {ord.itemName} {ord.quantity ? `(${ord.quantity} kiện)` : ''}
                     </Text>
                     {ord.trackingCode ? (
-                      <Text style={{ color: colors.brand.primary }} className="text-[10px] font-bold">
-                        #{ord.trackingCode}
-                      </Text>
+                      <View style={{ backgroundColor: colors.brand.primarySoft }} className="rounded px-1.5 py-0.5 shrink-0">
+                        <Text style={{ color: colors.brand.primary }} className="text-[10px] font-bold">
+                          #{ord.trackingCode}
+                        </Text>
+                      </View>
                     ) : null}
                   </View>
 
@@ -1134,7 +1197,30 @@ function StopRow({
 function ErrorMessage({ message, onRetry }: { message: string; onRetry: () => void | Promise<unknown> }) { return <View className="rounded-2xl border border-red-200 bg-red-50 p-4"><Text className="text-sm leading-5 text-red-800">{message}</Text><Pressable onPress={() => void onRetry()} className="mt-3 self-start rounded-lg bg-red-800 px-4 py-2"><Text className="font-bold text-white">Thử lại</Text></Pressable></View>; }
 function Empty({ message }: { message: string }) { return <Text style={{ color: colors.text.secondary }} className="py-3 text-center text-sm font-medium">{message}</Text>; }
 
-function getVehiclePosition(tracking: TripTracking | null) { const latitude = tracking?.telemetry?.latitude; const longitude = tracking?.telemetry?.longitude; if (typeof latitude !== 'number' || !Number.isFinite(latitude) || latitude < -90 || latitude > 90) return null; if (typeof longitude !== 'number' || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) return null; return { latitude, longitude }; }
+function getVehiclePosition(tracking: TripTracking | null) {
+  if (!tracking) return null;
+  const lat =
+    tracking.telemetry?.latitude ??
+    (tracking as any)?.latestTelemetry?.lat ??
+    (tracking as any)?.latestTelemetry?.latitude ??
+    (tracking as any)?.latitude ??
+    (tracking as any)?.lat ??
+    (tracking as any)?.currentLatitude;
+  const lon =
+    tracking.telemetry?.longitude ??
+    (tracking as any)?.latestTelemetry?.lon ??
+    (tracking as any)?.latestTelemetry?.lng ??
+    (tracking as any)?.latestTelemetry?.longitude ??
+    (tracking as any)?.longitude ??
+    (tracking as any)?.lon ??
+    (tracking as any)?.currentLongitude;
+
+  const latNum = typeof lat === 'string' ? parseFloat(lat) : Number(lat);
+  const lonNum = typeof lon === 'string' ? parseFloat(lon) : Number(lon);
+  if (!Number.isFinite(latNum) || latNum < -90 || latNum > 90) return null;
+  if (!Number.isFinite(lonNum) || lonNum < -180 || lonNum > 180) return null;
+  return { latitude: latNum, longitude: lonNum };
+}
 function formatOnlineState(tracking: TripTracking) { if (tracking.device?.isOnline === true) return 'Trực tuyến'; if (tracking.device?.isOnline === false) return 'Ngoại tuyến'; return tracking.device?.status || 'Không xác định'; }
 function formatTemperature(value?: number) { return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(1)} °C` : '--'; }
 function formatDoor(value?: boolean) { return value === true ? 'Đang mở' : value === false ? 'Đang đóng' : '--'; }

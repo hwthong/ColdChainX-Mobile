@@ -182,6 +182,8 @@ export type CloseShiftResponse = {
   vehicleReleased: boolean;
   driversReleasedCount: number;
   newLocation: string;
+  noShowReturnIncidentId?: string | null;
+  requiresWarehouseInboundBySeal?: boolean;
   message: string;
 };
 

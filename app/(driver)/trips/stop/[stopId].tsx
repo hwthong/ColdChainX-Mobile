@@ -7,12 +7,13 @@ import {
   Alert,
   Image,
   Linking,
+  Modal,
   ScrollView,
   Switch,
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppPressable as Pressable } from '../../../../components/AppPressable';
 import { colors } from '../../../../constants/colors';
@@ -24,7 +25,7 @@ import {
 } from '../../../../components/driver/PartialHandoverPanel';
 import { LocalQrCode } from '../../../../components/local-qr-code';
 import { TemperatureChart } from '../../../../components/customer/TemperatureChart';
-import { ApiClientError } from '../../../../services/apiClient';
+import { API_BASE_URL, ApiClientError } from '../../../../services/apiClient';
 import {
   ApplySealResponse,
   CutSealResponse,
@@ -42,6 +43,7 @@ import {
 } from '../../../../services/driverApi';
 import {
   getStopTemperatureChart,
+  getTripTemperatureChart,
   StopTemperatureChart,
 } from '../../../../services/monitoringApi';
 import {
@@ -51,11 +53,20 @@ import {
 import {
   getPlannedTripRoute,
   getTrackingByTripId,
+  OptimizedTripStopDto,
   TripRouteLpnDto,
   TripRouteOrderDto,
   TripRoutePointDto,
+  TripRouteResponse,
 } from '../../../../services/trackingApi';
 import { useAuthStore } from '../../../../store/useAuthStore';
+
+function getFullAssetUrl(url?: string | null): string | null {
+  if (!url) return null;
+  if (url.startsWith('http') || url.startsWith('file:') || url.startsWith('data:')) return url;
+  const assetBaseUrl = API_BASE_URL.replace(/\/api$/i, '');
+  return `${assetBaseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
+}
 
 type ScreenStep = 'ORDERS' | 'ORDER_ACTIONS' | 'SIGNATURE' | 'PAYMENT' | 'REJECT' | 'NO_SHOW' | 'PARTIAL_HANDOVER';
 
@@ -65,10 +76,23 @@ type StopOrder = {
   itemName: string;
   category?: string | null;
   customerId?: string | null;
+  customerName?: string | null;
+  customerPhone?: string | null;
   receiverName?: string | null;
   receiverPhone?: string | null;
+  originAddress?: string | null;
+  destAddress?: string | null;
+  tempCondition?: string | number | null;
+  expectedWeightKg?: number | null;
+  actualWeightKg?: number | null;
+  packingType?: string | null;
+  cargoValue?: number | null;
+  expectedCbm?: number | null;
+  dimensions?: { length?: number | null; width?: number | null; height?: number | null } | null;
   originalQuantity: number;
   status: string;
+  imageUrl?: string | null;
+  documentUrls?: string[];
   lpns: TripRouteLpnDto[];
   epod: EpodResponse | null;
 };
@@ -84,6 +108,7 @@ const STOP_STATUS: Record<string, string> = {
   ARRIVED: 'Đã check-in',
   DEPARTED: 'Đã hoàn tất (dữ liệu cũ)',
   FAILED_DELIVERY: 'Giao hàng thất bại',
+  SKIPPED_NOSHOW: 'Khách vắng mặt (No-Show)',
 };
 
 const HANDOVER_STATUSES = new Set([
@@ -102,6 +127,7 @@ const RETURN_ORDER_STATUSES = new Set([
 ]);
 
 export default function StopDetailScreen() {
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{
     stopId?: string | string[];
     tripId?: string | string[];
@@ -112,6 +138,16 @@ export default function StopDetailScreen() {
   const token = useAuthStore((state) => state.token);
   const mutationLock = useRef(false);
 
+  const handleGoBack = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+    } else if (tripId) {
+      router.replace(`/(driver)/trips/${tripId}` as never);
+    } else {
+      router.replace('/(driver)/trips' as never);
+    }
+  }, [router, tripId]);
+
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [driverStop, setDriverStop] = useState<DriverTripStopDto | null>(null);
@@ -121,6 +157,7 @@ export default function StopDetailScreen() {
   const [step, setStep] = useState<ScreenStep>('ORDERS');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [checkinProofAsset, setCheckinProofAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [signatureAsset, setSignatureAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [handoverPhotoAsset, setHandoverPhotoAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
@@ -148,6 +185,7 @@ export default function StopDetailScreen() {
   const [temperatureChart, setTemperatureChart] = useState<StopTemperatureChart | null>(null);
   const [temperatureError, setTemperatureError] = useState<string | null>(null);
   const [isLoadingTemperature, setIsLoadingTemperature] = useState(false);
+  const [distanceToStopKm, setDistanceToStopKm] = useState<number | null>(null);
 
   const selectedOrder = useMemo(
     () => orders.find((order) => order.orderId === selectedOrderId) ?? null,
@@ -206,15 +244,16 @@ export default function StopDetailScreen() {
         getPlannedTripRoute(token, tripId),
         getTrackingByTripId(token, tripId),
       ]);
-      if (!routeResponse.success || !routeResponse.data) {
-        throw new Error('Không thể tải tuyến đường của chuyến.');
-      }
-
-      const route = routeResponse.data;
-      setServerSealNumber(trackingResponse.data?.sealNumber ?? null);
-
+      const route: TripRouteResponse = routeResponse.data || {
+        tripId,
+        totalDistanceMeters: 0,
+        totalDurationSeconds: 0,
+        waypointOrder: [],
+        optimizedStops: [],
+      };
       const routeStop = route.optimizedStops?.find((stop) => stop.stopId === stopId)
-        || route.optimizedStops?.find((_, idx) => `route-stop-${idx}` === stopId)
+        || route.optimizedStops?.find((s) => (s as { locationId?: string }).locationId === stopId)
+        || route.optimizedStops?.find((_, idx) => `stop-${idx}` === stopId)
         || (trackingResponse.data?.orders?.some((o) => o.orderId === stopId)
           ? {
               stopId,
@@ -229,8 +268,33 @@ export default function StopDetailScreen() {
             }
           : undefined);
 
-      const currentStop: DriverTripStopDto | null =
-        tripDetail.stops?.find((stop) => stop.stopId === stopId) ??
+      // 1. Tìm trực tiếp theo stopId hoặc locationId trong tripDetail.stops nếu có
+      let matchedStop = tripDetail.stops?.find((stop) => stop.stopId === stopId || (Boolean(stop.locationId) && stop.locationId === stopId));
+
+      // 2. Nếu không thấy theo ID trực tiếp, tìm theo stopSequence của routeStop
+      if (!matchedStop && routeStop) {
+        const seq = (routeStop as { optimizedSequence?: number; originalStopSequence?: number }).optimizedSequence
+          ?? (routeStop as { originalStopSequence?: number }).originalStopSequence;
+        if (seq !== undefined) {
+          matchedStop = tripDetail.stops?.find((s) => s.stopSequence === seq);
+        }
+      }
+
+      // 3. Nếu vẫn không thấy và tripDetail.stops có dữ liệu, ánh xạ theo index
+      if (!matchedStop && tripDetail.stops && tripDetail.stops.length > 0) {
+        if (tripDetail.stops.length === 1) {
+          matchedStop = tripDetail.stops[0];
+        } else {
+          const routeIndex = route.optimizedStops?.findIndex(
+            (s) => s.stopId === stopId || (s as { locationId?: string }).locationId === stopId
+          );
+          if (routeIndex !== undefined && routeIndex >= 0 && tripDetail.stops[routeIndex]) {
+            matchedStop = tripDetail.stops[routeIndex];
+          }
+        }
+      }
+
+      const currentStop: DriverTripStopDto | null = matchedStop ??
         (routeStop
           ? ({
               stopId: routeStop.stopId || stopId,
@@ -250,9 +314,9 @@ export default function StopDetailScreen() {
       let routeLpns: TripRouteLpnDto[];
 
       if (routeStop) {
-        routeOrders = routeStop.orders;
+        routeOrders = routeStop.orders || [];
         stopLocationId = (routeStop as { locationId?: string }).locationId;
-        routeLpns = routeStop.lpns;
+        routeLpns = routeStop.lpns || [];
       } else {
         const boundaryPoint = resolveBoundaryPoint(
           currentStop!,
@@ -260,41 +324,63 @@ export default function StopDetailScreen() {
           route.origin,
           route.destination
         );
-        if (!boundaryPoint?.locationId) {
-          throw new Error('Không xác định được vị trí thật của điểm dừng từ dữ liệu tuyến.');
-        }
-
-        stopLocationId = boundaryPoint.locationId;
+        stopLocationId = boundaryPoint?.locationId || currentStop?.locationId;
         routeLpns = [];
-
-        if (!trackingResponse.success || !trackingResponse.data) {
-          throw new Error('Không thể tải danh sách đơn hàng của chuyến.');
-        }
-        routeOrders = trackingResponse.data.orders;
+        routeOrders = trackingResponse.data?.orders || [];
       }
 
       const orderDetails = await loadOrderDetails(token, routeOrders);
-      const ordersAtStop = routeStop
+      const ordersAtStop = routeStop || !stopLocationId
         ? orderDetails
-        : orderDetails.filter((order) => order.destination?.locationId === stopLocationId);
+        : orderDetails.filter((order) => !order.destination?.locationId || order.destination?.locationId === stopLocationId);
       const routeOrderById = new Map(routeOrders.map((order) => [order.orderId, order]));
 
       const nextOrders = ordersAtStop.map((order): StopOrder => {
         const routeOrder = routeOrderById.get(order.orderId);
         const matchingLpns = routeLpns.filter((lpn) => lpn.orderId === order.orderId);
         const firstLpnQuantity = matchingLpns[0]?.quantity;
+
+        // Trích xuất danh sách hình ảnh hàng hóa
+        const rawImages = (order.documents || [])
+          .map((d) => getFullAssetUrl(d.imageUrl))
+          .filter(Boolean) as string[];
+        if (order.documentUrl) {
+          const docUrl = getFullAssetUrl(order.documentUrl);
+          if (docUrl && !rawImages.includes(docUrl)) {
+            rawImages.unshift(docUrl);
+          }
+        }
+        const primaryImage = rawImages[0] || null;
+
         return {
           orderId: order.orderId,
           trackingCode: order.trackingCode || routeOrder?.trackingCode || order.orderId.slice(0, 8),
           itemName: order.itemName || routeOrder?.itemName || 'Đơn hàng',
           category: order.category || routeOrder?.category,
           customerId: order.customerId,
+          customerName: order.customerName || order.customerContactName || null,
+          customerPhone: order.customerPhone || null,
           receiverName: order.receiverName || null,
           receiverPhone: order.receiverPhone || null,
+          originAddress: order.route?.originCity || null,
+          destAddress: order.destination?.address || order.route?.destCity || null,
+          tempCondition: order.tempCondition || routeOrder?.tempCondition,
+          expectedWeightKg: order.expectedWeightKg,
+          actualWeightKg: order.actualWeightKg,
+          packingType: order.packingType,
+          cargoValue: order.cargoValue,
+          expectedCbm: order.expectedCbm,
+          dimensions: (order.lengthCm || order.widthCm || order.heightCm) ? {
+            length: order.lengthCm,
+            width: order.widthCm,
+            height: order.heightCm,
+          } : null,
           originalQuantity: firstLpnQuantity && firstLpnQuantity > 0
             ? firstLpnQuantity
-            : order.quantity,
+            : (order.quantity || 1),
           status: order.status,
+          imageUrl: primaryImage,
+          documentUrls: rawImages,
           lpns: matchingLpns,
           epod: null,
         };
@@ -308,6 +394,24 @@ export default function StopDetailScreen() {
           return order;
         }
       }));
+
+      // Tính khoảng cách giữa xe và điểm dừng
+      const rawLat = trackingResponse.data?.latestTelemetry?.lat ?? (trackingResponse.data as any)?.latitude;
+      const rawLon = trackingResponse.data?.latestTelemetry?.lon ?? (trackingResponse.data as any)?.longitude;
+      const vLat = typeof rawLat === 'string' ? parseFloat(rawLat) : Number(rawLat);
+      const vLon = typeof rawLon === 'string' ? parseFloat(rawLon) : Number(rawLon);
+      const hasVehicleCoords = Number.isFinite(vLat) && Number.isFinite(vLon) && vLat >= -90 && vLat <= 90 && vLon >= -180 && vLon <= 180;
+
+      const sLat = (routeStop as { lat?: number })?.lat ?? route.destination?.lat;
+      const sLon = (routeStop as { lon?: number })?.lon ?? route.destination?.lon;
+      const hasStopCoords = typeof sLat === 'number' && typeof sLon === 'number' && Number.isFinite(sLat) && Number.isFinite(sLon);
+
+      if (hasVehicleCoords && hasStopCoords) {
+        const dist = calculateHaversineDistanceKm(vLat, vLon, sLat, sLon);
+        setDistanceToStopKm(dist);
+      } else {
+        setDistanceToStopKm(null);
+      }
 
       setDriverStop(currentStop);
       setTripStops(tripDetail.stops);
@@ -332,18 +436,49 @@ export default function StopDetailScreen() {
   );
 
   const handleCheckIn = async () => {
-    if (!stopId || !checkinProofAsset) {
+    if (!checkinProofAsset) {
       Alert.alert('Thiếu ảnh xác nhận', 'Vui lòng thêm ảnh xác nhận trước khi check-in.');
+      return;
+    }
+
+    if (distanceToStopKm !== null && distanceToStopKm > MAX_CHECKIN_DISTANCE_KM) {
+      Alert.alert(
+        '⚠️ Chưa đến phạm vi điểm giao',
+        `Xe hiện đang cách điểm giao hàng ${distanceToStopKm} km (vượt quá bán kính 10 km cho phép check-in theo quy định hệ thống).\n\nVui lòng di chuyển xe đến gần điểm giao hơn để xác nhận.`
+      );
+      return;
+    }
+
+    const validTripId = typeof tripId === 'string' ? tripId : Array.isArray(tripId) ? tripId[0] : '';
+    if (!validTripId) {
+      Alert.alert('Thiếu TripId', 'Không xác định được chuyến đi. Vui lòng tải lại màn hình.');
       return;
     }
 
     try {
       setIsProcessing(true);
-      await deliveryApi.checkInStop(stopId, toDeliveryUploadFile(checkinProofAsset, 'checkin-proof.jpg'));
+
+      // Resolve targetStopId từ chi tiết chuyến mới nhất từ database
+      const latestDetail = await driverApi.getMyTripDetail(validTripId);
+      const verifiedStop = latestDetail.stops?.find(
+        (s) => s.stopId === driverStop?.stopId || s.stopId === stopId || (Boolean(s.locationId) && (s.locationId === stopId || s.locationId === driverStop?.locationId))
+      )
+        || latestDetail.stops?.find((s) => s.stopSequence === driverStop?.stopSequence)
+        || (latestDetail.stops?.length === 1 ? latestDetail.stops[0] : null);
+
+      if (!verifiedStop?.stopId) {
+        Alert.alert(
+          'Không thể check-in',
+          'Chuyến xe chưa có dữ liệu điểm dừng (TripStop) trong cơ sở dữ liệu. Vui lòng liên hệ điều phối viên hoặc tải lại chi tiết chuyến.'
+        );
+        return;
+      }
+
+      await deliveryApi.checkInStop(verifiedStop.stopId, toDeliveryUploadFile(checkinProofAsset, 'checkin-proof.jpg'));
       const reloaded = await loadData(false);
       Alert.alert(
         'Đã xác nhận đến điểm giao',
-        reloaded ? 'Stop đã được cập nhật.' : 'Yêu cầu đã được ghi nhận. Vui lòng tải lại để xem trạng thái mới.'
+        reloaded ? 'Điểm giao đã được xác nhận đến.' : 'Yêu cầu đã được ghi nhận. Vui lòng tải lại để xem trạng thái mới.'
       );
     } catch (error) {
       Alert.alert('Không thể xác nhận đến điểm giao', formatActionError(error, 'CHECK_IN'));
@@ -417,7 +552,8 @@ export default function StopDetailScreen() {
 
     try {
       setIsProcessing(true);
-      const result = await deliveryApi.confirmHandover(stopId, {
+      const targetStopId = driverStop?.stopId || stopId;
+      const result = await deliveryApi.confirmHandover(targetStopId, {
         tripId,
         customerId: selectedOrder.customerId,
         signatureFile: toDeliveryUploadFile(signatureAsset, 'receiver-signature.jpg'),
@@ -591,10 +727,11 @@ export default function StopDetailScreen() {
   };
 
   const handleCutSeal = async () => {
-    if (!stopId || !tripId) return;
+    const targetStopId = driverStop?.stopId || stopId;
+    if (!targetStopId || !tripId) return;
     try {
       setIsProcessing(true);
-      setCutSeal(await deliveryApi.cutSeal(tripId, stopId));
+      setCutSeal(await deliveryApi.cutSeal(tripId, targetStopId));
       await loadData(false);
     } catch (error) {
       Alert.alert('Không thể cắt seal', formatActionError(error, 'CUT_SEAL'));
@@ -641,7 +778,8 @@ export default function StopDetailScreen() {
 
   const submitPartialHandover = async (submission: PartialHandoverSubmission) => {
     if (mutationLock.current || isProcessing) return;
-    if (!stopId) {
+    const targetStopId = driverStop?.stopId || stopId;
+    if (!targetStopId) {
       Alert.alert('Thiếu StopId', 'Không xác định được điểm dừng. Vui lòng tải lại màn hình.');
       return;
     }
@@ -657,7 +795,7 @@ export default function StopDetailScreen() {
     try {
       mutationLock.current = true;
       setIsProcessing(true);
-      const result = await deliveryApi.processDynamicCod(stopId, {
+      const result = await deliveryApi.processDynamicCod(targetStopId, {
         tripId,
         customerId: selectedOrder.customerId,
         rejectedQuantity: submission.rejectedQuantity,
@@ -672,11 +810,12 @@ export default function StopDetailScreen() {
         orderId: selectedOrder.orderId,
         status: 'OSD_PARTIAL_DELIVER',
         paymentAmountDue: responseCodDue,
-        paymentStatus: responseCodDue > 0 ? 'AWAITING_PAYMENT' : 'PAID',
-        handoverConfirmedAt: result.handoverConfirmedAt ?? null,
+        paymentStatus: responseCodDue > 0 ? 'AWAITING_PAYMENT' : null,
+        handoverPdfUrl: (result as { handoverPdfUrl?: string | null }).handoverPdfUrl || null,
       };
       try {
-        resolvedEpod = await deliveryApi.getEpodByOrderId(selectedOrder.orderId);
+        const fetchedEpod = await deliveryApi.getEpodByOrderId(selectedOrder.orderId);
+        if (fetchedEpod) resolvedEpod = fetchedEpod;
       } catch {
         // Dynamic COD succeeded. Keep its typed response so the existing payment flow can retry.
       }
@@ -684,8 +823,7 @@ export default function StopDetailScreen() {
       setEpodId(result.epodId);
       setEpod(resolvedEpod);
       setPartialResult(result);
-      setPartialCodDue(resolvedEpod.paymentAmountDue ?? responseCodDue);
-      setReturnFlowActive(result.isReturnToWarehouse && result.rejectedQuantity > 0);
+      setReturnFlowActive(result.isReturnToWarehouse);
       setReturnCargoSummary(result.isReturnToWarehouse ? {
         lpnCode: result.lpnCode,
         quantity: result.rejectedQuantity,
@@ -703,9 +841,18 @@ export default function StopDetailScreen() {
   };
 
   const submitRejectEntireLpn = async () => {
-    if (mutationLock.current || isProcessing || !stopId || !tripId || !selectedOrder) return;
-    if (!selectedOrder.customerId) {
-      Alert.alert('Thiếu dữ liệu đơn hàng', 'Không xác định được khách hàng của đơn. Vui lòng tải lại điểm dừng.');
+    if (mutationLock.current || isProcessing) return;
+    const targetStopId = driverStop?.stopId || stopId;
+    if (!targetStopId) {
+      Alert.alert('Thiếu StopId', 'Không xác định được điểm dừng. Vui lòng tải lại màn hình.');
+      return;
+    }
+    if (!tripId) {
+      Alert.alert('Thiếu TripId', 'Không xác định được chuyến đi. Vui lòng tải lại màn hình.');
+      return;
+    }
+    if (!selectedOrder?.customerId) {
+      Alert.alert('Thiếu CustomerId', 'Không xác định được khách hàng của đơn. Vui lòng tải lại điểm dừng.');
       return;
     }
     if (!rejectionReason.trim()) {
@@ -720,7 +867,7 @@ export default function StopDetailScreen() {
     try {
       mutationLock.current = true;
       setIsProcessing(true);
-      const result = await deliveryApi.rejectEntireLpn(stopId, {
+      const result = await deliveryApi.rejectEntireLpn(targetStopId, {
         tripId,
         customerId: selectedOrder.customerId,
         rejectionReason: rejectionReason.trim(),
@@ -769,7 +916,8 @@ export default function StopDetailScreen() {
   };
 
   const submitNoShow = async () => {
-    if (mutationLock.current || isProcessing || !stopId) return;
+    const targetStopId = driverStop?.stopId || stopId;
+    if (mutationLock.current || isProcessing || !targetStopId) return;
     if (!noShowEvidenceAsset) {
       Alert.alert('Thiếu ảnh minh chứng', 'Vui lòng thêm ảnh minh chứng.');
       return;
@@ -782,7 +930,7 @@ export default function StopDetailScreen() {
       mutationLock.current = true;
       setIsProcessing(true);
       await deliveryApi.reportNoShow(
-        stopId,
+        targetStopId,
         toDeliveryUploadFile(noShowEvidenceAsset, 'customer-no-show-evidence.jpg')
       );
       setReturnFlowActive(true);
@@ -793,7 +941,10 @@ export default function StopDetailScreen() {
       });
       await loadData(false);
       resetOrderForm();
-      Alert.alert('Đã báo khách không có mặt', 'Trạng thái điểm dừng và kiện hàng đã được tải lại từ hệ thống.');
+      Alert.alert(
+        'Đã báo khách không có mặt',
+        'Hàng chưa được giao và phải nhập lại kho. Toàn bộ đơn hàng tại điểm giao này đã chuyển sang trạng thái chờ trả về kho (RETURN_PENDING).'
+      );
     } catch (error) {
       Alert.alert('Không thể báo khách không có mặt', formatActionError(error, 'NO_SHOW'));
       await loadData(false);
@@ -810,7 +961,7 @@ export default function StopDetailScreen() {
     }
     Alert.alert(
       'Xác nhận khách không có mặt',
-      'Bạn xác nhận khách hàng không xuất hiện hoặc từ chối nhận hàng tại điểm giao này?',
+      'Bạn xác nhận khách hàng không xuất hiện hoặc từ chối nhận hàng tại điểm giao này? Hàng sẽ được chuyển sang luồng trả về kho.',
       [
         { text: 'Hủy', style: 'cancel' },
         { text: 'Xác nhận', style: 'destructive', onPress: () => void submitNoShow() },
@@ -837,11 +988,41 @@ export default function StopDetailScreen() {
     try {
       setIsLoadingTemperature(true);
       setTemperatureError(null);
-      const response = await getStopTemperatureChart(token, stopId);
-      if (!response.success || !response.data) {
-        throw new Error(response.message || 'Không thể tải dữ liệu nhiệt độ.');
+
+      let chartData: StopTemperatureChart | null = null;
+      try {
+        const response = await getStopTemperatureChart(token, stopId);
+        if (response.success && response.data && (response.data.points?.length ?? 0) > 0) {
+          chartData = response.data;
+        }
+      } catch {
+        // Fallback to trip temperature chart if stop-level chart is 404/unavailable
       }
-      setTemperatureChart(response.data);
+
+      if (!chartData && tripId) {
+        try {
+          const tripChartRes = await getTripTemperatureChart(token, tripId);
+          if (tripChartRes.success && tripChartRes.data && (tripChartRes.data.points?.length ?? 0) > 0) {
+            const points = tripChartRes.data.points;
+            chartData = {
+              points,
+              tripId,
+              stopId,
+              endTime: points[points.length - 1]?.timestamp || new Date().toISOString(),
+              rawPointCount: points.length,
+              sampledPointCount: points.length,
+            };
+          }
+        } catch {
+          // Both failed
+        }
+      }
+
+      if (chartData && (chartData.points?.length ?? 0) > 0) {
+        setTemperatureChart(chartData);
+      } else {
+        setTemperatureError('Thiết bị IoT đang ghi nhận dữ liệu định kỳ. Chưa có lịch sử đo nhiệt độ cho chặng này.');
+      }
     } catch (error) {
       setTemperatureError(formatActionError(error, 'TEMPERATURE'));
     } finally {
@@ -855,10 +1036,70 @@ export default function StopDetailScreen() {
       mutationLock.current = true;
       setIsProcessing(true);
       const result = await deliveryApi.closeShift(tripId, selectedWarehouseId);
+
+      // Kiểm tra xem backend đã thực sự giải phóng xe và tài xế chưa
+      const vehicleOk = result.vehicleReleased === true;
+      const driverOk = (result.driversReleasedCount ?? 0) > 0;
+
+      if (!vehicleOk || !driverOk) {
+        // Reload trip detail để xác nhận lại trạng thái thực tế từ backend
+        try {
+          const tripDetail = await driverApi.getMyTripDetail(tripId);
+          const currentTripStatus = (tripDetail.status || '').toUpperCase();
+          const notCompleted = currentTripStatus !== 'COMPLETED' && currentTripStatus !== 'CLOSED';
+
+          if (notCompleted) {
+            const issues: string[] = [];
+            if (!vehicleOk) issues.push('Xe chưa được giải phóng');
+            if (!driverOk) issues.push('Tài xế chưa được giải phóng');
+            issues.push(`Trạng thái chuyến: ${tripDetail.status || 'Không xác định'}`);
+
+            await loadData(false);
+            Alert.alert(
+              '⚠️ Hệ thống đang gặp lỗi',
+              `Kết ca chưa hoàn tất:\n\n${issues.join('\n')}\n\nVui lòng thử kết ca lại. Nếu vẫn lỗi, liên hệ Điều phối viên.`,
+              [
+                { text: 'Thử lại kết ca', onPress: () => void submitCloseShift(), style: 'default' },
+                { text: 'Đóng', style: 'cancel' },
+              ]
+            );
+            return;
+          }
+        } catch {
+          // Nếu không reload được trip detail thì cảnh báo luôn
+          await loadData(false);
+          const issues: string[] = [];
+          if (!vehicleOk) issues.push('Xe chưa được giải phóng');
+          if (!driverOk) issues.push('Tài xế chưa được giải phóng');
+
+          Alert.alert(
+            '⚠️ Hệ thống đang gặp lỗi',
+            `Kết ca chưa hoàn tất:\n\n${issues.join('\n')}\n\nVui lòng thử kết ca lại. Nếu vẫn lỗi, liên hệ Điều phối viên.`,
+            [
+              { text: 'Thử lại kết ca', onPress: () => void submitCloseShift(), style: 'default' },
+              { text: 'Đóng', style: 'cancel' },
+            ]
+          );
+          return;
+        }
+      }
+
+      // Kết ca thành công, xe và tài xế đã được giải phóng
       await loadData(false);
-      Alert.alert('Đóng ca thành công', result.message || 'Tài xế và xe đã sẵn sàng cho chuyến mới.', [
-        { text: 'Về danh sách chuyến', onPress: () => router.replace('/(driver)/trips' as never) },
-      ]);
+      const warehouse = warehouses?.find((item) => item.warehouseId === selectedWarehouseId);
+      const locationName = result.newLocation || warehouse?.warehouseName || 'kho trả hàng';
+      const successTitle = '✅ Đóng ca thành công';
+      const successMessage = result.message || (
+        `Đã bàn giao luồng trả hàng về ${locationName}.\n` +
+        `Nhân viên kho sẽ nhập lại hàng bằng seal tại màn hình Inbound sự cố.\n` +
+        `Hàng không cần thực hiện QC lại.`
+      );
+
+      Alert.alert(
+        successTitle,
+        successMessage,
+        [{ text: 'Về danh sách chuyến', onPress: () => router.replace('/(driver)/trips' as never) }]
+      );
     } catch (error) {
       Alert.alert('Không thể đóng ca', formatActionError(error, 'CLOSE_SHIFT'));
       await loadData(false);
@@ -872,11 +1113,11 @@ export default function StopDetailScreen() {
     if (!selectedWarehouseId || !canCloseShift || isProcessing) return;
     const warehouse = warehouses?.find((item) => item.warehouseId === selectedWarehouseId);
     Alert.alert(
-      'Xác nhận đóng ca',
-      `Đóng ca và cập nhật vị trí xe về ${warehouse?.warehouseName || 'kho đã chọn'}?`,
+      'Xác nhận đã đến kho và đóng ca',
+      `Vui lòng xác nhận bạn đã đưa hàng và xe về đúng ${warehouse?.warehouseName || 'kho đã chọn'} và sẵn sàng đóng ca?`,
       [
         { text: 'Hủy', style: 'cancel' },
-        { text: 'Đóng ca', onPress: () => void submitCloseShift() },
+        { text: 'Xác nhận đóng ca', onPress: () => void submitCloseShift() },
       ]
     );
   };
@@ -906,24 +1147,83 @@ export default function StopDetailScreen() {
 
   if (loadError || !driverStop) {
     return (
-      <View style={{ backgroundColor: colors.surface.page }} className="flex-1 items-center justify-center px-6">
-        <Ionicons name="alert-circle-outline" size={48} color={colors.status.danger.main} />
-        <Text style={{ color: colors.status.danger.main }} className="mt-4 text-center font-semibold">
-          {loadError || 'Không tìm thấy dữ liệu điểm dừng.'}
-        </Text>
-        <View className="mt-5 w-full">
-          <AppButton label="Thử tải lại" onPress={() => void loadData()} />
+      <View style={{ backgroundColor: colors.surface.page }} className="flex-1">
+        <View
+          style={{
+            backgroundColor: colors.surface.card,
+            borderBottomColor: colors.border.default,
+            paddingTop: Math.max(insets.top + 6, 44),
+          }}
+          className="border-b px-4 pb-3.5 shadow-sm"
+        >
+          <View className="flex-row items-center justify-between">
+            <Pressable
+              onPress={handleGoBack}
+              style={{ backgroundColor: colors.brand.primarySoft }}
+              className="rounded-full p-2.5 active:opacity-70"
+            >
+              <Ionicons name="arrow-back" size={18} color={colors.brand.primary} />
+            </Pressable>
+            <Text style={{ color: colors.text.primary }} className="text-base font-bold">
+              Chi tiết điểm dừng
+            </Text>
+            <View style={{ width: 38 }} />
+          </View>
+        </View>
+        <View className="flex-1 items-center justify-center px-6">
+          <Ionicons name="alert-circle-outline" size={48} color={colors.status.danger.main} />
+          <Text style={{ color: colors.status.danger.main }} className="mt-4 text-center font-semibold">
+            {loadError || 'Không tìm thấy dữ liệu điểm dừng.'}
+          </Text>
+          <View className="mt-5 w-full">
+            <AppButton label="Thử tải lại" onPress={() => void loadData()} />
+          </View>
         </View>
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={{ backgroundColor: colors.surface.page }} className="flex-1" edges={['bottom']}>
-      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 100 }}>
-        <StopHeader stop={driverStop} orderCount={orders.length} />
+    <View style={{ backgroundColor: colors.surface.page }} className="flex-1">
+      {/* ── TOP APP BAR WITH SAFE AREA INSETS ── */}
+      <View
+        style={{
+          backgroundColor: colors.surface.card,
+          borderBottomColor: colors.border.default,
+          paddingTop: Math.max(insets.top + 6, 44),
+        }}
+        className="border-b px-4 pb-3.5 shadow-sm"
+      >
+        <View className="flex-row items-center justify-between">
+          <Pressable
+            onPress={handleGoBack}
+            style={{ backgroundColor: colors.brand.primarySoft }}
+            className="rounded-full p-2.5 active:opacity-70"
+          >
+            <Ionicons name="arrow-back" size={18} color={colors.brand.primary} />
+          </Pressable>
+          <View className="flex-1 items-center px-3">
+            <Text style={{ color: colors.text.primary }} className="text-base font-bold" numberOfLines={1}>
+              Điểm dừng #{driverStop.stopSequence}
+            </Text>
+            <Text style={{ color: colors.text.secondary }} className="text-xs" numberOfLines={1}>
+              {driverStop.address}
+            </Text>
+          </View>
+          <Pressable
+            onPress={() => void loadData()}
+            style={{ backgroundColor: colors.brand.primarySoft }}
+            className="rounded-full p-2.5 active:opacity-70"
+          >
+            <Ionicons name="refresh" size={18} color={colors.brand.primary} />
+          </Pressable>
+        </View>
+      </View>
 
-        <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="mb-6 rounded-2xl border p-4 shadow-sm">
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 100 }}>
+        <StopHeader stop={driverStop} orders={orders} />
+
+        <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="mb-5 rounded-2xl border p-4 shadow-sm">
           <View className="flex-row items-center gap-3">
             <Ionicons name="thermometer-outline" size={24} color={colors.brand.primary} />
             <View className="flex-1">
@@ -970,25 +1270,84 @@ export default function StopDetailScreen() {
             </Text>
           </View>
         ) : !hasCheckedIn ? (
-          <View className="mt-10 items-center">
-            <Ionicons name="location" size={64} color={colors.brand.primary} />
-            <Text style={{ color: colors.text.primary }} className="mb-6 mt-4 text-center text-base font-medium">
-              Thêm ảnh xác nhận. Vị trí check-in được Backend đối chiếu từ thiết bị IoT của xe.
-            </Text>
-            <ProofPicker
-              asset={checkinProofAsset}
-              emptyLabel="Chưa có ảnh xác nhận đến điểm giao"
-              chooseLabel={checkinProofAsset ? 'Chọn lại ảnh xác nhận' : 'Thêm ảnh xác nhận'}
-              disabled={isProcessing}
-              onPick={() => void pickImage(setCheckinProofAsset, 'ảnh xác nhận đến điểm giao')}
-            />
-            <View className="w-full">
-              <AppButton
-                label="Xác nhận đã đến"
-                onPress={() => void handleCheckIn()}
-                loading={isProcessing}
-                disabled={!checkinProofAsset}
-              />
+          <View className="mt-2">
+            {/* Hiển thị danh sách các đơn hàng và người nhận tại điểm này để tài xế nắm trước */}
+            {orders.length > 0 && (
+              <View className="mb-5">
+                <Text style={{ color: colors.text.primary }} className="mb-3 text-base font-bold">
+                  Đơn hàng cần giao ({orders.length})
+                </Text>
+                {orders.map((order) => (
+                  <OrderCard
+                    key={order.orderId}
+                    order={order}
+                    selected={false}
+                    disabled={true}
+                    onSelect={() => {}}
+                    onPreviewImage={(url) => setPreviewImageUrl(url)}
+                  />
+                ))}
+              </View>
+            )}
+
+            {/* Khối Check-in xác nhận đến */}
+            <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="items-center rounded-2xl border p-5 shadow-sm">
+              <View style={{ backgroundColor: colors.brand.primarySoft }} className="mb-3 h-16 w-16 items-center justify-center rounded-full">
+                <Ionicons name="location" size={32} color={colors.brand.primary} />
+              </View>
+              <Text style={{ color: colors.text.primary }} className="mb-1 text-center text-base font-bold">
+                Xác nhận đã đến điểm giao
+              </Text>
+              <Text style={{ color: colors.text.secondary }} className="mb-4 text-center text-xs leading-5">
+                Chụp ảnh điểm giao để xác nhận có mặt. Vị trí check-in được hệ thống đối chiếu từ thiết bị IoT của xe (bán kính hợp lệ tối đa 10 km).
+              </Text>
+
+              {/* Thông tin khoảng cách xe hiện tại tới điểm giao */}
+              {distanceToStopKm !== null ? (
+                distanceToStopKm <= MAX_CHECKIN_DISTANCE_KM ? (
+                  <View className="mb-4 w-full rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                    <View className="flex-row items-center gap-2">
+                      <Ionicons name="checkmark-circle" size={18} color="#15803D" />
+                      <Text className="text-xs font-bold text-emerald-900">
+                        Khoảng cách từ xe: {distanceToStopKm} km
+                      </Text>
+                    </View>
+                    <Text className="mt-1 text-[11px] text-emerald-800 leading-4">
+                      Hợp lệ theo quy định hệ thống (trong bán kính cho phép 10 km).
+                    </Text>
+                  </View>
+                ) : (
+                  <View className="mb-4 w-full rounded-xl border border-amber-300 bg-amber-50 p-3">
+                    <View className="flex-row items-center gap-2">
+                      <Ionicons name="alert-circle" size={18} color="#D97706" />
+                      <Text className="text-xs font-bold text-amber-900">
+                        Khoảng cách từ xe: {distanceToStopKm} km
+                      </Text>
+                    </View>
+                    <Text className="mt-1 text-[11px] text-amber-800 leading-4">
+                      Vượt quá bán kính 10 km quy định. Xe cần đến gần hơn để check-in.
+                    </Text>
+                  </View>
+                )
+              ) : null}
+
+              <View className="w-full">
+                <ProofPicker
+                  asset={checkinProofAsset}
+                  emptyLabel="Chưa có ảnh xác nhận đến điểm giao"
+                  chooseLabel={checkinProofAsset ? 'Chọn lại ảnh xác nhận' : 'Thêm ảnh xác nhận'}
+                  disabled={isProcessing}
+                  onPick={() => void pickImage(setCheckinProofAsset, 'ảnh xác nhận đến điểm giao')}
+                />
+              </View>
+              <View className="mt-4 w-full">
+                <AppButton
+                  label="Xác nhận đã đến"
+                  onPress={() => void handleCheckIn()}
+                  loading={isProcessing}
+                  disabled={!checkinProofAsset || (distanceToStopKm !== null && distanceToStopKm > MAX_CHECKIN_DISTANCE_KM)}
+                />
+              </View>
             </View>
           </View>
         ) : step === 'ORDER_ACTIONS' && selectedOrder ? (
@@ -1175,6 +1534,7 @@ export default function StopDetailScreen() {
                 selected={selectedOrderId === order.orderId}
                 disabled={isProcessing}
                 onSelect={() => startOrderActions(order)}
+                onPreviewImage={(url) => setPreviewImageUrl(url)}
               />
             ))}
 
@@ -1231,13 +1591,24 @@ export default function StopDetailScreen() {
               </View>
             ) : null}
 
-            {hasCutSeal && !allOrdersHandedOver && stopStatus !== 'SKIPPED_NOSHOW' ? (
+            {hasCheckedIn && !allOrdersHandedOver && stopStatus !== 'SKIPPED_NOSHOW' ? (
               <View className="mt-4">
                 <AppButton
-                  label="Báo khách hàng không có mặt"
+                  label="Khách không có mặt (No-Show)"
                   variant="secondary"
                   disabled={isProcessing}
                   onPress={startNoShow}
+                />
+              </View>
+            ) : null}
+
+            {stopStatus === 'SKIPPED_NOSHOW' ? (
+              <View className="mt-4">
+                <DeliveryNotice
+                  icon="warning"
+                  title="Khách không có mặt (No-Show)"
+                  detail="Hàng chưa được giao và phải nhập lại kho. Toàn bộ kiện hàng đã được chuyển sang trạng thái chờ trả về kho (RETURN_PENDING)."
+                  tone="warning"
                 />
               </View>
             ) : null}
@@ -1275,20 +1646,42 @@ export default function StopDetailScreen() {
                 <View className="flex-row items-start gap-3">
                   <Ionicons name="business-outline" size={24} color="#9A3412" />
                   <View className="flex-1">
-                    <Text className="font-bold text-orange-950">
-                      {isReturnFlow ? 'Kho quy đầu gần vị trí xe' : 'Kho kết ca gần vị trí xe'}
-                    </Text>
-                    <Text className="mt-1 text-sm text-orange-800">
+                    <Text className="font-bold text-orange-950">Kho trả hàng gần vị trí xe</Text>
+                    <Text className="mt-1 text-xs text-orange-800">
                       {isReturnFlow
-                        ? 'Khoảng cách do Backend tính từ dữ liệu vị trí xe.'
-                        : 'Sau khi hoàn tất điểm cuối và thanh toán COD, chọn kho để đóng ca.'}
+                        ? 'Chọn kho trả hàng để đưa hàng về và đóng ca.'
+                        : 'Sau khi hoàn tất toàn bộ điểm giao và thanh toán COD, chọn kho để đóng ca.'}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Thanh tiến trình quy trình trả hàng */}
+                <View className="mt-3 rounded-xl bg-orange-100/80 p-2.5">
+                  <Text className="text-[11px] font-bold text-orange-950 mb-1.5">Quy trình trả hàng:</Text>
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-[10.5px] font-bold text-emerald-800">1. Khách vắng mặt ✓</Text>
+                    <Text className="text-slate-400">→</Text>
+                    <Text className={`text-[10.5px] font-bold ${selectedWarehouseId ? 'text-emerald-800' : 'text-orange-900'}`}>2. Chọn kho</Text>
+                    <Text className="text-slate-400">→</Text>
+                    <Text className="text-[10.5px] font-medium text-orange-800">3. Về kho</Text>
+                    <Text className="text-slate-400">→</Text>
+                    <Text className="text-[10.5px] font-medium text-orange-800">4. Đóng ca</Text>
+                  </View>
+                </View>
+
+                {/* Cảnh báo đưa hàng về đúng kho đã chọn */}
+                <View className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3">
+                  <View className="flex-row items-center gap-2">
+                    <Ionicons name="alert-circle" size={18} color="#D97706" />
+                    <Text className="text-xs font-bold text-amber-900 flex-1">
+                      Vui lòng đưa hàng về đúng kho đã chọn. Chỉ đóng ca khi xe đã đến kho.
                     </Text>
                   </View>
                 </View>
 
                 {warehouses === null && !warehouseError ? (
                   <View className="mt-4">
-                    <AppButton label="Tìm kho phù hợp" variant="secondary" loading={isLoadingWarehouses} onPress={() => void loadReturnWarehouses()} />
+                    <AppButton label="Tìm kho trả hàng phù hợp" variant="secondary" loading={isLoadingWarehouses} onPress={() => void loadReturnWarehouses()} />
                   </View>
                 ) : null}
 
@@ -1312,33 +1705,33 @@ export default function StopDetailScreen() {
                       key={warehouse.warehouseId}
                       disabled={!canCloseShift || isProcessing}
                       onPress={() => setSelectedWarehouseId(warehouse.warehouseId)}
-                      className={`mt-3 rounded-xl border p-3 ${selected ? 'border-orange-700 bg-white' : 'border-orange-200 bg-white/80'}`}
+                      className={`mt-3 rounded-xl border p-3.5 ${selected ? 'border-orange-700 bg-white shadow-sm' : 'border-orange-200 bg-white/80'}`}
                       style={({ pressed }) => ({ opacity: !canCloseShift ? 0.8 : pressed ? 0.7 : 1 })}
                     >
                       <View className="flex-row items-start justify-between gap-3">
                         <View className="flex-1">
-                          <Text className="font-bold text-orange-950">{warehouse.warehouseName}</Text>
-                          <Text className="mt-1 text-sm text-orange-800">{warehouse.address}</Text>
+                          <Text className="font-bold text-orange-950 text-sm">{warehouse.warehouseName}</Text>
+                          <Text className="mt-1 text-xs text-orange-800 leading-4">{warehouse.address}</Text>
                         </View>
                         {selected ? <Ionicons name="checkmark-circle" size={22} color="#9A3412" /> : null}
                       </View>
-                      <Text className="mt-2 text-xs text-orange-700">
-                        {warehouse.distanceKm} · khoảng {warehouse.estimatedTravelTimeMinutes} phút · {formatWarehouseStatus(warehouse.status)}
+                      <Text className="mt-2 text-xs font-semibold text-orange-700">
+                        {warehouse.distanceKm} · khoảng {warehouse.estimatedTravelTimeMinutes} phút di chuyển · {formatWarehouseStatus(warehouse.status)}
                       </Text>
                     </Pressable>
                   );
                 })}
 
                 {hasRemainingStops ? (
-                  <Text className="mt-4 text-sm text-orange-800">Tiếp tục xử lý các điểm dừng còn lại theo trạng thái hệ thống.</Text>
+                  <Text className="mt-4 text-xs text-orange-800">Tiếp tục xử lý các điểm dừng còn lại trước khi đóng ca.</Text>
                 ) : null}
                 {!allPaymentsReady ? (
-                  <Text className="mt-4 text-sm text-orange-800">Hoàn tất thanh toán COD của mọi ePOD trước khi đóng ca.</Text>
+                  <Text className="mt-4 text-xs text-orange-800">Hoàn tất thanh toán COD của mọi ePOD trước khi đóng ca.</Text>
                 ) : null}
                 {canCloseShift && warehouses && warehouses.length > 0 ? (
                   <View className="mt-4">
                     <AppButton
-                      label="Đóng ca tại kho đã chọn"
+                      label="Xác nhận đã đến kho và đóng ca"
                       loading={isProcessing}
                       disabled={!selectedWarehouseId}
                       onPress={confirmCloseShift}
@@ -1405,38 +1798,151 @@ export default function StopDetailScreen() {
           </View>
         )}
       </ScrollView>
-    </SafeAreaView>
+
+      {/* ── FULLSCREEN IMAGE PREVIEW MODAL ── */}
+      {Boolean(previewImageUrl) && (
+        <Modal
+          visible={true}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setPreviewImageUrl(null)}
+        >
+          <View className="flex-1 bg-black/90 items-center justify-center p-4">
+            <Pressable
+              onPress={() => setPreviewImageUrl(null)}
+              style={{ top: Math.max(insets.top + 10, 40) }}
+              className="absolute right-5 z-50 rounded-full bg-white/20 p-2.5 active:bg-white/40"
+            >
+              <Ionicons name="close" size={24} color="#FFFFFF" />
+            </Pressable>
+            {previewImageUrl ? (
+              <Image
+                source={{ uri: previewImageUrl }}
+                className="h-4/5 w-full rounded-2xl"
+                resizeMode="contain"
+              />
+            ) : null}
+          </View>
+        </Modal>
+      )}
+    </View>
   );
 }
 
 function StopHeader({
   stop,
-  orderCount,
+  orders,
 }: {
   stop: DriverTripStopDto;
-  orderCount: number;
+  orders: StopOrder[];
 }) {
   const status = stop.status?.toUpperCase() || 'UNKNOWN';
+  const orderCount = orders.length;
+
+  // Lấy danh sách tên người nhận / người gửi duy nhất
+  const receivers = Array.from(
+    new Map(
+      orders
+        .filter((o) => o.receiverName || o.receiverPhone)
+        .map((o) => [o.receiverPhone || o.receiverName || '', { name: o.receiverName, phone: o.receiverPhone }])
+    ).values()
+  );
+
+  const senders = Array.from(
+    new Map(
+      orders
+        .filter((o) => o.customerName || o.customerPhone)
+        .map((o) => [o.customerPhone || o.customerName || '', { name: o.customerName, phone: o.customerPhone }])
+    ).values()
+  );
+
   return (
-    <View className="mb-6 rounded-2xl border border-amber-200 bg-white p-4 shadow-sm">
+    <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="mb-5 rounded-2xl border p-4 shadow-sm">
       <View className="flex-row items-start justify-between gap-3">
         <View className="flex-1">
-          <Text className="mb-1 text-sm font-bold text-amber-700">
-            ĐIỂM DỪNG {stop.stopSequence}
-          </Text>
-          <Text className="text-lg font-bold text-amber-950">
+          <View className="flex-row items-center gap-2">
+            <View style={{ backgroundColor: colors.brand.primarySoft }} className="rounded-lg px-2.5 py-1">
+              <Text style={{ color: colors.brand.primary }} className="text-xs font-bold uppercase">
+                ĐIỂM DỪNG {stop.stopSequence}
+              </Text>
+            </View>
+            <Text style={{ color: colors.text.secondary }} className="text-xs font-medium">
+              {orderCount} Đơn hàng
+            </Text>
+          </View>
+          <Text style={{ color: colors.text.primary }} className="mt-2 text-base font-bold leading-6">
             {stop.address}
           </Text>
         </View>
-        <View className="rounded-lg bg-amber-100 px-3 py-2">
-          <Text className="text-xs font-bold text-amber-900">
+        <View style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default }} className="rounded-xl border px-3 py-1.5">
+          <Text style={{ color: colors.text.secondary }} className="text-xs font-bold">
             {getStopStatusLabel(status)}
           </Text>
         </View>
       </View>
-      <Text className="mt-3 text-sm text-amber-700">
-        {orderCount} Order
-      </Text>
+
+      {/* ── THÔNG TIN NGƯỜI NHẬN & NGƯỜI GỬI ── */}
+      <View className="mt-4 border-t border-slate-100 pt-3 gap-2.5">
+        {/* Khối Người nhận */}
+        <View style={{ backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }} className="rounded-xl border p-3">
+          <View className="flex-row items-center justify-between">
+            <View className="flex-row items-center gap-1.5">
+              <Ionicons name="person" size={14} color="#15803D" />
+              <Text className="text-xs font-bold text-green-900 uppercase">Người nhận hàng</Text>
+            </View>
+            {receivers[0]?.phone ? (
+              <Pressable
+                onPress={() => void Linking.openURL(`tel:${receivers[0].phone}`)}
+                style={{ backgroundColor: '#DCFCE7', borderColor: '#86EFAC' }}
+                className="flex-row items-center gap-1.5 rounded-lg border px-2.5 py-1 active:opacity-75"
+              >
+                <Ionicons name="call" size={12} color="#16A34A" />
+                <Text className="text-xs font-bold text-green-700">Gọi người nhận</Text>
+              </Pressable>
+            ) : null}
+          </View>
+          <View className="mt-1.5">
+            <Text className="text-sm font-bold text-slate-900">
+              {receivers.map((r) => r.name || 'Khách nhận').join(', ') || 'Chưa cập nhật tên người nhận'}
+            </Text>
+            {receivers.some((r) => r.phone) && (
+              <Text className="text-xs font-medium text-slate-600 mt-0.5">
+                SĐT: <Text className="font-semibold text-green-800">{receivers.map((r) => r.phone).filter(Boolean).join(' · ')}</Text>
+              </Text>
+            )}
+          </View>
+        </View>
+
+        {/* Khối Người gửi */}
+        <View style={{ backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }} className="rounded-xl border p-3">
+          <View className="flex-row items-center justify-between">
+            <View className="flex-row items-center gap-1.5">
+              <Ionicons name="business" size={14} color="#1D4ED8" />
+              <Text className="text-xs font-bold text-blue-900 uppercase">Người gửi (Khách hàng)</Text>
+            </View>
+            {senders[0]?.phone ? (
+              <Pressable
+                onPress={() => void Linking.openURL(`tel:${senders[0].phone}`)}
+                style={{ backgroundColor: '#DBEAFE', borderColor: '#93C5FD' }}
+                className="flex-row items-center gap-1.5 rounded-lg border px-2.5 py-1 active:opacity-75"
+              >
+                <Ionicons name="call" size={12} color="#2563EB" />
+                <Text className="text-xs font-bold text-blue-700">Liên hệ người gửi</Text>
+              </Pressable>
+            ) : null}
+          </View>
+          <View className="mt-1.5">
+            <Text className="text-sm font-bold text-slate-900">
+              {senders.map((s) => s.name || 'Khách hàng gửi').join(', ') || 'Chưa cập nhật'}
+            </Text>
+            {senders.some((s) => s.phone) && (
+              <Text className="text-xs font-medium text-slate-600 mt-0.5">
+                SĐT: <Text className="font-semibold text-blue-800">{senders.map((s) => s.phone).filter(Boolean).join(' · ')}</Text>
+              </Text>
+            )}
+          </View>
+        </View>
+      </View>
     </View>
   );
 }
@@ -1446,70 +1952,223 @@ function OrderCard({
   selected,
   disabled,
   onSelect,
+  onPreviewImage,
 }: {
   order: StopOrder;
   selected: boolean;
   disabled: boolean;
   onSelect: () => void;
+  onPreviewImage?: (url: string) => void;
 }) {
   const confirmed = isHandoverConfirmed(order);
   const status = getOrderStatus(order.status);
 
   return (
-    <Pressable
-      disabled={disabled || confirmed}
-      onPress={onSelect}
-      className={`mb-3 rounded-2xl border bg-white p-4 ${selected ? 'border-amber-700' : 'border-amber-200'
-        }`}
-      style={({ pressed }) => ({
-        opacity: confirmed ? 0.75 : pressed ? 0.7 : 1,
-      })}
+    <View
+      style={{
+        backgroundColor: colors.surface.card,
+        borderColor: selected ? colors.brand.primary : colors.border.default,
+      }}
+      className={`mb-4 rounded-2xl border p-4 shadow-sm ${confirmed ? 'opacity-80' : ''}`}
     >
-      <View className="flex-row items-start justify-between gap-3">
+      {/* ── HÀNG 1: ẢNH ĐẠI DIỆN + MÃ ĐƠN + TÊN HÀNG + TRẠNG THÁI ── */}
+      <View className="flex-row items-start gap-3">
+        {order.imageUrl ? (
+          <Pressable
+            onPress={() => onPreviewImage?.(order.imageUrl!)}
+            className="h-16 w-16 overflow-hidden rounded-xl border border-slate-200 bg-slate-100 active:opacity-75"
+          >
+            <Image
+              source={{ uri: order.imageUrl }}
+              className="h-full w-full"
+              resizeMode="cover"
+            />
+            <View className="absolute bottom-0 right-0 rounded-tl bg-black/60 px-1 py-0.5">
+              <Ionicons name="expand-outline" size={10} color="#FFFFFF" />
+            </View>
+          </Pressable>
+        ) : (
+          <View
+            style={{ backgroundColor: colors.brand.primarySoft }}
+            className="h-16 w-16 items-center justify-center rounded-xl"
+          >
+            <Ionicons name="cube-outline" size={26} color={colors.brand.primary} />
+          </View>
+        )}
+
         <View className="flex-1">
-          <Text className="font-bold text-amber-950">#{order.trackingCode}</Text>
-          <Text className="mt-1 text-sm font-bold text-amber-900">{order.itemName}</Text>
-          <Text className="mt-1 text-xs text-amber-700">
-            {order.lpns.length} LPN · {order.originalQuantity} kiện
+          <View className="flex-row items-center justify-between gap-2">
+            <Text style={{ color: colors.brand.primary }} className="font-bold text-sm">
+              #{order.trackingCode}
+            </Text>
+            <View className={`rounded-lg px-2.5 py-1 ${status.background}`}>
+              <Text className={`text-[11px] font-bold ${status.text}`}>{status.label}</Text>
+            </View>
+          </View>
+
+          <Text style={{ color: colors.text.primary }} className="mt-1 text-sm font-bold leading-5" numberOfLines={2}>
+            {order.itemName}
           </Text>
-        </View>
-        <View className={`rounded-lg px-3 py-2 ${status.background}`}>
-          <Text className={`text-xs font-bold ${status.text}`}>{status.label}</Text>
+
+          {order.category ? (
+            <View className="mt-1 self-start rounded-md bg-slate-100 px-2 py-0.5">
+              <Text style={{ color: colors.text.secondary }} className="text-[10px] font-medium">
+                {order.category}
+              </Text>
+            </View>
+          ) : null}
         </View>
       </View>
 
-      {/* Thông tin người nhận hàng và nút gọi điện */}
-      <View className="mt-3 border-t border-amber-100 pt-2.5 flex-row items-center justify-between">
-        <View className="flex-1 mr-2">
-          <Text className="text-[11px] text-amber-700">Người nhận:</Text>
-          <Text className="text-xs font-bold text-amber-950" numberOfLines={1}>
-            {order.receiverName || 'Chưa cập nhật'}
-          </Text>
+      {/* ── HÀNG 2: THÔNG SỐ CHI TIẾT ĐƠN HÀNG (SỐ KIỆN, KHỐI LƯỢNG, ĐÓNG GÓI, NHIỆT ĐỘ) ── */}
+      <View style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default }} className="mt-3 rounded-xl border p-3">
+        <View className="flex-row flex-wrap gap-y-2">
+          {/* Số lượng kiện */}
+          <View className="w-1/2 flex-row items-center gap-1.5 pr-1">
+            <Ionicons name="cube" size={13} color={colors.brand.primary} />
+            <Text style={{ color: colors.text.secondary }} className="text-xs">
+              Số kiện: <Text style={{ color: colors.text.primary }} className="font-bold">{order.originalQuantity} kiện</Text>
+            </Text>
+          </View>
+
+          {/* Trọng lượng */}
+          <View className="w-1/2 flex-row items-center gap-1.5 pl-1">
+            <Ionicons name="scale-outline" size={13} color="#D97706" />
+            <Text style={{ color: colors.text.secondary }} className="text-xs">
+              Khối lượng: <Text style={{ color: colors.text.primary }} className="font-bold">{order.actualWeightKg || order.expectedWeightKg || '--'} kg</Text>
+            </Text>
+          </View>
+
+          {/* Đóng gói */}
+          <View className="w-1/2 flex-row items-center gap-1.5 pr-1">
+            <Ionicons name="archive-outline" size={13} color="#6366F1" />
+            <Text style={{ color: colors.text.secondary }} className="text-xs" numberOfLines={1}>
+              Gói: <Text style={{ color: colors.text.primary }} className="font-bold">{order.packingType || 'Thùng xốp'}</Text>
+            </Text>
+          </View>
+
+          {/* Nhiệt độ */}
+          <View className="w-1/2 flex-row items-center gap-1.5 pl-1">
+            <Ionicons name="thermometer-outline" size={13} color="#0284C7" />
+            <Text style={{ color: colors.text.secondary }} className="text-xs">
+              Nhiệt độ: <Text style={{ color: colors.text.primary }} className="font-bold">{order.tempCondition ? `${order.tempCondition}°C` : 'Chuẩn'}</Text>
+            </Text>
+          </View>
         </View>
 
-        {order.receiverPhone ? (
-          <Pressable
-            onPress={(e) => {
-              e.stopPropagation();
-              void Linking.openURL(`tel:${order.receiverPhone}`);
-            }}
-            style={{ backgroundColor: '#DCFCE7', borderColor: '#86EFAC' }}
-            className="flex-row items-center gap-1.5 rounded-xl border px-3 py-1.5 shadow-2xs"
-          >
-            <Ionicons name="call" size={13} color="#16A34A" />
-            <Text style={{ color: '#16A34A' }} className="text-xs font-bold">
-              {order.receiverPhone}
+        {/* Kích thước nếu có */}
+        {order.dimensions ? (
+          <View className="mt-2 flex-row items-center gap-1.5 border-t border-slate-200/60 pt-1.5">
+            <Ionicons name="resize-outline" size={13} color="#64748B" />
+            <Text style={{ color: colors.text.secondary }} className="text-xs">
+              Kích thước (D x R x C): <Text style={{ color: colors.text.primary }} className="font-semibold">{order.dimensions.length || '-'} x {order.dimensions.width || '-'} x {order.dimensions.height || '-'} cm</Text>
             </Text>
-          </Pressable>
+          </View>
+        ) : null}
+
+        {/* Danh sách mã LPN */}
+        {order.lpns && order.lpns.length > 0 ? (
+          <View className="mt-2 border-t border-slate-200/60 pt-2">
+            <Text style={{ color: colors.text.muted }} className="text-[11px] font-medium">
+              Mã LPN ({order.lpns.length}):
+            </Text>
+            <View className="mt-1 flex-row flex-wrap gap-1.5">
+              {order.lpns.map((lpn, idx) => (
+                <View key={lpn.lpnId || idx} className="rounded-md border border-slate-200 bg-white px-2 py-0.5">
+                  <Text style={{ color: colors.text.primary }} className="text-[11px] font-semibold">
+                    {lpn.lpnCode || `LPN #${idx + 1}`} {lpn.quantity ? `(${lpn.quantity} kiện)` : ''}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
         ) : null}
       </View>
 
-      {!confirmed ? (
-        <Text className="mt-3 text-sm font-bold text-amber-800">
-          {selected ? 'Đang chọn Order này' : 'Chọn để bàn giao'}
-        </Text>
+      {/* ── HÀNG 3: BỘ SƯU TẬP ẢNH HÀNG HÓA NẾU CÓ NHIỀU ẢNH ── */}
+      {order.documentUrls && order.documentUrls.length > 1 ? (
+        <View className="mt-3">
+          <Text style={{ color: colors.text.muted }} className="mb-1.5 text-[11px] font-medium">
+            Ảnh hàng hóa đính kèm ({order.documentUrls.length}):
+          </Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-2">
+            {order.documentUrls.map((imgUrl, imgIdx) => (
+              <Pressable
+                key={imgIdx}
+                onPress={() => onPreviewImage?.(imgUrl)}
+                className="h-14 w-14 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 active:opacity-75"
+              >
+                <Image source={{ uri: imgUrl }} className="h-full w-full" resizeMode="cover" />
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
       ) : null}
-    </Pressable>
+
+      {/* ── HÀNG 4: THÔNG TIN NGƯỜI NHẬN & NGƯỜI GỬI ── */}
+      <View style={{ borderColor: colors.border.default }} className="mt-3 border-t pt-2.5 gap-2">
+        {/* Người nhận */}
+        <View className="flex-row items-center justify-between">
+          <View className="flex-1 mr-2">
+            <Text style={{ color: colors.text.muted }} className="text-[11px] font-medium">Người nhận:</Text>
+            <Text style={{ color: colors.text.primary }} className="text-xs font-bold" numberOfLines={1}>
+              {order.receiverName || 'Chưa cập nhật'}
+            </Text>
+          </View>
+
+          {order.receiverPhone ? (
+            <Pressable
+              onPress={() => void Linking.openURL(`tel:${order.receiverPhone}`)}
+              style={{ backgroundColor: '#DCFCE7', borderColor: '#86EFAC' }}
+              className="flex-row items-center gap-1.5 rounded-xl border px-3 py-1.5 active:opacity-75"
+            >
+              <Ionicons name="call" size={13} color="#16A34A" />
+              <Text style={{ color: '#16A34A' }} className="text-xs font-bold">
+                {order.receiverPhone}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
+
+        {/* Người gửi */}
+        {order.customerName || order.customerPhone ? (
+          <View className="flex-row items-center justify-between">
+            <View className="flex-1 mr-2">
+              <Text style={{ color: colors.text.muted }} className="text-[11px] font-medium">Người gửi:</Text>
+              <Text style={{ color: colors.text.secondary }} className="text-xs font-semibold" numberOfLines={1}>
+                {order.customerName || 'Khách hàng'}
+              </Text>
+            </View>
+
+            {order.customerPhone ? (
+              <Pressable
+                onPress={() => void Linking.openURL(`tel:${order.customerPhone}`)}
+                style={{ backgroundColor: '#DBEAFE', borderColor: '#BFDBFE' }}
+                className="flex-row items-center gap-1 rounded-lg border px-2 py-1 active:opacity-75"
+              >
+                <Ionicons name="call" size={11} color="#2563EB" />
+                <Text style={{ color: '#2563EB' }} className="text-[11px] font-semibold">
+                  {order.customerPhone}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+
+      {/* ── NÚT BÀN GIAO ĐƠN NÀY (KHI ĐÃ CHECK-IN) ── */}
+      {!confirmed && !disabled ? (
+        <Pressable
+          onPress={onSelect}
+          style={{ backgroundColor: selected ? colors.brand.primary : colors.brand.primarySoft }}
+          className="mt-3 flex-row items-center justify-center rounded-xl py-2.5 px-3 active:opacity-80"
+        >
+          <Text style={{ color: selected ? '#FFFFFF' : colors.brand.primary }} className="text-xs font-bold">
+            {selected ? '✓ Đang chọn đơn này' : 'Chạm để xử lý bàn giao →'}
+          </Text>
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 
@@ -1779,16 +2438,32 @@ function DeliveryNotice({
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
   detail: string;
-  tone: 'success' | 'neutral';
+  tone: 'success' | 'neutral' | 'warning';
 }) {
-  const color = tone === 'success' ? '#15803d' : '#92400E';
+  const color = tone === 'success' ? '#15803d' : tone === 'warning' ? '#DC2626' : '#92400E';
+  const containerStyle = tone === 'success'
+    ? 'border-green-200 bg-green-50'
+    : tone === 'warning'
+    ? 'border-red-200 bg-red-50'
+    : 'border-amber-200 bg-amber-50';
+  const titleStyle = tone === 'success'
+    ? 'font-bold text-green-900'
+    : tone === 'warning'
+    ? 'font-bold text-red-900'
+    : 'font-bold text-amber-950';
+  const detailStyle = tone === 'success'
+    ? 'text-green-800'
+    : tone === 'warning'
+    ? 'text-red-800'
+    : 'text-amber-800';
+
   return (
-    <View className={`mt-5 rounded-2xl border p-4 ${tone === 'success' ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}>
+    <View className={`mt-5 rounded-2xl border p-4 ${containerStyle}`}>
       <View className="flex-row gap-3">
         <Ionicons name={icon} size={24} color={color} />
         <View className="flex-1">
-          <Text className={tone === 'success' ? 'font-bold text-green-900' : 'font-bold text-amber-950'}>{title}</Text>
-          <Text className={`mt-1 text-sm ${tone === 'success' ? 'text-green-800' : 'text-amber-800'}`}>{detail}</Text>
+          <Text className={titleStyle}>{title}</Text>
+          <Text className={`mt-1 text-sm ${detailStyle}`}>{detail}</Text>
         </View>
       </View>
     </View>
@@ -1807,14 +2482,55 @@ async function loadOrderDetails(
     ).values()
   );
 
-  const responses = await Promise.all(
+  const results = await Promise.allSettled(
     uniqueOrders.map((order) => getOrderById(token, order.orderId))
   );
-  return responses.map((response) => {
-    if (!response.success || !response.data) {
-      throw new Error('Không thể tải trạng thái thật của một Order.');
+
+  return results.map((res, idx) => {
+    const raw = uniqueOrders[idx];
+    if (res.status === 'fulfilled' && res.value?.success && res.value?.data) {
+      return res.value.data;
     }
-    return response.data;
+    return {
+      orderId: raw.orderId,
+      trackingCode: raw.trackingCode || '',
+      status: 'SEALED',
+      totalAmount: 0,
+      paymentMethod: 'COD',
+      paymentStatus: 'UNPAID',
+      codAmount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      pickupLocation: null,
+      destination: null,
+      sender: null,
+      receiver: null,
+      items: [
+        {
+          orderItemId: `item-${raw.orderId}`,
+          orderId: raw.orderId,
+          packageId: '',
+          quantity: raw.quantity ?? 1,
+          weightKg: raw.weightKg ?? 0,
+          volumeCbm: 0,
+          tempCondition: raw.tempCondition || 'Chilled',
+          package: {
+            packageId: `pkg-${raw.orderId}`,
+            trackingCode: raw.trackingCode || '',
+            productName: raw.itemName || 'Hàng đông lạnh',
+            category: 'Lạnh',
+            netWeightKg: raw.weightKg ?? 0,
+            cbm: 0,
+            tempCondition: raw.tempCondition || 'Chilled',
+            packageItems: [],
+          },
+        },
+      ],
+      documents: [],
+      lpns: [],
+      stops: [],
+      activities: [],
+    } as unknown as OrderResponse;
   });
 }
 
@@ -1906,11 +2622,22 @@ function formatActionError(
       return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
     }
     if (error.status === 403) {
+      if (action === 'NO_SHOW' || action === 'CLOSE_SHIFT') {
+        return 'Tài xế không thuộc chuyến xe này hoặc không có quyền thao tác.';
+      }
       return 'Bạn không có quyền thực hiện thao tác này.';
     }
-    if (error.status === 404) return action === 'HANDOVER'
-      ? 'Không tìm thấy dữ liệu bàn giao. Vui lòng tải lại điểm dừng.'
-      : 'Không tìm thấy dữ liệu cần xử lý. Vui lòng tải lại.';
+    if (error.status === 404) {
+      if (action === 'CHECK_IN') {
+        return 'Không tìm thấy thông tin điểm dừng trên hệ thống hoặc điểm dừng chưa sẵn sàng để check-in. Vui lòng tải lại.';
+      }
+      if (action === 'TEMPERATURE') {
+        return 'Thiết bị IoT đang ghi nhận dữ liệu định kỳ. Chưa có lịch sử đo nhiệt độ cho chặng này.';
+      }
+      return action === 'HANDOVER'
+        ? 'Không tìm thấy dữ liệu bàn giao. Vui lòng tải lại điểm dừng.'
+        : 'Không tìm thấy dữ liệu cần xử lý. Vui lòng tải lại.';
+    }
 
     const message = error.message.toLowerCase();
     if (action === 'CHECK_IN' && /proof|image|photo/.test(message)) {
@@ -1962,10 +2689,19 @@ function formatActionError(
       return 'Thao tác này chưa thể thực hiện ở trạng thái hiện tại.';
     }
     if (error.status === 409) {
+      if (action === 'NO_SHOW') {
+        return 'Đơn hàng tại điểm dừng đã có ePOD hoàn tất trước đó.';
+      }
       return 'Thao tác xung đột với trạng thái hiện tại. Dữ liệu sẽ được tải lại.';
     }
     if (error.status === 400 || error.status === 422) {
-      return 'Backend từ chối yêu cầu do điều kiện nghiệp vụ chưa hợp lệ.';
+      if (action === 'CLOSE_SHIFT') {
+        return 'Không thể đóng ca: còn đơn chưa hoàn tất, kiện hàng chưa ở trạng thái chờ trả kho (RETURN_PENDING) hoặc kho trả hàng không hoạt động.';
+      }
+      if (action === 'NO_SHOW') {
+        return error.message || 'Yêu cầu báo khách không có mặt không hợp lệ. Vui lòng kiểm tra lại ảnh minh chứng.';
+      }
+      return error.message || 'Backend từ chối yêu cầu do điều kiện nghiệp vụ chưa hợp lệ.';
     }
   }
 
@@ -2138,4 +2874,25 @@ function formatTripStatus(status?: string | null) {
     case 'DISPATCHED': return 'Đã điều phối';
     default: return status?.trim() || 'Chưa xác định';
   }
+}
+
+const MAX_CHECKIN_DISTANCE_KM = 10;
+
+function calculateHaversineDistanceKm(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c * 10) / 10;
 }

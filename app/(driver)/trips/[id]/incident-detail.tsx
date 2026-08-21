@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -22,7 +22,8 @@ import {
 } from '../../../../components/driver/IncidentWorkflowStepper';
 import { StatusBadge } from '../../../../components/StatusBadge';
 import { colors } from '../../../../constants/colors';
-import { getApiErrorMessage } from '../../../../services/apiClient';
+import { ApiClientError, getApiErrorMessage } from '../../../../services/apiClient';
+import { driverApi } from '../../../../services/driverApi';
 import {
   assessIncidentRisk,
   confirmTransload,
@@ -85,7 +86,9 @@ export default function DriverIncidentDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isNotFound, setIsNotFound] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const navigationLock = useRef(false);
 
   // ── Tua xem lại các bước trên Stepper ──────────────────────────────────────
   const [selectedStep, setSelectedStep] = useState<number | null>(null);
@@ -166,6 +169,7 @@ export default function DriverIncidentDetailScreen() {
       const incData = response.data;
       setIncident(incData);
       setError(null);
+      setIsNotFound(false);
 
       // Tải chi tiết xe gặp sự cố & xe thay thế
       if (incData.brokenVehicleId) {
@@ -179,18 +183,48 @@ export default function DriverIncidentDetailScreen() {
         });
       }
 
-      // Tải danh sách đơn hàng & LPN của chuyến xe
-      const targetTripId = incData.tripId || currentTripId;
+      // Tải thông tin chuyến xe để lấy thông tin xe ban đầu & danh sách đơn hàng & LPN
+      const targetTripId = incData.tripId || (currentTripId !== 'active' ? currentTripId : null);
       if (targetTripId) {
         void Promise.all([
+          driverApi.getMyTripDetail(targetTripId).catch(() => null),
           getPlannedTripRoute(token, targetTripId).catch(() => null),
           getTrackingByTripId(token, targetTripId).catch(() => null),
-        ]).then(async ([routeRes, trackingRes]) => {
+        ]).then(async ([tripRes, routeRes, trackingRes]) => {
+          // Trích xuất thông tin xe ban đầu từ chuyến xe nếu chưa có
+          if (tripRes?.vehicle) {
+            const v = tripRes.vehicle;
+            setBrokenVehicle((prev) => prev || ({
+              vehicleId: v.vehicleId,
+              truckPlate: v.truckPlate,
+              brand: v.vehicleType || '',
+              maxWeight: v.maxWeight,
+              maxCbm: v.maxCbm,
+            } as any));
+
+            if (v.vehicleId && !incData.brokenVehicleId) {
+              void getVehicleDetail(token, v.vehicleId).then((vRes) => {
+                if (vRes.success && vRes.data) setBrokenVehicle(vRes.data);
+              });
+            }
+          } else {
+            void driverApi.getMyTrips().then((trips) => {
+              const matched = trips?.find((t) => t.tripId === targetTripId);
+              if (matched?.vehiclePlate) {
+                setBrokenVehicle((prev) => prev || ({
+                  vehicleId: '',
+                  truckPlate: matched.vehiclePlate!,
+                  brand: '',
+                } as any));
+              }
+            }).catch(() => null);
+          }
+
           const rawOrders = [
-            ...(routeRes?.data?.optimizedStops?.flatMap((s) => s.orders) ?? []),
+            ...(routeRes?.data?.optimizedStops?.flatMap((s: any) => s.orders ?? []) ?? []),
             ...(trackingRes?.data?.orders ?? []),
           ];
-          const rawLpns = routeRes?.data?.optimizedStops?.flatMap((s) => s.lpns) ?? [];
+          const rawLpns = routeRes?.data?.optimizedStops?.flatMap((s: any) => s.lpns ?? []) ?? [];
           setTripLpns(rawLpns);
 
           const uniqueOrderIds = Array.from(
@@ -214,7 +248,19 @@ export default function DriverIncidentDetailScreen() {
 
       return incData;
     } catch (e: unknown) {
-      setError(getApiErrorMessage(e));
+      const is404 =
+        (e instanceof ApiClientError && e.status === 404) ||
+        (e instanceof Error &&
+          (e.message.includes('404') ||
+            e.message.toLowerCase().includes('not found') ||
+            e.message.toLowerCase().includes('không tìm thấy')));
+
+      if (is404) {
+        setIsNotFound(true);
+        setError(null);
+      } else {
+        setError(getApiErrorMessage(e));
+      }
       return null;
     }
   }, [token, incidentId, currentTripId]);
@@ -222,7 +268,7 @@ export default function DriverIncidentDetailScreen() {
   useFocusEffect(
     useCallback(() => {
       if (!token || !incidentId) {
-        setError('Thiếu phiên đăng nhập hoặc IncidentId hợp lệ.');
+        setError('Thiếu phiên đăng nhập hoặc mã sự cố hợp lệ.');
         setLoading(false);
         return;
       }
@@ -242,7 +288,12 @@ export default function DriverIncidentDetailScreen() {
         inFlight = false;
         setLoading(false);
         if (disposed) return;
-        if (current?.status === 'RESOLVED' || current?.status === 'CONTINUED') {
+        // Dừng polling khi sự cố không tồn tại hoặc đã kết thúc
+        if (!current) {
+          clear();
+          return;
+        }
+        if (current.status === 'RESOLVED' || current.status === 'CONTINUED') {
           clear();
           return;
         }
@@ -267,6 +318,7 @@ export default function DriverIncidentDetailScreen() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
+    setIsNotFound(false);
     await loadIncident();
     setRefreshing(false);
   };
@@ -302,11 +354,11 @@ export default function DriverIncidentDetailScreen() {
 
   // ── Nhánh 1: Tự xử lý tại chỗ, không cần cứu hộ (requiresRescue == false) ──
   const handleSubmitContinueTrip = async () => {
-    if (!token || !incidentId || isContinueTripSubmitting) return;
+    if (!token || !incidentId || isContinueTripSubmitting || navigationLock.current) return;
     setIsContinueTripSubmitting(true);
     const parsedDelay = parseInt(expectedDelayMinutesText.trim() || '0', 10);
     const delayMinutes = Number.isFinite(parsedDelay) && parsedDelay >= 0 ? parsedDelay : 0;
-    const note = continueTripNote.trim();
+    const note = continueTripNote.trim() || 'Đã xử lý sự cố, xe hoạt động bình thường.';
 
     try {
       const res = await continueTrip(
@@ -316,12 +368,13 @@ export default function DriverIncidentDetailScreen() {
         delayMinutes
       );
       if (res.success) {
+        navigationLock.current = true;
         setIsContinueTripModalVisible(false);
         if (incident) {
           setIncident({
             ...incident,
             status: 'CONTINUED',
-            handlingNote: note || 'Đã xử lý sự cố, xe hoạt động bình thường.',
+            handlingNote: note,
           });
         }
         Alert.alert(
@@ -331,11 +384,11 @@ export default function DriverIncidentDetailScreen() {
             {
               text: 'Mở màn hình chuyến xe',
               onPress: () => {
-                const targetTripId = incident?.tripId || currentTripId;
+                const targetTripId = incident?.tripId || (typeof params.id === 'string' && params.id !== 'active' ? params.id : null);
                 if (targetTripId) {
-                  router.replace(`/trips/${targetTripId}` as never);
+                  router.replace(`/(driver)/trips/${targetTripId}` as never);
                 } else {
-                  router.back();
+                  router.replace('/(driver)/trips' as never);
                 }
               },
             },
@@ -353,7 +406,7 @@ export default function DriverIncidentDetailScreen() {
 
   // ── Nhánh 2: Sự cố có xe cứu hộ (requiresRescue == true) — Xác nhận đã sang hàng và tiếp tục chuyến ──
   const handleConfirmTransload = async () => {
-    if (!token || !incidentId || isTransloadSubmitting) return;
+    if (!token || !incidentId || isTransloadSubmitting || navigationLock.current) return;
     setIsTransloadSubmitting(true);
     try {
       const res = await confirmTransload(
@@ -362,6 +415,7 @@ export default function DriverIncidentDetailScreen() {
         transloadNote.trim() || 'Đã sang đủ hàng sang xe cứu hộ và kiểm tra seal.'
       );
       if (res.success) {
+        navigationLock.current = true;
         setIsTransloadModalVisible(false);
         if (incident) {
           setIncident({
@@ -376,11 +430,11 @@ export default function DriverIncidentDetailScreen() {
             {
               text: 'Tiếp tục giao hàng',
               onPress: () => {
-                const targetTripId = incident?.tripId || currentTripId;
+                const targetTripId = incident?.tripId || (typeof params.id === 'string' && params.id !== 'active' ? params.id : null);
                 if (targetTripId) {
-                  router.replace(`/trips/${targetTripId}` as never);
+                  router.replace(`/(driver)/trips/${targetTripId}` as never);
                 } else {
-                  void loadIncident();
+                  router.replace('/(driver)/trips' as never);
                 }
               },
             },
@@ -400,29 +454,34 @@ export default function DriverIncidentDetailScreen() {
   // - requiresRescue === false: Gọi modal để submit API continue-trip
   // - requiresRescue === true (TRANSLOAD_COMPLETED): Trip đã IN_TRANSIT, chỉ navigate về trip
   const handleConfirmContinueFromStep4 = () => {
+    if (navigationLock.current) return;
     if (incident?.requiresRescue === false) {
       // Nhánh tự xử lý: cần điền form và gọi API continue-trip
       setIsContinueTripModalVisible(true);
     } else {
       // Nhánh cứu hộ: confirm-transload đã cập nhật trip → IN_TRANSIT, chỉ cần navigate
-      const targetTripId = incident?.tripId || currentTripId;
+      navigationLock.current = true;
+      const targetTripId = incident?.tripId || (typeof params.id === 'string' && params.id !== 'active' ? params.id : null);
       setStep4ManuallyConfirmed(true);
       setSelectedStep(null);
       if (targetTripId) {
-        router.replace(`/trips/${targetTripId}` as never);
+        router.replace(`/(driver)/trips/${targetTripId}` as never);
       } else {
-        router.back();
+        router.replace('/(driver)/trips' as never);
       }
     }
   };
 
-  // Navigate thẳng về trang chuyến xe (dùng cho Step 5)
+  // Navigate thẳng về trang chuyến xe (dùng cho Step 5 hoặc khi sự cố đã xử lý xong / TRANSLOAD_COMPLETED)
+  // Tuyệt đối KHÔNG gọi API continue-trip ở đây vì trip đã IN_TRANSIT
   const handleOpenTripFromStep5 = () => {
-    const targetTripId = incident?.tripId || currentTripId;
+    if (navigationLock.current) return;
+    navigationLock.current = true;
+    const targetTripId = incident?.tripId || (typeof params.id === 'string' && params.id !== 'active' ? params.id : null);
     if (targetTripId) {
-      router.replace(`/trips/${targetTripId}` as never);
+      router.replace(`/(driver)/trips/${targetTripId}` as never);
     } else {
-      router.back();
+      router.replace('/(driver)/trips' as never);
     }
   };
 
@@ -450,6 +509,18 @@ export default function DriverIncidentDetailScreen() {
     }
   };
 
+  const handleGoBack = () => {
+    if (params.from === 'home') {
+      router.replace('/(driver)/home' as never);
+    } else if (currentTripId && currentTripId !== 'active') {
+      router.replace(`/(driver)/trips/${currentTripId}` as never);
+    } else if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(driver)/trips' as never);
+    }
+  };
+
   // ─────────────────────────────────────────────────────────────────────────
   if (loading) {
     return (
@@ -464,26 +535,100 @@ export default function DriverIncidentDetailScreen() {
 
   if (error) {
     return (
-      <View style={{ backgroundColor: colors.surface.page }} className="flex-1 items-center justify-center p-5">
-        <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="items-center rounded-3xl border p-6 shadow-sm">
-          <Ionicons name="alert-circle-outline" size={48} color={colors.status.danger.main} />
-          <Text style={{ color: colors.status.danger.main }} className="mt-4 text-center font-semibold">
-            {error}
-          </Text>
-          <Pressable onPress={handleRefresh} style={{ backgroundColor: colors.brand.primary }} className="mt-6 rounded-2xl px-6 py-3 shadow-sm">
-            <Text style={{ color: colors.text.onPrimary }} className="font-bold">Thử lại</Text>
-          </Pressable>
+      <View style={{ backgroundColor: colors.surface.page, paddingTop: insets.top }} className="flex-1">
+        {/* Header */}
+        <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="border-b px-4 py-3 shadow-sm">
+          <View className="flex-row items-center justify-between">
+            <Pressable onPress={handleGoBack} style={{ backgroundColor: colors.brand.primarySoft }} className="rounded-full p-2 active:opacity-70">
+              <Ionicons name="arrow-back" size={20} color={colors.brand.primary} />
+            </Pressable>
+            <Text style={{ color: colors.text.primary }} className="text-base font-bold">
+              Chi tiết sự cố
+            </Text>
+            <View style={{ width: 36 }} />
+          </View>
+        </View>
+
+        <View className="flex-1 items-center justify-center p-6">
+          <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="w-full max-w-sm items-center rounded-3xl border p-6 shadow-sm">
+            <Ionicons name="alert-circle-outline" size={48} color={colors.status.danger.main} />
+            <Text style={{ color: colors.status.danger.main }} className="mt-4 text-center font-semibold">
+              {error}
+            </Text>
+            <View className="mt-6 w-full flex-row gap-3">
+              <Pressable
+                onPress={handleGoBack}
+                style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default }}
+                className="flex-1 items-center justify-center rounded-2xl border py-3 active:opacity-80"
+              >
+                <Text style={{ color: colors.text.primary }} className="font-semibold">Quay lại</Text>
+              </Pressable>
+              <Pressable
+                onPress={handleRefresh}
+                style={{ backgroundColor: colors.brand.primary }}
+                className="flex-1 items-center justify-center rounded-2xl py-3 shadow-sm active:opacity-80"
+              >
+                <Text style={{ color: colors.text.onPrimary }} className="font-bold">Thử lại</Text>
+              </Pressable>
+            </View>
+          </View>
         </View>
       </View>
     );
   }
 
-  if (!incident) {
+  if (isNotFound || !incident) {
     return (
-      <View style={{ backgroundColor: colors.surface.page }} className="flex-1 items-center justify-center">
-        <Text style={{ color: colors.text.secondary }} className="font-medium">
-          Không tìm thấy dữ liệu sự cố.
-        </Text>
+      <View style={{ backgroundColor: colors.surface.page, paddingTop: insets.top }} className="flex-1">
+        {/* Header */}
+        <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="border-b px-4 py-3 shadow-sm">
+          <View className="flex-row items-center justify-between">
+            <Pressable onPress={handleGoBack} style={{ backgroundColor: colors.brand.primarySoft }} className="rounded-full p-2 active:opacity-70">
+              <Ionicons name="arrow-back" size={20} color={colors.brand.primary} />
+            </Pressable>
+            <Text style={{ color: colors.text.primary }} className="text-base font-bold">
+              Chi tiết sự cố
+            </Text>
+            <View style={{ width: 36 }} />
+          </View>
+        </View>
+
+        {/* Empty / Not Found State */}
+        <View className="flex-1 items-center justify-center p-6">
+          <View style={{ backgroundColor: colors.brand.primarySoft }} className="mb-4 h-20 w-20 items-center justify-center rounded-full">
+            <Ionicons name="shield-checkmark-outline" size={40} color={colors.brand.primary} />
+          </View>
+          <Text style={{ color: colors.text.primary }} className="text-center text-lg font-bold">
+            Sự cố không tồn tại hoặc đã được gỡ bỏ
+          </Text>
+          <Text style={{ color: colors.text.secondary }} className="mt-2 text-center text-sm leading-5">
+            Mã sự cố này không tìm thấy trên hệ thống hoặc đã hoàn tất xử lý. Vui lòng quay lại danh sách chuyến xe.
+          </Text>
+
+          <View className="mt-6 w-full max-w-xs flex-col gap-3">
+            <Pressable
+              onPress={handleGoBack}
+              style={{ backgroundColor: colors.brand.primary }}
+              className="w-full flex-row items-center justify-center rounded-2xl py-3.5 shadow-sm active:opacity-80"
+            >
+              <Ionicons name="arrow-back" size={18} color={colors.text.onPrimary} style={{ marginRight: 8 }} />
+              <Text style={{ color: colors.text.onPrimary }} className="font-bold">
+                Quay lại chuyến xe
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={handleRefresh}
+              style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }}
+              className="w-full flex-row items-center justify-center rounded-2xl border py-3 active:opacity-80"
+            >
+              <Ionicons name="refresh" size={18} color={colors.text.secondary} style={{ marginRight: 8 }} />
+              <Text style={{ color: colors.text.secondary }} className="font-medium">
+                Thử tải lại
+              </Text>
+            </Pressable>
+          </View>
+        </View>
       </View>
     );
   }
@@ -906,7 +1051,7 @@ export default function DriverIncidentDetailScreen() {
                 </View>
                 <View style={{ backgroundColor: colors.status.success.bg }} className="rounded-full px-2.5 py-1 shrink-0">
                   <Text style={{ color: colors.status.success.main }} className="text-[10px] font-bold">
-                    {incident.status === 'TRANSLOAD_COMPLETED' || currentStep > 3 ? '✓ Đã sang hàng' : 'Đang sang hàng'}
+                    {incident.status === 'TRANSLOAD_COMPLETED' || incident.status === 'RESOLVED' || incident.status === 'CONTINUED' || currentStep > 3 ? '✓ Đã sang hàng' : 'Đang sang hàng'}
                   </Text>
                 </View>
               </View>
@@ -1099,13 +1244,13 @@ export default function DriverIncidentDetailScreen() {
             ) : null}
 
             <View style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default }} className="gap-2.5 rounded-2xl border p-4">
-              {incident.brokenVehicleId ? (
+              {brokenVehicle?.truckPlate || incident.brokenVehicleId ? (
                 <InfoRow
                   label="Xe cũ gặp sự cố"
                   value={
-                    brokenVehicle
+                    brokenVehicle?.truckPlate
                       ? `${brokenVehicle.truckPlate}${brokenVehicle.brand ? ` (${brokenVehicle.brand})` : ''}`
-                      : incident.brokenVehicleId
+                      : incident.brokenVehicleId || '--'
                   }
                 />
               ) : null}
@@ -1185,6 +1330,14 @@ export default function DriverIncidentDetailScreen() {
             <Ionicons name="information-circle-outline" size={20} color={colors.brand.primary} />
             <Text style={{ color: colors.text.primary }} className="text-base font-bold">Chi tiết sự cố ban đầu</Text>
           </View>
+          <InfoRow
+            label="Mã chuyến đi (Trip ID)"
+            value={
+              incident.tripId ||
+              (typeof params.id === 'string' ? params.id : '--')
+            }
+            highlight
+          />
           <InfoRow label="Loại sự cố" value={INCIDENT_TYPE_LABEL[incident.incidentType] || incident.incidentType} />
           <InfoRow label="Mức độ" value={SEVERITY_LABEL[incident.severity] || incident.severity} />
           <InfoRow label="Mô tả" value={incident.description} />
@@ -1193,10 +1346,11 @@ export default function DriverIncidentDetailScreen() {
           <InfoRow
             label="Xe gặp sự cố"
             value={
-              brokenVehicle
-                ? `${brokenVehicle.truckPlate}${brokenVehicle.brand ? ` (${brokenVehicle.brand})` : ''}`
+              brokenVehicle?.truckPlate || (brokenVehicle as any)?.vehiclePlate
+                ? `${brokenVehicle?.truckPlate || (brokenVehicle as any)?.vehiclePlate}${brokenVehicle?.brand ? ` (${brokenVehicle.brand})` : ''}`
                 : incident.brokenVehicleId || '--'
             }
+            highlight
           />
           {brokenVehicle?.maxWeight ? (
             <InfoRow
@@ -1204,6 +1358,15 @@ export default function DriverIncidentDetailScreen() {
               value={`${brokenVehicle.maxWeight.toLocaleString('vi-VN')} kg`}
             />
           ) : null}
+          <InfoRow
+            label="Số tiền đã ứng"
+            value={
+              (incident.driverPaidAmount ?? 0) > 0
+                ? `${incident.driverPaidAmount?.toLocaleString('vi-VN')} VNĐ`
+                : '0 VNĐ (Không có tạm ứng)'
+            }
+            highlight={(incident.driverPaidAmount ?? 0) > 0}
+          />
           <InfoRow
             label="Tọa độ GPS"
             value={
@@ -1378,16 +1541,13 @@ export default function DriverIncidentDetailScreen() {
               </Pressable>
             ) : null}
 
-            {/* CTA: Bước 4: Tiếp tục chuyến xe
-                - requiresRescue === false → gọi API continue-trip qua modal
-                - requiresRescue === true (TRANSLOAD_COMPLETED) → trip đã IN_TRANSIT, navigate về trip
-            */}
-            {currentStep === 4 && incident.status !== 'RESOLVED' ? (
+            {/* CTA: Bước 4: Tiếp tục chuyến xe */}
+            {currentStep === 4 && incident.status !== 'RESOLVED' && incident.status !== 'CONTINUED' && incident.status !== 'TRANSLOAD_COMPLETED' ? (
               <Pressable
                 onPress={handleConfirmContinueFromStep4}
                 disabled={isContinueTripSubmitting}
                 style={{ backgroundColor: colors.brand.primary, minHeight: 48 }}
-                className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm px-4"
+                className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm px-4 active:opacity-80"
               >
                 {isContinueTripSubmitting ? (
                   <ActivityIndicator color="#fff" />
@@ -1404,18 +1564,30 @@ export default function DriverIncidentDetailScreen() {
               </Pressable>
             ) : null}
 
-            {/* CTA: Bước 5: Mở trang giao hàng các điểm dừng */}
-            {currentStep === 5 && incident.status !== 'RESOLVED' ? (
-              <Pressable
-                onPress={handleOpenTripFromStep5}
-                style={{ backgroundColor: colors.brand.primary, minHeight: 48 }}
-                className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm px-4"
-              >
-                <Ionicons name="navigate" size={18} color="#ffffff" />
-                <Text className="text-base font-bold text-white">
-                  🚀 Mở chuyến xe để giao hàng các điểm dừng
-                </Text>
-              </Pressable>
+            {/* CTA: Khi sự cố đã tiếp tục chuyến hoặc cứu hộ đã xong (CONTINUED, TRANSLOAD_COMPLETED, RESOLVED) */}
+            {(incident.status === 'CONTINUED' || incident.status === 'TRANSLOAD_COMPLETED' || incident.status === 'RESOLVED' || currentStep >= 5) && !canDriverSelfContinue ? (
+              <View className="gap-2 w-full">
+                <Pressable
+                  disabled
+                  style={{ backgroundColor: '#94A3B8', minHeight: 48, opacity: 0.5 }}
+                  className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm px-4"
+                >
+                  <Ionicons name="checkmark-circle" size={18} color="#ffffff" />
+                  <Text className="text-base font-bold text-white">
+                    ✓ Đã tiếp tục chuyến xe
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={handleOpenTripFromStep5}
+                  style={{ backgroundColor: colors.brand.primarySoft, borderColor: colors.brand.primary, minHeight: 44 }}
+                  className="flex-row items-center justify-center gap-2 rounded-2xl border px-4 active:opacity-80"
+                >
+                  <Ionicons name="arrow-forward" size={16} color={colors.brand.primary} />
+                  <Text style={{ color: colors.brand.primary }} className="text-sm font-bold">
+                    Về màn hình chuyến xe & Giao hàng
+                  </Text>
+                </Pressable>
+              </View>
             ) : null}
           </>
         )}
