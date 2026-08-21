@@ -183,6 +183,7 @@ export default function StopDetailScreen() {
   const [temperatureChart, setTemperatureChart] = useState<StopTemperatureChart | null>(null);
   const [temperatureError, setTemperatureError] = useState<string | null>(null);
   const [isLoadingTemperature, setIsLoadingTemperature] = useState(false);
+  const [distanceToStopKm, setDistanceToStopKm] = useState<number | null>(null);
 
   const selectedOrder = useMemo(
     () => orders.find((order) => order.orderId === selectedOrderId) ?? null,
@@ -399,6 +400,24 @@ export default function StopDetailScreen() {
         }
       }));
 
+      // Tính khoảng cách giữa xe và điểm dừng
+      const rawLat = trackingResponse.data?.latestTelemetry?.lat ?? (trackingResponse.data as any)?.latitude;
+      const rawLon = trackingResponse.data?.latestTelemetry?.lon ?? (trackingResponse.data as any)?.longitude;
+      const vLat = typeof rawLat === 'string' ? parseFloat(rawLat) : Number(rawLat);
+      const vLon = typeof rawLon === 'string' ? parseFloat(rawLon) : Number(rawLon);
+      const hasVehicleCoords = Number.isFinite(vLat) && Number.isFinite(vLon) && vLat >= -90 && vLat <= 90 && vLon >= -180 && vLon <= 180;
+
+      const sLat = (routeStop as { lat?: number })?.lat ?? route.destination?.lat;
+      const sLon = (routeStop as { lon?: number })?.lon ?? route.destination?.lon;
+      const hasStopCoords = typeof sLat === 'number' && typeof sLon === 'number' && Number.isFinite(sLat) && Number.isFinite(sLon);
+
+      if (hasVehicleCoords && hasStopCoords) {
+        const dist = calculateHaversineDistanceKm(vLat, vLon, sLat, sLon);
+        setDistanceToStopKm(dist);
+      } else {
+        setDistanceToStopKm(null);
+      }
+
       setDriverStop(currentStop);
       setTripStops(tripDetail.stops);
       setTripStatus(tripDetail.status || 'UNKNOWN');
@@ -425,6 +444,14 @@ export default function StopDetailScreen() {
     const targetStopId = driverStop?.stopId || stopId;
     if (!targetStopId || !checkinProofAsset) {
       Alert.alert('Thiếu ảnh xác nhận', 'Vui lòng thêm ảnh xác nhận trước khi check-in.');
+      return;
+    }
+
+    if (distanceToStopKm !== null && distanceToStopKm > MAX_CHECKIN_DISTANCE_KM) {
+      Alert.alert(
+        '⚠️ Chưa đến phạm vi điểm giao',
+        `Xe hiện đang cách điểm giao hàng ${distanceToStopKm} km (vượt quá bán kính 10 km cho phép check-in theo quy định hệ thống).\n\nVui lòng di chuyển xe đến gần điểm giao hơn để xác nhận.`
+      );
       return;
     }
 
@@ -1255,8 +1282,38 @@ export default function StopDetailScreen() {
                 Xác nhận đã đến điểm giao
               </Text>
               <Text style={{ color: colors.text.secondary }} className="mb-4 text-center text-xs leading-5">
-                Chụp ảnh điểm giao để xác nhận có mặt. Vị trí check-in được hệ thống đối chiếu từ thiết bị IoT của xe.
+                Chụp ảnh điểm giao để xác nhận có mặt. Vị trí check-in được hệ thống đối chiếu từ thiết bị IoT của xe (bán kính hợp lệ tối đa 10 km).
               </Text>
+
+              {/* Thông tin khoảng cách xe hiện tại tới điểm giao */}
+              {distanceToStopKm !== null ? (
+                distanceToStopKm <= MAX_CHECKIN_DISTANCE_KM ? (
+                  <View className="mb-4 w-full rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                    <View className="flex-row items-center gap-2">
+                      <Ionicons name="checkmark-circle" size={18} color="#15803D" />
+                      <Text className="text-xs font-bold text-emerald-900">
+                        Khoảng cách từ xe: {distanceToStopKm} km
+                      </Text>
+                    </View>
+                    <Text className="mt-1 text-[11px] text-emerald-800 leading-4">
+                      Hợp lệ theo quy định hệ thống (trong bán kính cho phép 10 km).
+                    </Text>
+                  </View>
+                ) : (
+                  <View className="mb-4 w-full rounded-xl border border-amber-300 bg-amber-50 p-3">
+                    <View className="flex-row items-center gap-2">
+                      <Ionicons name="alert-circle" size={18} color="#D97706" />
+                      <Text className="text-xs font-bold text-amber-900">
+                        Khoảng cách từ xe: {distanceToStopKm} km
+                      </Text>
+                    </View>
+                    <Text className="mt-1 text-[11px] text-amber-800 leading-4">
+                      Vượt quá bán kính 10 km quy định. Xe cần đến gần hơn để check-in.
+                    </Text>
+                  </View>
+                )
+              ) : null}
+
               <View className="w-full">
                 <ProofPicker
                   asset={checkinProofAsset}
@@ -1271,7 +1328,7 @@ export default function StopDetailScreen() {
                   label="Xác nhận đã đến"
                   onPress={() => void handleCheckIn()}
                   loading={isProcessing}
-                  disabled={!checkinProofAsset}
+                  disabled={!checkinProofAsset || (distanceToStopKm !== null && distanceToStopKm > MAX_CHECKIN_DISTANCE_KM)}
                 />
               </View>
             </View>
@@ -2759,4 +2816,25 @@ function formatTripStatus(status?: string | null) {
     case 'DISPATCHED': return 'Đã điều phối';
     default: return status?.trim() || 'Chưa xác định';
   }
+}
+
+const MAX_CHECKIN_DISTANCE_KM = 10;
+
+function calculateHaversineDistanceKm(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c * 10) / 10;
 }
