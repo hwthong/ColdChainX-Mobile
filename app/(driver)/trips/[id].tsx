@@ -680,7 +680,7 @@ export default function DriverTripDetailScreen() {
             <>
               <InfoRow
                 label="Mã chuyến (Trip ID)"
-                value={tripId || '--'}
+                value={trip?.tripId || route?.tripId || tracking?.tripId || tripId || '--'}
                 highlight
               />
               <InfoRow label="Quãng đường" value={formatDistance(route.totalDistanceMeters)} />
@@ -740,7 +740,7 @@ export default function DriverTripDetailScreen() {
             </View>
             <InfoRow
               label="Mã chuyến (Trip ID)"
-              value={tripId || '--'}
+              value={trip?.tripId || tracking?.tripId || route?.tripId || tripId || '--'}
               highlight
             />
             <InfoRow
