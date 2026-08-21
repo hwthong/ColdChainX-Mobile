@@ -29,6 +29,7 @@ import { AppMessage } from '../../components/AppMessage';
 import { StatusBadge } from '../../components/StatusBadge';
 import { InboundAsnCard } from '../../components/warehouse/InboundAsnCard';
 import { ReturnInboundPanel } from '../../components/warehouse/ReturnInboundPanel';
+import { QcMeasurementEditor } from '../../components/warehouse/inbound/QcMeasurementEditor';
 import {
   InboundWorkflowStepper,
   type StepKey,
@@ -44,6 +45,7 @@ import { getApiErrorMessage } from '../../services/apiClient';
 import { getDiscrepancyPdf } from '../../services/discrepancyApi';
 import {
   generateInboundReceipt,
+  getInboundOrderQcReference,
   getInboundReceiptPdf,
   putaway,
   reEvaluateInboundQc,
@@ -54,6 +56,19 @@ import {
   type PutawayResponse,
 } from '../../services/inboundApi';
 import { getInventoryLpnById, hasGeneratedWarehouseReceipt, type LpnDto } from '../../services/inventoryApi';
+import {
+  calculateQcMeasurementSummary,
+  createEmptyQcPackageLine,
+  createQcPackageLinesFromActual,
+  createQcPackageLinesFromExpected,
+  formatMeasurementValue,
+  hasQcPackageLineErrors,
+  mapQcPackageLinesToPayload,
+  type QcPackageLineErrors,
+  type QcPackageLineField,
+  type QcPackageLineFormValue,
+  validateQcPackageLines,
+} from '../../features/warehouse/inbound/inboundQcMeasurements';
 import { getWarehouseIdFromToken } from '../../services/jwt';
 import { useAuthStore } from '../../store/useAuthStore';
 
@@ -71,6 +86,7 @@ type ScheduleSource = 'LOADING' | 'PRIMARY' | 'FALLBACK' | 'ERROR';
 type InboundMode = 'ASN' | 'RETURNS';
 
 const todayInput = formatDateInput(new Date());
+const MAX_INBOUND_EVIDENCE_SIZE_BYTES = 10 * 1024 * 1024;
 
 export default function WarehouseInboundScreen() {
   const router = useRouter();
@@ -88,28 +104,36 @@ export default function WarehouseInboundScreen() {
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [scheduleSource, setScheduleSource] = useState<ScheduleSource>('LOADING');
   const scheduleRequestId = useRef(0);
+  const orderReferenceRequestId = useRef(0);
+  const packageLineIdRef = useRef(2);
+  const qcSubmissionRef = useRef(false);
 
   const [activeStep, setActiveStep] = useState<StepKey>('qc');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
-  const [qcWeight, setQcWeight] = useState('');
-  const [qcLength, setQcLength] = useState('');
-  const [qcWidth, setQcWidth] = useState('');
-  const [qcHeight, setQcHeight] = useState('');
+  const [qcPackageLines, setQcPackageLines] = useState<QcPackageLineFormValue[]>([
+    createEmptyQcPackageLine('qc-line-1'),
+  ]);
+  const [qcPackageLineErrors, setQcPackageLineErrors] = useState<QcPackageLineErrors[]>([]);
   const [qcTemperature, setQcTemperature] = useState('');
+  const [qcTemperatureError, setQcTemperatureError] = useState<string | undefined>();
   const [qcEvidence, setQcEvidence] = useState<EvidenceImage[]>([]);
   const [qcResult, setQcResult] = useState<InboundQcResponse | null>(null);
+  const [orderReferenceMessage, setOrderReferenceMessage] = useState<string | null>(null);
+  const [isLoadingOrderReference, setIsLoadingOrderReference] = useState(false);
 
   const [lpnId, setLpnId] = useState('');
   const [receiptId, setReceiptId] = useState('');
-  const [recheckWeight, setRecheckWeight] = useState('');
-  const [recheckLength, setRecheckLength] = useState('');
-  const [recheckWidth, setRecheckWidth] = useState('');
-  const [recheckHeight, setRecheckHeight] = useState('');
+  const [recheckPackageLines, setRecheckPackageLines] = useState<QcPackageLineFormValue[]>([
+    createEmptyQcPackageLine('recheck-line-2'),
+  ]);
+  const [recheckPackageLineErrors, setRecheckPackageLineErrors] = useState<QcPackageLineErrors[]>([]);
   const [recheckTemperature, setRecheckTemperature] = useState('');
+  const [recheckTemperatureError, setRecheckTemperatureError] = useState<string | undefined>();
   const [recheckEvidence, setRecheckEvidence] = useState<EvidenceImage[]>([]);
   const [recheckResult, setRecheckResult] = useState<InboundQcResponse | null>(null);
+  const [recheckMeasurementsLoaded, setRecheckMeasurementsLoaded] = useState(false);
   const [lpnStatus, setLpnStatus] = useState<string | null>(null);
   const [lpnWarehouseId, setLpnWarehouseId] = useState<string | null>(null);
   const [lpnHasWarehouseReceipt, setLpnHasWarehouseReceipt] = useState(false);
@@ -132,9 +156,16 @@ export default function WarehouseInboundScreen() {
     lpnHasWarehouseReceipt || Boolean(lpnReceiptPdfUrl?.trim() || receiptResult?.success || receiptResult?.pdfUrl);
   const canPutaway = currentLpnState === 'RECEIVING' && hasReceiptForCurrentLpn;
   const canGenerateReceipt = (!currentLpnState || currentLpnState === 'RECEIVING') && !hasReceiptForCurrentLpn;
+  const canOfferQcCorrection = currentLpnState === 'RECEIVING' && !hasReceiptForCurrentLpn;
+  const canSubmitQcCorrection = canOfferQcCorrection && recheckMeasurementsLoaded;
   const warehouseIdFromToken = useMemo(() => (token ? getWarehouseIdFromToken(token) : null), [token]);
   const warehouseIdForInbound = storedWarehouseId ?? warehouseIdFromToken;
   const warehouseIdForPutaway = storedWarehouseId ?? warehouseIdFromToken ?? lpnWarehouseId;
+  const qcSummary = useMemo(() => calculateQcMeasurementSummary(qcPackageLines), [qcPackageLines]);
+  const recheckSummary = useMemo(
+    () => calculateQcMeasurementSummary(recheckPackageLines),
+    [recheckPackageLines]
+  );
 
   const workflowStepsConfig: WorkflowStepConfig[] = useMemo(() => {
     const isQcCompleted = Boolean(qcResult?.success || recheckResult?.success || currentLpnState === 'RECEIVING' || currentLpnState === 'IN_STOCK');
@@ -319,6 +350,11 @@ export default function WarehouseInboundScreen() {
     setScheduleDate(todayInput);
   };
 
+  const nextPackageLineId = (prefix: 'qc' | 'recheck') => {
+    packageLineIdRef.current += 1;
+    return `${prefix}-line-${packageLineIdRef.current}`;
+  };
+
   const applyLpnSnapshot = (lpn: LpnDto) => {
     setLpnStatus(lpn.state || null);
     setLpnWarehouseId(lpn.warehouseId ?? null);
@@ -329,21 +365,79 @@ export default function WarehouseInboundScreen() {
     }
   };
 
+  const prefillRecheckMeasurements = (lpn: LpnDto) => {
+    const actualPackageLines = (lpn.actualPackageLines ?? []).map((line) => ({
+      ...(line.label?.trim() ? { label: line.label.trim() } : {}),
+      quantity: line.quantity,
+      actualWeightKg: line.actualWeightKg,
+      lengthCm: line.lengthCm,
+      widthCm: line.widthCm,
+      heightCm: line.heightCm,
+    }));
+
+    setRecheckPackageLines(
+      createQcPackageLinesFromActual(actualPackageLines, () => nextPackageLineId('recheck'))
+    );
+    setRecheckPackageLineErrors([]);
+    setRecheckTemperature(formatMeasurementValue(lpn.recordedTemperature));
+    setRecheckTemperatureError(undefined);
+    setRecheckMeasurementsLoaded(actualPackageLines.length > 0);
+  };
+
+  const loadOrderReference = async (asn: InboundScheduleResponse) => {
+    const requestId = ++orderReferenceRequestId.current;
+    setIsLoadingOrderReference(true);
+    setOrderReferenceMessage(null);
+
+    if (!token) {
+      setOrderReferenceMessage('Không thể tải quy cách dự kiến vì phiên đăng nhập không hợp lệ.');
+      setIsLoadingOrderReference(false);
+      return;
+    }
+
+    try {
+      const reference = await getInboundOrderQcReference(token, asn.orderId);
+      if (requestId !== orderReferenceRequestId.current) return;
+
+      if (reference.packageLines.length > 0) {
+        setQcPackageLines(
+          createQcPackageLinesFromExpected(reference.packageLines, () => nextPackageLineId('qc'))
+        );
+        setOrderReferenceMessage('Đã điền tên và số lượng dự kiến. Vui lòng nhập số đo thực tế.');
+      } else {
+        setQcPackageLines([createEmptyQcPackageLine(nextPackageLineId('qc'))]);
+        setOrderReferenceMessage('Đơn hàng chưa có quy cách chi tiết. Vui lòng nhập số đo thực tế.');
+      }
+      setQcPackageLineErrors([]);
+    } catch (error) {
+      if (requestId !== orderReferenceRequestId.current) return;
+      setOrderReferenceMessage(
+        `${getApiErrorMessage(error)} Vui lòng nhập quy cách thực tế thủ công.`
+      );
+    } finally {
+      if (requestId === orderReferenceRequestId.current) {
+        setIsLoadingOrderReference(false);
+      }
+    }
+  };
+
   const resetQcWorkflow = () => {
-    setQcWeight('');
-    setQcLength('');
-    setQcWidth('');
-    setQcHeight('');
+    orderReferenceRequestId.current += 1;
+    setQcPackageLines([createEmptyQcPackageLine(nextPackageLineId('qc'))]);
+    setQcPackageLineErrors([]);
     setQcTemperature('');
+    setQcTemperatureError(undefined);
     setQcEvidence([]);
     setQcResult(null);
-    setRecheckWeight('');
-    setRecheckLength('');
-    setRecheckWidth('');
-    setRecheckHeight('');
+    setOrderReferenceMessage(null);
+    setIsLoadingOrderReference(false);
+    setRecheckPackageLines([createEmptyQcPackageLine(nextPackageLineId('recheck'))]);
+    setRecheckPackageLineErrors([]);
     setRecheckTemperature('');
+    setRecheckTemperatureError(undefined);
     setRecheckEvidence([]);
     setRecheckResult(null);
+    setRecheckMeasurementsLoaded(false);
     setLpnId('');
     setReceiptId('');
   };
@@ -360,17 +454,18 @@ export default function WarehouseInboundScreen() {
     setPutawayResult(null);
     setActiveStep('qc');
     setActionMessage(`Đã chọn ${asn.asnCode}.`);
+    void loadOrderReference(asn);
   };
 
   const updateLpnId = (value: string) => {
     setLpnId(value);
-    setRecheckWeight('');
-    setRecheckLength('');
-    setRecheckWidth('');
-    setRecheckHeight('');
+    setRecheckPackageLines([createEmptyQcPackageLine(nextPackageLineId('recheck'))]);
+    setRecheckPackageLineErrors([]);
     setRecheckTemperature('');
+    setRecheckTemperatureError(undefined);
     setRecheckEvidence([]);
     setRecheckResult(null);
+    setRecheckMeasurementsLoaded(false);
     setLpnStatus(null);
     setLpnWarehouseId(null);
     setLpnHasWarehouseReceipt(false);
@@ -379,25 +474,99 @@ export default function WarehouseInboundScreen() {
     setPutawayResult(null);
   };
 
-  const handleSubmitQc = async () => {
+  const updateQcPackageLine = (id: string, field: QcPackageLineField, value: string) => {
+    if (isLoadingOrderReference) {
+      orderReferenceRequestId.current += 1;
+      setIsLoadingOrderReference(false);
+      setOrderReferenceMessage('Đã giữ dữ liệu bạn đang nhập; quy cách dự kiến không ghi đè biểu mẫu.');
+    }
+    setQcPackageLines((current) => updatePackageLineValue(current, id, field, value));
+    setQcPackageLineErrors([]);
+  };
+
+  const updateRecheckPackageLine = (id: string, field: QcPackageLineField, value: string) => {
+    setRecheckPackageLines((current) => updatePackageLineValue(current, id, field, value));
+    setRecheckPackageLineErrors([]);
+  };
+
+  const handleLoadQcForCorrection = async () => {
     try {
       requireToken(token);
-      requireGuid(activeAsnId, 'Mã ASN');
+      requireGuid(lpnId.trim(), 'Mã LPN');
       setIsSubmitting(true);
       setActionMessage(null);
 
+      const lpn = await getInventoryLpnById(token, lpnId.trim());
+      applyLpnSnapshot(lpn);
+      prefillRecheckMeasurements(lpn);
+
+      if (lpn.state !== 'RECEIVING') {
+        setActionMessage(
+          `Chỉ có thể chỉnh sửa khi LPN ở trạng thái RECEIVING. Hiện tại: ${getStatusStyle(lpn.state).label}.`
+        );
+      } else if (hasGeneratedWarehouseReceipt(lpn)) {
+        setActionMessage('Không thể chỉnh sửa vì PDF phiếu nhập kho đã được tạo.');
+      } else if ((lpn.actualPackageLines ?? []).length === 0) {
+        setActionMessage('LPN chưa có dữ liệu quy cách thực tế để chỉnh sửa.');
+      } else {
+        setActionMessage('Đã tải kết quả QC hiện tại. Bạn có thể chỉnh sửa từng số đo.');
+      }
+    } catch (error) {
+      setActionMessage(getApiErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSubmitQc = async () => {
+    if (qcSubmissionRef.current) return;
+
+    const packageLineErrors = validateQcPackageLines(qcPackageLines);
+    setQcPackageLineErrors(packageLineErrors);
+    if (hasQcPackageLineErrors(packageLineErrors)) {
+      setActionMessage('Vui lòng kiểm tra các số đo được đánh dấu.');
+      return;
+    }
+
+    let temperature: number | null;
+    try {
+      temperature = parseOptionalDecimal(qcTemperature, 'Nhiệt độ thực đo');
+      setQcTemperatureError(undefined);
+      validateEvidenceImages(qcEvidence);
+    } catch (error) {
+      const message = getApiErrorMessage(error);
+      if (message.toLowerCase().includes('nhiệt độ')) setQcTemperatureError(message);
+      setActionMessage(message);
+      return;
+    }
+
+    try {
+      requireToken(token);
+      requireGuid(activeAsnId, 'Mã ASN');
+      qcSubmissionRef.current = true;
+      setIsSubmitting(true);
+      setActionMessage(null);
+
+      const submittedPackageLines = mapQcPackageLinesToPayload(qcPackageLines);
+
       const response = await submitInboundQc(token, {
         asnId: activeAsnId,
-        actualWeightKg: parseRequiredDecimal(qcWeight, 'Cân nặng thực tế'),
-        lengthCm: parseRequiredDecimal(qcLength, 'Chiều dài'),
-        widthCm: parseRequiredDecimal(qcWidth, 'Chiều rộng'),
-        heightCm: parseRequiredDecimal(qcHeight, 'Chiều cao'),
-        temperature: parseOptionalDecimal(qcTemperature, 'Nhiệt độ'),
+        packageLines: submittedPackageLines,
+        temperature,
         evidenceImages: qcEvidence,
       });
 
+      if (!response.success) throw new Error(response.message);
+
       setQcResult(response);
       setRecheckResult(null);
+      setRecheckPackageLines(
+        createQcPackageLinesFromActual(submittedPackageLines, () => nextPackageLineId('recheck'))
+      );
+      setRecheckPackageLineErrors([]);
+      setRecheckTemperature(qcTemperature);
+      setRecheckTemperatureError(undefined);
+      setRecheckMeasurementsLoaded(true);
       if (response.lpnId) setLpnId(response.lpnId);
       if (response.receiptId) setReceiptId(response.receiptId);
       setLpnStatus(response.state ?? null);
@@ -406,30 +575,75 @@ export default function WarehouseInboundScreen() {
       setReceiptResult(null);
       setPutawayResult(null);
       setActionMessage(response.message);
+
+      if (response.lpnId) {
+        try {
+          const createdLpn = await getInventoryLpnById(token, response.lpnId);
+          applyLpnSnapshot(createdLpn);
+          prefillRecheckMeasurements(createdLpn);
+          if (createdLpn.receiptId) setReceiptId(createdLpn.receiptId);
+        } catch (refreshError) {
+          console.warn('[WarehouseInbound] QC succeeded but LPN refresh failed', {
+            message: getApiErrorMessage(refreshError),
+          });
+        }
+      }
+
       setActiveStep(response.state === 'DISCREPANCY_HOLD' ? 'measurements' : 'receipt');
     } catch (error) {
       setActionMessage(getApiErrorMessage(error));
     } finally {
+      qcSubmissionRef.current = false;
       setIsSubmitting(false);
     }
   };
 
   const handleReEvaluate = async () => {
+    if (qcSubmissionRef.current) return;
+
+    const packageLineErrors = validateQcPackageLines(recheckPackageLines);
+    setRecheckPackageLineErrors(packageLineErrors);
+    if (hasQcPackageLineErrors(packageLineErrors)) {
+      setActionMessage('Vui lòng kiểm tra các số đo được đánh dấu.');
+      return;
+    }
+
+    let temperature: number | null;
+    try {
+      temperature = parseOptionalDecimal(recheckTemperature, 'Nhiệt độ thực đo');
+      setRecheckTemperatureError(undefined);
+      validateEvidenceImages(recheckEvidence);
+    } catch (error) {
+      const message = getApiErrorMessage(error);
+      if (message.toLowerCase().includes('nhiệt độ')) setRecheckTemperatureError(message);
+      setActionMessage(message);
+      return;
+    }
+
     try {
       requireToken(token);
       requireGuid(lpnId.trim(), 'Mã LPN');
+      qcSubmissionRef.current = true;
       setIsSubmitting(true);
       setActionMessage(null);
 
+      const currentLpn = await getInventoryLpnById(token, lpnId.trim());
+      applyLpnSnapshot(currentLpn);
+      if (currentLpn.state !== 'RECEIVING') {
+        throw new Error(`Chỉ có thể chỉnh sửa số đo khi LPN ở trạng thái RECEIVING. Hiện tại: ${getStatusStyle(currentLpn.state).label}.`);
+      }
+      if (hasGeneratedWarehouseReceipt(currentLpn)) {
+        throw new Error('Không thể chỉnh sửa số đo sau khi PDF phiếu nhập kho đã được tạo.');
+      }
+
       const response = await reEvaluateInboundQc(token, {
         lpnId: lpnId.trim(),
-        actualWeightKg: parseRequiredDecimal(recheckWeight, 'Cân nặng thực tế'),
-        lengthCm: parseRequiredDecimal(recheckLength, 'Chiều dài'),
-        widthCm: parseRequiredDecimal(recheckWidth, 'Chiều rộng'),
-        heightCm: parseRequiredDecimal(recheckHeight, 'Chiều cao'),
-        temperature: parseOptionalDecimal(recheckTemperature, 'Nhiệt độ'),
+        packageLines: mapQcPackageLinesToPayload(recheckPackageLines),
+        temperature,
         evidenceImages: recheckEvidence,
       });
+
+      if (!response.success) throw new Error(response.message);
 
       setRecheckResult(response);
       if (response.lpnId) setLpnId(response.lpnId);
@@ -439,10 +653,23 @@ export default function WarehouseInboundScreen() {
       setReceiptResult(null);
       setPutawayResult(null);
       setActionMessage(response.message);
+
+      try {
+        const refreshedLpn = await getInventoryLpnById(token, response.lpnId ?? lpnId.trim());
+        applyLpnSnapshot(refreshedLpn);
+        prefillRecheckMeasurements(refreshedLpn);
+        if (refreshedLpn.receiptId) setReceiptId(refreshedLpn.receiptId);
+      } catch (refreshError) {
+        console.warn('[WarehouseInbound] QC correction succeeded but LPN refresh failed', {
+          message: getApiErrorMessage(refreshError),
+        });
+        setActionMessage(`${response.message} Không thể làm mới chi tiết LPN; vui lòng tải lại trạng thái.`);
+      }
       setActiveStep(response.state === 'DISCREPANCY_HOLD' ? 'discrepancy' : 'receipt');
     } catch (error) {
       setActionMessage(getApiErrorMessage(error));
     } finally {
+      qcSubmissionRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -627,6 +854,7 @@ export default function WarehouseInboundScreen() {
         uri: asset.uri,
         mimeType: asset.mimeType || 'image/jpeg',
         fileName: asset.fileName || `evidence-${index + 1}.jpg`,
+        fileSize: asset.fileSize,
       }));
 
     if (target === 'qc') {
@@ -1015,12 +1243,49 @@ export default function WarehouseInboundScreen() {
                   <AppInput label="Mã ASN (GUID)" value={manualAsnId} onChangeText={setManualAsnId} placeholder="Mã ASN" />
                 )}
 
-                <MeasurementFields
-                  weight={qcWeight} setWeight={setQcWeight}
-                  length={qcLength} setLength={setQcLength}
-                  width={qcWidth} setWidth={setQcWidth}
-                  height={qcHeight} setHeight={setQcHeight}
-                  temperature={qcTemperature} setTemperature={setQcTemperature}
+                {isLoadingOrderReference ? (
+                  <View style={styles.referenceLoading}>
+                    <ActivityIndicator size="small" color={colors.brand.primary} />
+                    <Text style={styles.referenceLoadingText}>Đang tải quy cách dự kiến...</Text>
+                  </View>
+                ) : orderReferenceMessage ? (
+                  <AppMessage tone="neutral" text={orderReferenceMessage} />
+                ) : null}
+
+                <QcMeasurementEditor
+                  heading="Đo thực tế"
+                  description="Khối lượng là tổng khối lượng của cả quy cách; kích thước là của mỗi kiện."
+                  lines={qcPackageLines}
+                  errors={qcPackageLineErrors}
+                  summary={qcSummary}
+                  temperature={qcTemperature}
+                  temperatureError={qcTemperatureError}
+                  onChangeLine={updateQcPackageLine}
+                  onAddLine={() => {
+                    if (isLoadingOrderReference) {
+                      orderReferenceRequestId.current += 1;
+                      setIsLoadingOrderReference(false);
+                    }
+                    setQcPackageLines((current) => [
+                      ...current,
+                      createEmptyQcPackageLine(nextPackageLineId('qc')),
+                    ]);
+                    setQcPackageLineErrors([]);
+                  }}
+                  onRemoveLine={(id) => {
+                    if (isLoadingOrderReference) {
+                      orderReferenceRequestId.current += 1;
+                      setIsLoadingOrderReference(false);
+                    }
+                    setQcPackageLines((current) => (
+                      current.length > 1 ? current.filter((line) => line.id !== id) : current
+                    ));
+                    setQcPackageLineErrors([]);
+                  }}
+                  onChangeTemperature={(value) => {
+                    setQcTemperature(value);
+                    setQcTemperatureError(undefined);
+                  }}
                 />
 
                 <EvidencePicker images={qcEvidence} onPick={() => pickEvidenceImages('qc')} onClear={() => setQcEvidence([])} />
@@ -1058,15 +1323,62 @@ export default function WarehouseInboundScreen() {
             {activeStep === 'measurements' ? (
               <View style={{ gap: 12 }}>
                 <AppInput label="Mã LPN" value={lpnId} onChangeText={updateLpnId} placeholder="Mã LPN" />
-                <MeasurementFields
-                  weight={recheckWeight} setWeight={setRecheckWeight}
-                  length={recheckLength} setLength={setRecheckLength}
-                  width={recheckWidth} setWidth={setRecheckWidth}
-                  height={recheckHeight} setHeight={setRecheckHeight}
-                  temperature={recheckTemperature} setTemperature={setRecheckTemperature}
+                <AppButton
+                  icon="download-outline"
+                  label="Tải kết quả QC hiện tại"
+                  onPress={handleLoadQcForCorrection}
+                  loading={isSubmitting}
+                  variant="secondary"
                 />
-                <EvidencePicker images={recheckEvidence} onPick={() => pickEvidenceImages('recheck')} onClear={() => setRecheckEvidence([])} />
-                <AppButton icon="calculator-outline" label="Gửi kết quả kiểm tra lại" onPress={handleReEvaluate} loading={isSubmitting} />
+
+                {currentLpnState && !canOfferQcCorrection ? (
+                  <AppMessage
+                    tone="warning"
+                    text={hasReceiptForCurrentLpn
+                      ? 'Không thể chỉnh sửa vì PDF phiếu nhập kho đã được tạo.'
+                      : `Chỉ có thể chỉnh sửa khi LPN ở trạng thái RECEIVING. Hiện tại: ${getStatusStyle(currentLpnState).label}.`}
+                  />
+                ) : null}
+
+                {canSubmitQcCorrection ? (
+                  <>
+                    <AppMessage tone="neutral" text="Đang chỉnh sửa kết quả QC" />
+                    <QcMeasurementEditor
+                      heading="Số đo hiện tại"
+                      description="Chỉnh đúng quy cách cần sửa; các giá trị còn lại được giữ nguyên."
+                      lines={recheckPackageLines}
+                      errors={recheckPackageLineErrors}
+                      summary={recheckSummary}
+                      temperature={recheckTemperature}
+                      temperatureError={recheckTemperatureError}
+                      onChangeLine={updateRecheckPackageLine}
+                      onAddLine={() => {
+                        setRecheckPackageLines((current) => [
+                          ...current,
+                          createEmptyQcPackageLine(nextPackageLineId('recheck')),
+                        ]);
+                        setRecheckPackageLineErrors([]);
+                      }}
+                      onRemoveLine={(id) => {
+                        setRecheckPackageLines((current) => (
+                          current.length > 1 ? current.filter((line) => line.id !== id) : current
+                        ));
+                        setRecheckPackageLineErrors([]);
+                      }}
+                      onChangeTemperature={(value) => {
+                        setRecheckTemperature(value);
+                        setRecheckTemperatureError(undefined);
+                      }}
+                    />
+                    <EvidencePicker images={recheckEvidence} onPick={() => pickEvidenceImages('recheck')} onClear={() => setRecheckEvidence([])} />
+                    <AppButton
+                      icon="save-outline"
+                      label="Lưu số đo đã chỉnh sửa"
+                      onPress={handleReEvaluate}
+                      loading={isSubmitting}
+                    />
+                  </>
+                ) : null}
                 {recheckResult ? <ResultBox title="Kết quả kiểm tra lại" result={recheckResult} /> : null}
               </View>
             ) : null}
@@ -1083,7 +1395,9 @@ export default function WarehouseInboundScreen() {
                   text="Lô hàng đang bị giữ do sai lệch. Sales/Admin cần xử lý sai lệch trước khi nhập kho."
                 />
                 <AppInput label="Mã LPN" value={lpnId} onChangeText={updateLpnId} placeholder="Mã LPN" />
-                <AppButton icon="calculator-outline" label="Kiểm tra lại số đo" onPress={() => setActiveStep('measurements')} variant="secondary" />
+                {canOfferQcCorrection ? (
+                  <AppButton icon="create-outline" label="Chỉnh sửa số đo" onPress={() => setActiveStep('measurements')} variant="secondary" />
+                ) : null}
                 <AppButton icon="document-attach-outline" label="Mở biên bản bất thường" onPress={openDiscrepancyPdf} variant="secondary" />
                 <AppButton icon="refresh-outline" label="Làm mới trạng thái LPN" onPress={refreshLpnStatus} loading={isSubmitting} variant="secondary" />
               </View>
@@ -1094,6 +1408,17 @@ export default function WarehouseInboundScreen() {
               <View style={{ gap: 12 }}>
                 {latestResultForCurrentLpn?.state === 'RECEIVING' ? (
                   <ResultBox title="Kết quả QC hiện hành" result={latestResultForCurrentLpn} />
+                ) : null}
+                {canOfferQcCorrection ? (
+                  <AppButton
+                    icon="create-outline"
+                    label="Chỉnh sửa số đo"
+                    onPress={() => {
+                      setActiveStep('measurements');
+                      void handleLoadQcForCorrection();
+                    }}
+                    variant="secondary"
+                  />
                 ) : null}
                 {currentLpnState === 'IN_STOCK' ? (
                   <AppMessage tone="success" text="LPN này đã nhập kho, không thể tạo phiếu nhập lại." />
@@ -1240,7 +1565,6 @@ export default function WarehouseInboundScreen() {
                 {currentLpnState === 'DISCREPANCY_HOLD' ? (
                   <View style={{ gap: 12 }}>
                     <AppButton icon="document-attach-outline" label="Mở biên bản bất thường" onPress={openDiscrepancyPdf} variant="secondary" />
-                    <AppButton icon="calculator-outline" label="Kiểm tra lại số đo" onPress={() => setActiveStep('measurements')} variant="secondary" />
                   </View>
                 ) : null}
                 {putawayResult && !putawayResult.success ? <AppMessage tone="error" text={putawayResult.message} /> : null}
@@ -1254,45 +1578,7 @@ export default function WarehouseInboundScreen() {
   );
 }
 
-/* ── Inline sub-components (Polished for Phase 2) ── */
-
-function MeasurementFields({
-  weight, setWeight,
-  length, setLength,
-  width, setWidth,
-  height, setHeight,
-  temperature, setTemperature,
-}: {
-  weight: string; setWeight: (v: string) => void;
-  length: string; setLength: (v: string) => void;
-  width: string; setWidth: (v: string) => void;
-  height: string; setHeight: (v: string) => void;
-  temperature: string; setTemperature: (v: string) => void;
-}) {
-  const temperatureKeyboardType = Platform.OS === 'ios' ? ('numbers-and-punctuation' as const) : ('numeric' as const);
-
-  return (
-    <View style={{ gap: 12 }}>
-      <AppInput label="Cân nặng thực tế (kg)" value={weight} onChangeText={setWeight} placeholder="Ví dụ: 64" keyboardType="numeric" />
-      <View style={{ flexDirection: 'row', gap: 10 }}>
-        <View style={{ flex: 1 }}>
-          <AppInput label="Dài (cm)" value={length} onChangeText={setLength} placeholder="Ví dụ: 80" keyboardType="numeric" />
-        </View>
-        <View style={{ flex: 1 }}>
-          <AppInput label="Rộng (cm)" value={width} onChangeText={setWidth} placeholder="Ví dụ: 60" keyboardType="numeric" />
-        </View>
-      </View>
-      <View style={{ flexDirection: 'row', gap: 10 }}>
-        <View style={{ flex: 1 }}>
-          <AppInput label="Cao (cm)" value={height} onChangeText={setHeight} placeholder="Ví dụ: 50" keyboardType="numeric" />
-        </View>
-        <View style={{ flex: 1 }}>
-          <AppInput label="Nhiệt độ (°C)" value={temperature} onChangeText={setTemperature} placeholder="Ví dụ: 4" keyboardType={temperatureKeyboardType} />
-        </View>
-      </View>
-    </View>
-  );
-}
+/* ── Inline sub-components ── */
 
 function EvidencePicker({ images, onPick, onClear }: { images: EvidenceImage[]; onPick: () => void; onClear: () => void }) {
   return (
@@ -1415,6 +1701,15 @@ function ResultBox({ title, result }: { title: string; result: InboundQcResponse
         {result.state ? <StatusBadge status={result.state} showVietnameseLabel /> : <Text style={{ fontSize: 12, color: colors.text.primary }}>N/A</Text>}
       </View>
       <AppInfoRow label="Chênh lệch" value={`${result.diffPercent}%`} />
+      {result.actualQuantity !== undefined ? (
+        <AppInfoRow label="Tổng số kiện" value={`${result.actualQuantity} kiện`} />
+      ) : null}
+      {result.actualWeightKg !== undefined ? (
+        <AppInfoRow label="Khối lượng" value={`${result.actualWeightKg} kg`} />
+      ) : null}
+      {result.actualCbm !== undefined ? (
+        <AppInfoRow label="Thể tích" value={`${result.actualCbm} m³`} />
+      ) : null}
       <AppInfoRow
         label="Kết quả"
         value={result.state === 'RECEIVING' ? 'Đạt' : result.state === 'DISCREPANCY_HOLD' ? 'Cần xử lý sai lệch' : 'N/A'}
@@ -1438,14 +1733,6 @@ function requireGuid(value: string, label: string) {
   }
 }
 
-function parseRequiredDecimal(value: string, label: string) {
-  const parsed = parseDecimal(value);
-  if (parsed === null || parsed <= 0) {
-    throw new Error(`${label} phải lớn hơn 0.`);
-  }
-  return parsed;
-}
-
 function parseOptionalDecimal(value: string, label: string) {
   if (!value.trim()) return null;
   const parsed = parseDecimal(value);
@@ -1460,6 +1747,26 @@ function parseDecimal(value: string) {
   if (!normalized) return null;
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function updatePackageLineValue(
+  lines: QcPackageLineFormValue[],
+  id: string,
+  field: QcPackageLineField,
+  value: string
+) {
+  return lines.map((line) => (line.id === id ? { ...line, [field]: value } : line));
+}
+
+function validateEvidenceImages(images: EvidenceImage[]) {
+  const oversizedImage = images.find(
+    (image) => image.fileSize !== undefined
+      && image.fileSize !== null
+      && image.fileSize > MAX_INBOUND_EVIDENCE_SIZE_BYTES
+  );
+  if (oversizedImage) {
+    throw new Error(`Ảnh ${oversizedImage.fileName || 'bằng chứng'} vượt quá giới hạn 10 MB.`);
+  }
 }
 
 function formatDateInput(date: Date): string {
@@ -1497,6 +1804,20 @@ function buildScheduleLoadError(primaryError: unknown, fallbackError: unknown): 
 }
 
 const styles = StyleSheet.create({
+  referenceLoading: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 12,
+    backgroundColor: colors.surface.muted,
+  },
+  referenceLoadingText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.text.secondary,
+  },
   searchBarContainer: {
     flexDirection: 'row',
     alignItems: 'center',

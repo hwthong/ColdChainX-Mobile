@@ -1,9 +1,10 @@
+import { Ionicons } from '@expo/vector-icons';
 import React, { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { colors } from '../../../../constants/colors';
-import { customerColors, customerRadius } from '../../../../constants/customerTheme';
-import { CustomerCard, CustomerSectionHeader } from '../../../../components/customer/ui/CustomerUi';
+import { customerRadius } from '../../../../constants/customerTheme';
+import type { GoongPlaceDetail } from '../../../../services/goongPlacesApi';
 import type {
   RouteBookingOptionsDto,
   RouteOptionResponse,
@@ -13,7 +14,6 @@ import type { CreateOrderValidationErrors } from '../createOrderValidation';
 import { AddressAutocompleteField } from './AddressAutocompleteField';
 import {
   CreateOrderChoiceCard,
-  CreateOrderTextField,
   type RegisterCreateOrderField,
   type RegisterCreateOrderInput,
 } from './CreateOrderUi';
@@ -25,6 +25,7 @@ type RouteScheduleStepProps = {
   selectedScheduleId: string;
   selectedStopId: string;
   address: string;
+  destinationLocation: GoongPlaceDetail | null;
   receiverName: string;
   receiverPhone: string;
   errors: CreateOrderValidationErrors;
@@ -39,11 +40,14 @@ type RouteScheduleStepProps = {
   onSelectRoute: (routeId: string) => void;
   onSelectSchedule: (scheduleId: string) => void;
   onSelectStop: (stopId: string) => void;
-  onChangeAddress: (address: string) => void;
-  onSelectAddress: (address: string) => void;
-  onChangeReceiverName: (name: string) => void;
-  onChangeReceiverPhone: (phone: string) => void;
-  onFocusField?: (field: 'destAddressText' | 'receiverName' | 'receiverPhone') => void;
+  onConfirmDeliveryContact: (payload: {
+    location: GoongPlaceDetail;
+    receiverName: string;
+    receiverPhone: string;
+  }) => void;
+  onChangeReceiverName?: (name: string) => void;
+  onChangeReceiverPhone?: (phone: string) => void;
+  onFocusField?: (field: 'receiverName' | 'receiverPhone') => void;
   onBlurField?: (field: 'receiverName' | 'receiverPhone') => void;
   onSubmitField?: (field: 'receiverName' | 'receiverPhone') => void;
 };
@@ -55,6 +59,7 @@ export function RouteScheduleStep({
   selectedScheduleId,
   selectedStopId,
   address,
+  destinationLocation,
   receiverName,
   receiverPhone,
   errors,
@@ -69,8 +74,7 @@ export function RouteScheduleStep({
   onSelectRoute,
   onSelectSchedule,
   onSelectStop,
-  onChangeAddress,
-  onSelectAddress,
+  onConfirmDeliveryContact,
   onChangeReceiverName,
   onChangeReceiverPhone,
   onFocusField,
@@ -86,114 +90,111 @@ export function RouteScheduleStep({
     onSelectRoute(routeId);
   };
 
+  const deliveryError = errors.destAddressText || errors.receiverName || errors.receiverPhone;
+
   return (
-    <View className="gap-4">
-      <CustomerCard>
-        <View className="gap-4">
-          <CustomerSectionHeader
-            title={selectedRoute && !showRoutePicker ? 'Tuyến đã chọn' : 'Tuyến vận chuyển'}
-            icon="navigate-outline"
-            actionLabel={selectedRoute && !showRoutePicker ? 'Thay đổi' : undefined}
-            onAction={selectedRoute && !showRoutePicker ? () => setIsChangingRoute(true) : undefined}
-          />
+    <View className="gap-5">
+      <View style={styles.sectionSurface}>
+        <SectionHeading icon="calendar-outline" title="Lịch vận chuyển" />
+        <View style={styles.sectionDivider} />
 
-          <View ref={(node) => registerField('routeId', node)}>
-            {showRoutePicker ? (
-              <RouteOptionPicker
-                routes={routes}
-                selectedRouteId={selectedRouteId}
-                isLoading={isLoadingRoutes}
-                error={routeError}
-                onRetry={onRetryRoutes}
-                onSelect={handleSelectRoute}
-              />
-            ) : (
-              <RouteSummary route={selectedRoute} />
-            )}
-            {errors.routeId ? <FieldError message={errors.routeId} /> : null}
-          </View>
-
+        <View style={styles.subsectionHeader}>
+          <Text style={styles.fieldLabel}>
+            {selectedRoute && !showRoutePicker ? 'Tuyến đã chọn' : 'Tuyến vận chuyển'}
+          </Text>
           {selectedRoute && !showRoutePicker ? (
-            <View ref={(node) => registerField('scheduleId', node)} className="gap-3">
-              <CustomerSectionHeader title="Lịch vận chuyển" icon="calendar-outline" />
-              <ScheduleOptions
-                bookingOptions={bookingOptions}
-                selectedRoute={selectedRoute}
-                isLoading={isLoadingBooking}
-                error={bookingError}
-                selectedScheduleId={selectedScheduleId}
-                scheduleError={errors.scheduleId}
-                onRetry={onRetryBooking}
-                onSelectSchedule={onSelectSchedule}
-              />
-            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Thay đổi tuyến vận chuyển"
+              hitSlop={8}
+              onPress={() => setIsChangingRoute(true)}
+            >
+              <Text style={styles.actionText}>Thay đổi</Text>
+            </Pressable>
           ) : null}
         </View>
-      </CustomerCard>
 
-      <CustomerCard>
-        <View className="gap-4">
-          <CustomerSectionHeader title="Giao hàng" icon="location-outline" />
+        <View ref={(node) => registerField('routeId', node)}>
+          {showRoutePicker ? (
+            <RouteOptionPicker
+              routes={routes}
+              selectedRouteId={selectedRouteId}
+              isLoading={isLoadingRoutes}
+              error={routeError}
+              onRetry={onRetryRoutes}
+              onSelect={handleSelectRoute}
+            />
+          ) : (
+            <RouteSummary route={selectedRoute} />
+          )}
+          {errors.routeId ? <FieldError message={errors.routeId} /> : null}
+        </View>
 
-          <View ref={(node) => registerField('dropoffStopId', node)} className="gap-3">
-            <CustomerSectionHeader title="Điểm giao hàng" />
-            {selectedRouteId ? (
-              <DropoffOptions
-                bookingOptions={bookingOptions}
-                isLoading={isLoadingBooking}
-                error={bookingError}
-                selectedStopId={selectedStopId}
-                stopError={errors.dropoffStopId}
-                onSelectStop={onSelectStop}
-              />
-            ) : (
-              <AvailabilityNotice>Chọn tuyến vận chuyển để xem các điểm giao khả dụng.</AvailabilityNotice>
-            )}
-          </View>
-
-          <View ref={(node) => registerField('destAddressText', node)}>
-            <AddressAutocompleteField
-              ref={(node) => registerInput('destAddressText', node)}
-              value={address}
-              destinationCity={selectedRoute ? formatCityName(selectedRoute.destCity) : undefined}
-              error={errors.destAddressText}
-              label="Địa chỉ giao hàng"
-              onChangeText={onChangeAddress}
-              onSelectAddress={onSelectAddress}
-              onFocus={() => onFocusField?.('destAddressText')}
+        {selectedRoute && !showRoutePicker ? (
+          <View ref={(node) => registerField('scheduleId', node)} className="gap-3">
+            <Text style={styles.fieldLabel}>Ngày và giờ khởi hành <Text style={styles.required}>*</Text></Text>
+            <ScheduleOptions
+              bookingOptions={bookingOptions}
+              selectedRoute={selectedRoute}
+              isLoading={isLoadingBooking}
+              error={bookingError}
+              selectedScheduleId={selectedScheduleId}
+              scheduleError={errors.scheduleId}
+              onRetry={onRetryBooking}
+              onSelectSchedule={onSelectSchedule}
             />
           </View>
+        ) : null}
+      </View>
 
-          <CreateOrderTextField
-            fieldKey="receiverName"
-            label="Họ tên người nhận"
-            required
-            value={receiverName}
-            error={errors.receiverName}
-            registerField={registerField}
-            registerInput={registerInput}
-            onChangeText={onChangeReceiverName}
-            onFocus={() => onFocusField?.('receiverName')}
-            onBlur={() => onBlurField?.('receiverName')}
-            onSubmitEditing={() => onSubmitField?.('receiverName')}
-          />
+      <View style={styles.sectionSurface}>
+        <SectionHeading icon="location-outline" title="Điểm giao hàng" />
+        <View style={styles.sectionDivider} />
 
-          <CreateOrderTextField
-            fieldKey="receiverPhone"
-            label="Số điện thoại người nhận"
-            required
-            keyboardType="phone-pad"
-            value={receiverPhone}
-            error={errors.receiverPhone}
-            registerField={registerField}
-            registerInput={registerInput}
-            onChangeText={onChangeReceiverPhone}
-            onFocus={() => onFocusField?.('receiverPhone')}
-            onBlur={() => onBlurField?.('receiverPhone')}
-            onSubmitEditing={() => onSubmitField?.('receiverPhone')}
+        <View ref={(node) => registerField('dropoffStopId', node)} className="gap-3">
+          <Text style={styles.fieldLabel}>Điểm dừng trên tuyến <Text style={styles.required}>*</Text></Text>
+          {selectedRouteId ? (
+            <DropoffOptions
+              bookingOptions={bookingOptions}
+              isLoading={isLoadingBooking}
+              error={bookingError}
+              selectedStopId={selectedStopId}
+              stopError={errors.dropoffStopId}
+              onSelectStop={onSelectStop}
+            />
+          ) : (
+            <AvailabilityNotice>Chọn tuyến vận chuyển để xem các điểm dừng khả dụng.</AvailabilityNotice>
+          )}
+        </View>
+
+        <View ref={(node) => registerField('destAddressText', node)}>
+          <AddressAutocompleteField
+            value={address}
+            selectedLocation={destinationLocation}
+            receiverName={receiverName}
+            receiverPhone={receiverPhone}
+            destinationCity={selectedRoute ? formatCityName(selectedRoute.destCity) : undefined}
+            error={deliveryError}
+            disabled={!selectedRouteId || !selectedScheduleId || !selectedStopId}
+            onConfirmDeliveryContact={onConfirmDeliveryContact}
           />
         </View>
-      </CustomerCard>
+      </View>
+    </View>
+  );
+}
+
+function SectionHeading({
+  icon,
+  title,
+}: {
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+  title: string;
+}) {
+  return (
+    <View style={styles.sectionHeading}>
+      <Ionicons name={icon} size={19} color={colors.brand.primary} />
+      <Text style={styles.sectionTitle}>{title}</Text>
     </View>
   );
 }
@@ -657,3 +658,47 @@ function formatDepartureDate(value: string): string {
 export function formatScheduleLabel(schedule: ScheduleOptionDto) {
   return `${formatDepartureDate(schedule.departureDate)} · Khởi hành ${schedule.departureTime.slice(0, 5)}`;
 }
+
+const styles = StyleSheet.create({
+  sectionSurface: {
+    backgroundColor: colors.surface.card,
+    borderColor: colors.border.default,
+    borderRadius: 17,
+    borderWidth: 1,
+    gap: 16,
+    padding: 16,
+  },
+  sectionHeading: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 9,
+  },
+  sectionTitle: {
+    color: colors.text.primary,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  sectionDivider: {
+    backgroundColor: colors.border.default,
+    height: StyleSheet.hairlineWidth,
+    marginTop: -6,
+  },
+  subsectionHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  fieldLabel: {
+    color: colors.text.primary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  required: {
+    color: '#DC2626',
+  },
+  actionText: {
+    color: colors.brand.primary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+});

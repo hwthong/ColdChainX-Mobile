@@ -10,12 +10,17 @@ import type {
   ScheduleOptionDto,
   StopOptionDto,
 } from '../../../../services/routeApi';
-import type { CreateOrderFormValues, CreateOrderStep } from '../createOrderValidation';
+import {
+  calculatePackageLineSummary,
+  type CreateOrderFormValues,
+  type CreateOrderStep,
+} from '../createOrderValidation';
 import { getGoodsTypeLabel } from './CargoInformationStep';
-import { calculateCbmPreview, getPackagingTypeLabel } from './PackagingImageStep';
+import { getPackagingTypeLabel } from './PackagingImageStep';
 import { formatScheduleLabel, getRouteLabel } from './RouteScheduleStep';
 
 type CreateOrderReviewStepProps = {
+  isEditMode: boolean;
   values: CreateOrderFormValues;
   selectedRoute: RouteOptionResponse | null;
   selectedSchedule: ScheduleOptionDto | null;
@@ -24,6 +29,7 @@ type CreateOrderReviewStepProps = {
 };
 
 export function CreateOrderReviewStep({
+  isEditMode,
   values,
   selectedRoute,
   selectedSchedule,
@@ -36,14 +42,20 @@ export function CreateOrderReviewStep({
   const dimensionsSummary = values.lengthCm && values.widthCm && values.heightCm
     ? `${values.lengthCm} × ${values.widthCm} × ${values.heightCm} cm / kiện`
     : '—';
-  const cbmPreview = calculateCbmPreview(values.lengthCm, values.widthCm, values.heightCm, values.quantity);
-  const packagingRows: [string, string][] = [
-    ['Kích thước mỗi kiện', dimensionsSummary],
-  ];
-  if (cbmPreview) {
-    packagingRows.push(['Tổng thể tích dự kiến', `${cbmPreview.totalLabel} m³`]);
-  }
+  const packageSummary = calculatePackageLineSummary(values.packageLines);
+  const packageLineDetails = values.packageLines
+    .map((line, index) => {
+      const label = line.label.trim() || `Quy cách ${index + 1}`;
+      return `${label}: ${line.capacityKg || '—'} kg × ${line.quantity || '—'}`;
+    })
+    .join('\n');
+  const packagingRows: [string, string][] = [];
+  if (isEditMode) packagingRows.push(['Kích thước mỗi kiện', dimensionsSummary]);
   packagingRows.push(['Ảnh lô hàng', values.documentImage ? '1 ảnh đã chọn' : 'Chưa chọn ảnh']);
+  packagingRows.push([
+    'Chứng từ',
+    values.legalDocument?.fileName || (values.legalDocument ? '1 tệp đã chọn' : isEditMode ? 'Không thay đổi' : 'Chưa chọn'),
+  ]);
 
   return (
     <View className="gap-4">
@@ -67,11 +79,14 @@ export function CreateOrderReviewStep({
         rows={[
           ['Phân loại', getGoodsTypeLabel(values.category)],
           [
-            'Tổng khối lượng & số kiện',
-            values.expectedWeightKg && values.quantity
-              ? `${values.expectedWeightKg} kg · ${values.quantity} kiện`
-              : '—',
+            isEditMode ? 'Tổng khối lượng & số kiện' : 'Tổng lô hàng',
+            isEditMode
+              ? values.expectedWeightKg && values.quantity
+                ? `${values.expectedWeightKg} kg · ${values.quantity} kiện`
+                : '—'
+              : `${formatNumber(packageSummary.totalWeightKg)} kg · ${formatNumber(packageSummary.totalQuantity)} kiện`,
           ],
+          ...(!isEditMode ? [['Quy cách kiện', packageLineDetails || '—'] as [string, string]] : []),
           ['Nhiệt độ bảo quản', `${values.tempCondition}°C`],
         ]}
       />
@@ -85,6 +100,10 @@ export function CreateOrderReviewStep({
       />
     </View>
   );
+}
+
+function formatNumber(value: number) {
+  return value.toLocaleString('vi-VN', { maximumFractionDigits: 2 });
 }
 
 type ReviewSectionProps = {

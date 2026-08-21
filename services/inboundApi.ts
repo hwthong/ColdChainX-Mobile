@@ -7,24 +7,44 @@ export type EvidenceImage = {
   fileName?: string | null;
   mimeType?: string | null;
   type?: string | null;
+  fileSize?: number | null;
 };
 
-export interface ProcessInboundQcPayload {
-  asnId: string;
+export interface InboundQcPackageLineItem {
+  label?: string;
+  quantity: number;
   actualWeightKg: number;
   lengthCm: number;
   widthCm: number;
   heightCm: number;
+}
+
+export interface InboundExpectedPackageLineItem {
+  orderPackageLineId: string;
+  label: string;
+  capacityKg: number;
+  quantity: number;
+}
+
+export interface InboundOrderQcReference {
+  orderId: string;
+  itemName: string;
+  quantity: number;
+  expectedWeightKg: number;
+  expectedCbm: number;
+  packageLines: InboundExpectedPackageLineItem[];
+}
+
+export interface ProcessInboundQcPayload {
+  asnId: string;
+  packageLines: InboundQcPackageLineItem[];
   temperature?: number | null;
   evidenceImages?: EvidenceImage[];
 }
 
 export interface ReEvaluateInboundQcPayload {
   lpnId: string;
-  actualWeightKg: number;
-  lengthCm: number;
-  widthCm: number;
-  heightCm: number;
+  packageLines: InboundQcPackageLineItem[];
   temperature?: number | null;
   evidenceImages?: EvidenceImage[];
 }
@@ -38,6 +58,10 @@ export interface InboundQcResponse {
   receiptId?: string | null;
   diffPercent: number;
   pdfUrl?: string | null;
+  actualQuantity?: number;
+  actualWeightKg?: number;
+  actualCbm?: number;
+  quoteId?: string | null;
 }
 
 export interface GenerateInboundReceiptPayload {
@@ -143,15 +167,12 @@ export interface ProcessInboundDispositionResponse {
 
 export function submitInboundQc(accessToken: string, payload: ProcessInboundQcPayload) {
   const formData = new FormData();
-  formData.append('AsnId', payload.asnId);
-  formData.append('ActualWeightKg', String(payload.actualWeightKg));
-  formData.append('LengthCm', String(payload.lengthCm));
-  formData.append('WidthCm', String(payload.widthCm));
-  formData.append('HeightCm', String(payload.heightCm));
-  if (payload.temperature !== undefined && payload.temperature !== null) {
+  formData.append('Asn_ID', payload.asnId);
+  formData.append('Actual_Package_Lines', JSON.stringify(payload.packageLines));
+  if (payload.temperature !== undefined && payload.temperature !== null && Number.isFinite(payload.temperature)) {
     formData.append('Temperature', String(payload.temperature));
   }
-  appendEvidenceImages(formData, payload.evidenceImages);
+  appendEvidenceImages(formData, 'Evidence_Images', payload.evidenceImages);
 
   return apiRequest<InboundQcResponse>('/api/Inbound/qc', {
     method: 'POST',
@@ -163,20 +184,24 @@ export function submitInboundQc(accessToken: string, payload: ProcessInboundQcPa
 export function reEvaluateInboundQc(accessToken: string, payload: ReEvaluateInboundQcPayload) {
   const formData = new FormData();
   formData.append('LpnId', payload.lpnId);
-  formData.append('ActualWeightKg', String(payload.actualWeightKg));
-  formData.append('LengthCm', String(payload.lengthCm));
-  formData.append('WidthCm', String(payload.widthCm));
-  formData.append('HeightCm', String(payload.heightCm));
-  if (payload.temperature !== undefined && payload.temperature !== null) {
+  formData.append('Actual_Package_Lines', JSON.stringify(payload.packageLines));
+  if (payload.temperature !== undefined && payload.temperature !== null && Number.isFinite(payload.temperature)) {
     formData.append('Temperature', String(payload.temperature));
   }
-  appendEvidenceImages(formData, payload.evidenceImages);
+  appendEvidenceImages(formData, 'EvidenceImages', payload.evidenceImages);
 
   return apiRequest<InboundQcResponse>('/api/Inbound/qc/re-evaluate', {
     method: 'PUT',
     headers: getAuthHeaders(accessToken),
     body: formData,
   });
+}
+
+export async function getInboundOrderQcReference(accessToken: string, orderId: string) {
+  const response = await apiRequest<ApiResponse<InboundOrderQcReference>>(`/api/orders/${orderId}`, {
+    headers: getAuthHeaders(accessToken),
+  });
+  return unwrapApiResponse(response, 'Không thể tải quy cách dự kiến của đơn hàng.');
 }
 
 export function generateInboundReceipt(accessToken: string, payload: GenerateInboundReceiptPayload) {
@@ -310,13 +335,18 @@ export async function downloadInboundReceiptPdf(accessToken: string, receiptId: 
   });
 }
 
-function appendEvidenceImages(formData: FormData, images?: EvidenceImage[]) {
+function appendEvidenceImages(
+  formData: FormData,
+  fieldName: 'Evidence_Images' | 'EvidenceImages',
+  images?: EvidenceImage[]
+) {
   images?.forEach((image, index) => {
-    formData.append('EvidenceImages', {
+    const filePart = {
       uri: image.uri,
       name: image.fileName || `evidence-${index + 1}.jpg`,
       type: image.mimeType || image.type || 'image/jpeg',
-    } as any);
+    };
+    formData.append(fieldName, filePart as unknown as Blob);
   });
 }
 

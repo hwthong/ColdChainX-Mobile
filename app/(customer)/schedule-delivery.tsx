@@ -4,6 +4,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -25,7 +27,6 @@ type PickerMode = 'date' | 'time';
 const DROPOFF_INTERVAL_MINUTES = 15;
 const DROPOFF_BUFFER_HOURS = 2;
 const DEFAULT_DROPOFF_OFFSET_HOURS = 3;
-
 export default function ScheduleDeliveryScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ orderId?: string; asnId?: string }>();
@@ -59,7 +60,7 @@ export default function ScheduleDeliveryScreen() {
   const latestSelectableDropoffDateTime = getLatestAllowedDropoffDateTime(dropoffDateTime, routeCutOffTime);
   const isDropoffDateTimeValid = isAllowedDropoffDateTime(dropoffDateTime, routeCutOffTime);
   const dropoffWindowText = getDropoffWindowText(dropoffDateTime, routeCutOffTime);
-  const isAndroid = process.env.EXPO_OS === 'android';
+  const isAndroid = Platform.OS === 'android';
   const selectedWarehouse = useMemo(
     () => warehouses.find((warehouse) => warehouse.warehouseId === selectedWarehouseId) ?? null,
     [selectedWarehouseId, warehouses]
@@ -404,23 +405,40 @@ export default function ScheduleDeliveryScreen() {
               <Text style={{ color: colors.text.secondary }} className="text-xs font-bold uppercase tracking-wider">Ngày/giờ giao kho</Text>
               <View className="flex-row gap-3">
                 <Pressable
-                  onPress={() => setVisiblePicker((currentMode) => (currentMode === 'date' ? null : 'date'))}
-                  style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }}
-                  className="flex-1 rounded-2xl border px-4 py-3"
+                  accessibilityRole="button"
+                  accessibilityLabel={`Chọn ngày giao kho, hiện tại là ${formatDisplayDate(dropoffDateTime)}`}
+                  onPress={() => setVisiblePicker('date')}
+                  style={({ pressed }) => [
+                    styles.dateTimeCard,
+                    visiblePicker === 'date' ? styles.dateTimeCardActive : null,
+                    pressed ? styles.dateTimeCardPressed : null,
+                  ]}
                 >
-                  <Text style={{ color: colors.text.muted }} className="text-[11px] font-bold uppercase tracking-wider">Ngày</Text>
-                  <Text style={{ color: colors.text.primary }} className="mt-1 text-base font-extrabold">
+                  <View style={styles.dateTimeCardHeader}>
+                    <Text style={styles.dateTimeLabel}>Ngày</Text>
+                    <Ionicons name="calendar-outline" size={16} color={colors.brand.primary} />
+                  </View>
+                  <Text style={styles.dateTimeValue}>
                     {formatDisplayDate(dropoffDateTime)}
                   </Text>
                 </Pressable>
 
                 <Pressable
-                  onPress={() => setVisiblePicker((currentMode) => (currentMode === 'time' ? null : 'time'))}
-                  style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }}
-                  className="w-32 rounded-2xl border px-4 py-3"
+                  accessibilityRole="button"
+                  accessibilityLabel={`Chọn giờ giao kho, hiện tại là ${formatDisplayTime(dropoffDateTime)}`}
+                  onPress={() => setVisiblePicker('time')}
+                  style={({ pressed }) => [
+                    styles.dateTimeCard,
+                    styles.timeCardWidth,
+                    visiblePicker === 'time' ? styles.dateTimeCardActive : null,
+                    pressed ? styles.dateTimeCardPressed : null,
+                  ]}
                 >
-                  <Text style={{ color: colors.text.muted }} className="text-[11px] font-bold uppercase tracking-wider">Giờ</Text>
-                  <Text style={{ color: colors.text.primary }} className="mt-1 text-base font-extrabold">
+                  <View style={styles.dateTimeCardHeader}>
+                    <Text style={styles.dateTimeLabel}>Giờ</Text>
+                    <Ionicons name="time-outline" size={16} color={colors.brand.primary} />
+                  </View>
+                  <Text style={styles.dateTimeValue}>
                     {formatDisplayTime(dropoffDateTime)}
                   </Text>
                 </Pressable>
@@ -430,38 +448,81 @@ export default function ScheduleDeliveryScreen() {
                 <Text style={{ color: colors.brand.primary }} className="text-sm font-semibold leading-5">{dropoffWindowText}</Text>
               </View>
 
-              {isAndroid ? (
-                visiblePicker ? (
-                  <DateTimePicker
-                    value={dropoffDateTime}
-                    mode={visiblePicker}
-                    display="default"
-                    minimumDate={visiblePicker === 'date' ? firstSelectableDropoffDateTime : firstSelectableDropoffDateTime}
-                    maximumDate={visiblePicker === 'time' ? latestSelectableDropoffDateTime ?? undefined : undefined}
-                    minuteInterval={15}
-                    onChange={handleDropoffPickerChange(visiblePicker)}
-                  />
-                ) : null
-              ) : (
-                <View style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }} className="gap-3 rounded-2xl border p-3">
-                  <DateTimePicker
-                    value={dropoffDateTime}
-                    mode="date"
-                    display="compact"
-                    minimumDate={firstSelectableDropoffDateTime}
-                    onChange={handleDropoffPickerChange('date')}
-                  />
-                  <DateTimePicker
-                    value={dropoffDateTime}
-                    mode="time"
-                    display="compact"
-                    minimumDate={firstSelectableDropoffDateTime}
-                    maximumDate={latestSelectableDropoffDateTime ?? undefined}
-                    minuteInterval={15}
-                    onChange={handleDropoffPickerChange('time')}
-                  />
-                </View>
-              )}
+              {/* DateTimePicker: Modal for iOS, Native dialog for Android */}
+              {!isAndroid ? (
+                <Modal
+                  visible={visiblePicker !== null}
+                  transparent
+                  animationType="fade"
+                  onRequestClose={() => setVisiblePicker(null)}
+                >
+                  <Pressable
+                    onPress={() => setVisiblePicker(null)}
+                    style={styles.pickerModalBackdrop}
+                  >
+                    <Pressable style={styles.pickerModalCard} onPress={(e) => e.stopPropagation()}>
+                      <View style={styles.pickerModalHeader}>
+                        <Text style={styles.pickerModalTitle}>
+                          {visiblePicker === 'date' ? 'Chọn ngày giao kho' : 'Chọn giờ giao kho'}
+                        </Text>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel="Đóng"
+                          hitSlop={8}
+                          onPress={() => setVisiblePicker(null)}
+                          style={styles.pickerModalCloseBtn}
+                        >
+                          <Ionicons name="close" size={20} color={colors.text.secondary} />
+                        </Pressable>
+                      </View>
+
+                      {visiblePicker === 'date' ? (
+                        <DateTimePicker
+                          value={dropoffDateTime}
+                          mode="date"
+                          display="inline"
+                          themeVariant="light"
+                          accentColor={colors.brand.primary}
+                          minimumDate={firstSelectableDropoffDateTime}
+                          onChange={handleDropoffPickerChange('date')}
+                        />
+                      ) : (
+                        <DateTimePicker
+                          value={dropoffDateTime}
+                          mode="time"
+                          display="spinner"
+                          themeVariant="light"
+                          accentColor={colors.brand.primary}
+                          minimumDate={firstSelectableDropoffDateTime}
+                          maximumDate={latestSelectableDropoffDateTime ?? undefined}
+                          minuteInterval={15}
+                          onChange={handleDropoffPickerChange('time')}
+                        />
+                      )}
+
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="Xác nhận"
+                        onPress={() => setVisiblePicker(null)}
+                        style={styles.pickerModalConfirmBtn}
+                      >
+                        <Text style={styles.pickerModalConfirmText}>Xong</Text>
+                      </Pressable>
+                    </Pressable>
+                  </Pressable>
+                </Modal>
+              ) : visiblePicker ? (
+                /* Android Native Picker Dialog */
+                <DateTimePicker
+                  value={dropoffDateTime}
+                  mode={visiblePicker}
+                  display="default"
+                  minimumDate={firstSelectableDropoffDateTime}
+                  maximumDate={visiblePicker === 'time' ? latestSelectableDropoffDateTime ?? undefined : undefined}
+                  minuteInterval={15}
+                  onChange={handleDropoffPickerChange(visiblePicker)}
+                />
+              ) : null}
             </View>
 
             <Field
@@ -838,3 +899,95 @@ function isContractSigned(status: string) {
 function translateOrderStatus(status: string) {
   return isContractSigned(status) ? 'Đã ký hợp đồng' : status;
 }
+
+const styles = StyleSheet.create({
+  dateTimeCard: {
+    backgroundColor: colors.surface.card,
+    borderColor: colors.border.default,
+    borderRadius: 16,
+    borderWidth: 1,
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  timeCardWidth: {
+    flex: 0,
+    width: 120,
+  },
+  dateTimeCardActive: {
+    borderColor: colors.brand.primary,
+    backgroundColor: colors.surface.selected,
+  },
+  dateTimeCardPressed: {
+    backgroundColor: colors.surface.muted,
+  },
+  dateTimeCardHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  dateTimeLabel: {
+    color: colors.text.muted,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  dateTimeValue: {
+    color: colors.text.primary,
+    fontSize: 16,
+    fontWeight: '800',
+    marginTop: 4,
+  },
+  pickerModalBackdrop: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    flex: 1,
+    justifyContent: 'center',
+    padding: 20,
+  },
+  pickerModalCard: {
+    backgroundColor: colors.surface.card,
+    borderRadius: 24,
+    maxWidth: 380,
+    padding: 20,
+    width: '100%',
+    shadowColor: '#173B59',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  pickerModalHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  pickerModalTitle: {
+    color: colors.text.primary,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  pickerModalCloseBtn: {
+    alignItems: 'center',
+    backgroundColor: colors.surface.muted,
+    borderRadius: 999,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
+  },
+  pickerModalConfirmBtn: {
+    alignItems: 'center',
+    backgroundColor: colors.brand.primary,
+    borderRadius: 14,
+    height: 46,
+    justifyContent: 'center',
+    marginTop: 14,
+  },
+  pickerModalConfirmText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+});

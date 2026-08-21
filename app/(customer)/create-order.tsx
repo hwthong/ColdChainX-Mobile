@@ -16,6 +16,7 @@ import {
   View,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -33,6 +34,7 @@ import { CreateOrderStepProgress } from '../../features/customer/create-order/Cr
 import { mapCreateOrderRequest } from '../../features/customer/create-order/createOrderMapper';
 import {
   CREATE_ORDER_STEP_FIELDS,
+  createEmptyPackageLine,
   CreateOrderFieldKey,
   CreateOrderFormValues,
   CreateOrderStep,
@@ -40,11 +42,14 @@ import {
   DocumentImage,
   GoodsType,
   isCreateOrderFormDirty,
+  MAX_CREATE_ORDER_FILE_SIZE_BYTES,
+  OrderPackageLineFormValue,
   parseCreateOrderDecimal,
   validateCreateOrderForm,
   validateCreateOrderStep,
 } from '../../features/customer/create-order/createOrderValidation';
 import { ApiClientError, getApiErrorMessage } from '../../services/apiClient';
+import type { GoongPlaceDetail } from '../../services/goongPlacesApi';
 import { createOrder, getOrderById, updateOrder, type UpdateOrderPayload } from '../../services/orderApi';
 import {
   getRouteBookingOptions,
@@ -55,7 +60,7 @@ import {
 import { useAuthStore } from '../../store/useAuthStore';
 
 const STEP_DETAILS: Record<CreateOrderStep, { title: string }> = {
-  1: { title: 'Tuyến và lịch vận chuyển' },
+  1: { title: 'Tuyến và giao hàng' },
   2: { title: 'Thông tin hàng hóa' },
   3: { title: 'Đóng gói và hình ảnh' },
   4: { title: 'Kiểm tra và gửi đơn hàng' },
@@ -75,6 +80,8 @@ export default function CreateOrderScreen() {
   const inputRefs = useRef<Partial<Record<CreateOrderFieldKey, TextInput | null>>>({});
   const pendingErrorFieldRef = useRef<CreateOrderFieldKey | null>(null);
   const allowExitRef = useRef(false);
+  const isSubmittingRef = useRef(false);
+  const packageLineIdRef = useRef(1);
 
   // — Edit mode state —
   const [isLoadingOrder, setIsLoadingOrder] = useState(isEditMode);
@@ -89,14 +96,19 @@ export default function CreateOrderScreen() {
   const [itemName, setItemName] = useState('');
   const [expectedWeightKg, setExpectedWeightKg] = useState('');
   const [quantity, setQuantity] = useState('1');
+  const [packageLines, setPackageLines] = useState<OrderPackageLineFormValue[]>([
+    createEmptyPackageLine('package-line-1'),
+  ]);
   const [packagingType, setPackagingType] = useState<string[]>([]);
   const [lengthCm, setLengthCm] = useState('');
   const [widthCm, setWidthCm] = useState('');
   const [heightCm, setHeightCm] = useState('');
   const [documentImage, setDocumentImage] = useState<DocumentImage | null>(null);
+  const [legalDocument, setLegalDocument] = useState<DocumentImage | null>(null);
 
   // — Delivery routing —
   const [destAddressText, setDestAddressText] = useState('');
+  const [destinationLocation, setDestinationLocation] = useState<GoongPlaceDetail | null>(null);
   const [receiverName, setReceiverName] = useState('');
   const [receiverPhone, setReceiverPhone] = useState('');
   const [selectedRouteId, setSelectedRouteId] = useState('');
@@ -156,24 +168,26 @@ export default function CreateOrderScreen() {
   const selectedRoute = routeOptions.find((r) => r.routeId === selectedRouteId) ?? null;
   const selectedSchedule = bookingOptions?.availableSchedules.find((s) => s.scheduleId === selectedScheduleId) ?? null;
   const selectedStop = bookingOptions?.availableStops.find((s) => s.stopId === selectedStopId) ?? null;
-  const capacityWarning = getCapacityWarning(expectedWeightKg, lengthCm, widthCm, heightCm, quantity);
   const formValues: CreateOrderFormValues = {
     itemName,
     category,
     tempCondition,
     expectedWeightKg,
     quantity,
+    packageLines,
     packagingType,
     lengthCm,
     widthCm,
     heightCm,
     destAddressText,
+    destinationLocation,
     receiverName,
     receiverPhone,
     routeId: selectedRouteId,
     scheduleId: selectedScheduleId,
     dropoffStopId: selectedStopId,
     documentImage: effectiveDocumentImage,
+    legalDocument,
   };
   const isFormDirty = hasUserEditedForm && isCreateOrderFormDirty(formValues);
 
@@ -182,11 +196,14 @@ export default function CreateOrderScreen() {
     setCategory('FROZEN_FRUITS_VEGGIES');
     setTempCondition(-6);
     setDestAddressText('');
+    setDestinationLocation(null);
     setReceiverName('');
     setReceiverPhone('');
     setItemName('');
     setExpectedWeightKg('');
     setQuantity('1');
+    packageLineIdRef.current = 1;
+    setPackageLines([createEmptyPackageLine('package-line-1')]);
     setPackagingType([]);
     setLengthCm('');
     setWidthCm('');
@@ -200,6 +217,7 @@ export default function CreateOrderScreen() {
     setBookingError(null);
     setIsLoadingBooking(false);
     setDocumentImage(null);
+    setLegalDocument(null);
     setExistingPhotoUrl(null);
     setExistingOrderCbm(null);
     setOriginalOrderStatus(null);
@@ -226,6 +244,8 @@ export default function CreateOrderScreen() {
           setBookingOptions(null);
           setSelectedScheduleId('');
           setSelectedStopId('');
+          setDestAddressText('');
+          setDestinationLocation(null);
           setIsLoadingBooking(false);
           setSelectedRouteId(nextRouteId);
         }
@@ -322,9 +342,9 @@ export default function CreateOrderScreen() {
               setExistingOrderCbm(Number(ord.expectedCbm));
             }
 
-            const ordLength = (ord as any).lengthCm ?? (ord as any).LengthCm ?? (ord as any).Length_CM;
-            const ordWidth = (ord as any).widthCm ?? (ord as any).WidthCm ?? (ord as any).Width_CM;
-            const ordHeight = (ord as any).heightCm ?? (ord as any).HeightCm ?? (ord as any).Height_CM;
+            const ordLength = ord.lengthCm;
+            const ordWidth = ord.widthCm;
+            const ordHeight = ord.heightCm;
 
             if (ordLength && ordWidth && ordHeight) {
               setLengthCm(String(ordLength));
@@ -347,6 +367,12 @@ export default function CreateOrderScreen() {
             // 4. Destination Address & Recipient
             if (ord.destination?.address) {
               setDestAddressText(ord.destination.address);
+              setDestinationLocation({
+                placeId: ord.destination.locationId,
+                address: ord.destination.address,
+                latitude: ord.destination.latitude,
+                longitude: ord.destination.longitude,
+              });
             }
             if (ord.receiverName) {
               setReceiverName(ord.receiverName);
@@ -501,6 +527,7 @@ export default function CreateOrderScreen() {
       setSelectedScheduleId('');
       setSelectedStopId('');
       setDestAddressText('');
+      setDestinationLocation(null);
       setBookingOptions(null);
       setBookingError(null);
       setIsLoadingBooking(false);
@@ -534,6 +561,7 @@ export default function CreateOrderScreen() {
   };
 
   const handleContinue = () => {
+    if (isLoading || isSubmittingRef.current) return;
     Keyboard.dismiss();
     if (currentStep === 4) {
       void handleSubmit();
@@ -544,15 +572,13 @@ export default function CreateOrderScreen() {
       return;
     }
 
-    const nextStepErrors = validateCreateOrderStep(currentStep, formValues, routeOptions, bookingOptions);
-    if (isEditMode) {
-      delete nextStepErrors.documentImage;
-      if (!formValues.lengthCm && !formValues.widthCm && !formValues.heightCm) {
-        delete nextStepErrors.lengthCm;
-        delete nextStepErrors.widthCm;
-        delete nextStepErrors.heightCm;
-      }
-    }
+    const nextStepErrors = validateCreateOrderStep(
+      currentStep,
+      formValues,
+      routeOptions,
+      bookingOptions,
+      isEditMode ? 'edit' : 'create'
+    );
     setStepErrors(currentStep, nextStepErrors);
     if (Object.keys(nextStepErrors).length > 0) {
       requestFirstErrorFocus(nextStepErrors);
@@ -629,6 +655,7 @@ export default function CreateOrderScreen() {
 
   // ─── Submit ─────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
+    if (isSubmittingRef.current) return;
     Keyboard.dismiss();
     if (__DEV__) console.log('[CreateOrder] submit pressed');
 
@@ -637,15 +664,12 @@ export default function CreateOrderScreen() {
       return;
     }
 
-    const nextErrors = validateCreateOrderForm(formValues, routeOptions, bookingOptions);
-    if (isEditMode) {
-      delete nextErrors.documentImage;
-      if (!formValues.lengthCm && !formValues.widthCm && !formValues.heightCm) {
-        delete nextErrors.lengthCm;
-        delete nextErrors.widthCm;
-        delete nextErrors.heightCm;
-      }
-    }
+    const nextErrors = validateCreateOrderForm(
+      formValues,
+      routeOptions,
+      bookingOptions,
+      isEditMode ? 'edit' : 'create'
+    );
     setErrors(nextErrors);
 
     if (Object.keys(nextErrors).length > 0) {
@@ -664,6 +688,11 @@ export default function CreateOrderScreen() {
       return;
     }
 
+    if (!isEditMode && !legalDocument) {
+      showToast('error', 'Vui lòng chọn chứng từ hàng hóa.', 'Thiếu chứng từ');
+      return;
+    }
+
     if (__DEV__) {
       console.log('[CreateOrder] payload preview:', {
         isEditMode,
@@ -671,11 +700,13 @@ export default function CreateOrderScreen() {
         Schedule_ID: selectedScheduleId,
         Dropoff_Stop_ID: selectedStopId,
         Packaging_Type: packagingType.join(', '),
-        Quantity: quantity,
+        PackageLineCount: packageLines.length,
         HasCargoPhoto: Boolean(documentImage?.uri),
+        HasLegalDocument: Boolean(legalDocument?.uri),
       });
     }
 
+    isSubmittingRef.current = true;
     setIsLoading(true);
     try {
       if (isEditMode && orderId) {
@@ -710,6 +741,13 @@ export default function CreateOrderScreen() {
                 fileName: documentImage.fileName || 'cargo.jpg',
               }
             : null,
+          legalDocument: legalDocument
+            ? {
+                uri: legalDocument.uri,
+                mimeType: legalDocument.mimeType || 'application/octet-stream',
+                fileName: legalDocument.fileName || 'legal-document',
+              }
+            : null,
         };
 
         const response = await updateOrder(accessToken, orderId, updatePayload);
@@ -734,7 +772,14 @@ export default function CreateOrderScreen() {
         return;
       }
 
-      const response = await createOrder(accessToken, mapCreateOrderRequest({ ...formValues, documentImage: documentImage! }));
+      const response = await createOrder(
+        accessToken,
+        mapCreateOrderRequest({
+          ...formValues,
+          documentImage: documentImage!,
+          legalDocument: legalDocument!,
+        })
+      );
 
       if (!response.success) {
         throw new Error(response.message || 'Tạo đơn thất bại.');
@@ -775,6 +820,7 @@ export default function CreateOrderScreen() {
       }
       showToast('error', errorMessage, isEditMode ? 'Lỗi cập nhật' : 'Lỗi tạo đơn');
     } finally {
+      isSubmittingRef.current = false;
       setIsLoading(false);
     }
   };
@@ -839,7 +885,18 @@ export default function CreateOrderScreen() {
       showToast('warning', 'Vui lòng chọn ảnh lô hàng, không chọn video.');
       return;
     }
-    setDocumentImage({ uri: asset.uri, mimeType: asset.mimeType || 'image/jpeg', fileName: asset.fileName || 'cargo.jpg' });
+    if (asset.fileSize !== undefined && (asset.fileSize <= 0 || asset.fileSize > MAX_CREATE_ORDER_FILE_SIZE_BYTES)) {
+      const message = 'Ảnh lô hàng phải có dung lượng từ 1 byte đến 10 MB.';
+      setErrors((current) => ({ ...current, documentImage: message }));
+      showToast('warning', message);
+      return;
+    }
+    setDocumentImage({
+      uri: asset.uri,
+      mimeType: asset.mimeType || 'image/jpeg',
+      fileName: asset.fileName || 'cargo.jpg',
+      size: asset.fileSize,
+    });
     setHasUserEditedForm(true);
     setErrors((current) => ({ ...current, documentImage: undefined }));
   };
@@ -849,6 +906,74 @@ export default function CreateOrderScreen() {
     setExistingPhotoUrl(null);
     setHasUserEditedForm(true);
     setErrors((current) => ({ ...current, documentImage: undefined }));
+  };
+
+  const pickLegalDocument = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/*'],
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled) return;
+
+      const asset = result.assets[0];
+      if (!asset) return;
+      if (asset.size !== undefined && (asset.size <= 0 || asset.size > MAX_CREATE_ORDER_FILE_SIZE_BYTES)) {
+        const message = 'Chứng từ phải có dung lượng từ 1 byte đến 10 MB.';
+        setErrors((current) => ({ ...current, legalDocument: message }));
+        showToast('warning', message);
+        return;
+      }
+
+      setLegalDocument({
+        uri: asset.uri,
+        mimeType: asset.mimeType || 'application/octet-stream',
+        fileName: asset.name || 'legal-document',
+        size: asset.size,
+      });
+      setHasUserEditedForm(true);
+      setErrors((current) => ({ ...current, legalDocument: undefined }));
+    } catch (error) {
+      if (__DEV__) console.error('[CreateOrder] legal document picker failed', error);
+      showToast('error', 'Không thể mở trình chọn chứng từ. Vui lòng thử lại.');
+    }
+  };
+
+  const removeLegalDocument = () => {
+    setLegalDocument(null);
+    setHasUserEditedForm(true);
+    setErrors((current) => ({ ...current, legalDocument: undefined }));
+  };
+
+  const changePackageLine = (
+    id: string,
+    field: 'label' | 'capacityKg' | 'quantity',
+    value: string
+  ) => {
+    setPackageLines((current) => current.map((line) => (
+      line.id === id ? { ...line, [field]: value } : line
+    )));
+    setHasUserEditedForm(true);
+    setErrors((current) => ({ ...current, packageLines: undefined }));
+  };
+
+  const addPackageLine = () => {
+    packageLineIdRef.current += 1;
+    setPackageLines((current) => [
+      ...current,
+      createEmptyPackageLine(`package-line-${packageLineIdRef.current}`),
+    ]);
+    setHasUserEditedForm(true);
+    setErrors((current) => ({ ...current, packageLines: undefined }));
+  };
+
+  const removePackageLine = (id: string) => {
+    setPackageLines((current) => (
+      current.length > 1 ? current.filter((line) => line.id !== id) : current
+    ));
+    setHasUserEditedForm(true);
+    setErrors((current) => ({ ...current, packageLines: undefined }));
   };
 
 
@@ -873,13 +998,24 @@ export default function CreateOrderScreen() {
   const validateFieldOnBlur = (field: CreateOrderFieldKey) => {
     const fieldStep = getFieldStep(field);
     if (!fieldStep) return;
-    const fieldError = validateCreateOrderStep(fieldStep, formValues, routeOptions, bookingOptions)[field];
+    const fieldError = validateCreateOrderStep(
+      fieldStep,
+      formValues,
+      routeOptions,
+      bookingOptions,
+      isEditMode ? 'edit' : 'create'
+    )[field];
     setErrors((current) => ({ ...current, [field]: fieldError }));
   };
 
   const submitTextField = (field: CreateOrderFieldKey) => {
+    if (!isEditMode && field === 'itemName') {
+      Keyboard.dismiss();
+      return;
+    }
     const nextField = getNextInputField(field);
-    if (nextField) inputRefs.current[nextField]?.focus();
+    const nextInput = nextField ? inputRefs.current[nextField] : null;
+    if (nextInput) nextInput.focus();
     else Keyboard.dismiss();
   };
 
@@ -901,7 +1037,12 @@ export default function CreateOrderScreen() {
         className="px-5 pb-2 pt-4"
         onLayout={(e) => console.log('[CreateOrderLayout] progress:', e.nativeEvent.layout)}
       >
-        <CreateOrderStepProgress currentStep={currentStep} totalSteps={4} {...STEP_DETAILS[currentStep]} />
+        <CreateOrderStepProgress
+          currentStep={currentStep}
+          totalSteps={4}
+          compact={currentStep === 1}
+          {...STEP_DETAILS[currentStep]}
+        />
       </View>
 
       <KeyboardAvoidingView
@@ -939,6 +1080,7 @@ export default function CreateOrderScreen() {
             selectedScheduleId={selectedScheduleId}
             selectedStopId={selectedStopId}
             address={destAddressText}
+            destinationLocation={destinationLocation}
             receiverName={receiverName}
             receiverPhone={receiverPhone}
             errors={errors}
@@ -950,6 +1092,19 @@ export default function CreateOrderScreen() {
             registerInput={registerInput}
             onRetryRoutes={fetchRoutes}
             onRetryBooking={() => fetchBookingOptions(selectedRouteId)}
+            onConfirmDeliveryContact={({ location, receiverName: name, receiverPhone: phone }) => {
+              setHasUserEditedForm(true);
+              setDestAddressText(location.address);
+              setDestinationLocation(location);
+              setReceiverName(name);
+              setReceiverPhone(phone);
+              setErrors((current) => ({
+                ...current,
+                destAddressText: undefined,
+                receiverName: undefined,
+                receiverPhone: undefined,
+              }));
+            }}
             onSelectRoute={handleRouteSelect}
             onSelectSchedule={(scheduleId) => {
               setHasUserEditedForm(true);
@@ -961,28 +1116,20 @@ export default function CreateOrderScreen() {
               if (stopId !== selectedStopId) {
                 setSelectedStopId(stopId);
                 setDestAddressText('');
+                setDestinationLocation(null);
               }
               setErrors((current) => ({ ...current, dropoffStopId: undefined, destAddressText: undefined }));
             }}
-            onChangeAddress={(value) => updateTextField('destAddressText', value, setDestAddressText)}
-            onSelectAddress={(address) => {
-              setHasUserEditedForm(true);
-              setDestAddressText(address);
-              setErrors((current) => ({ ...current, destAddressText: undefined }));
-            }}
-            onChangeReceiverName={(value) => updateTextField('receiverName', value, setReceiverName)}
-            onChangeReceiverPhone={(value) => updateTextField('receiverPhone', value, setReceiverPhone)}
-            onFocusField={handleFocusField}
-            onBlurField={validateFieldOnBlur}
-            onSubmitField={submitTextField}
           />
         ) : null}
 
         {currentStep === 2 ? (
           <CargoInformationStep
+            isEditMode={isEditMode}
             itemName={itemName}
             expectedWeightKg={expectedWeightKg}
             quantity={quantity}
+            packageLines={packageLines}
             category={category}
             temperature={tempCondition}
             errors={errors}
@@ -991,6 +1138,9 @@ export default function CreateOrderScreen() {
             onChangeItemName={(value) => updateTextField('itemName', value, setItemName)}
             onChangeExpectedWeight={(value) => updateTextField('expectedWeightKg', value, setExpectedWeightKg)}
             onChangeQuantity={(value) => updateTextField('quantity', value, setQuantity)}
+            onChangePackageLine={changePackageLine}
+            onAddPackageLine={addPackageLine}
+            onRemovePackageLine={removePackageLine}
             onChangeCategory={(value) => {
               setHasUserEditedForm(true);
               setCategory(value);
@@ -1009,13 +1159,13 @@ export default function CreateOrderScreen() {
 
         {currentStep === 3 ? (
           <PackagingImageStep
+            isEditMode={isEditMode}
             packagingTypes={packagingType}
             lengthCm={lengthCm}
             widthCm={widthCm}
             heightCm={heightCm}
-            quantity={quantity}
             image={effectiveDocumentImage}
-            capacityWarning={capacityWarning}
+            legalDocument={legalDocument}
             existingCbm={existingOrderCbm}
             errors={errors}
             registerField={registerField}
@@ -1030,6 +1180,8 @@ export default function CreateOrderScreen() {
             onChangeHeight={(value) => updateTextField('heightCm', value, setHeightCm)}
             onPickImage={openImagePicker}
             onRemoveImage={removeDocumentImage}
+            onPickLegalDocument={() => void pickLegalDocument()}
+            onRemoveLegalDocument={removeLegalDocument}
             onFocusField={handleFocusField}
             onBlurField={validateFieldOnBlur}
             onSubmitField={submitTextField}
@@ -1038,6 +1190,7 @@ export default function CreateOrderScreen() {
 
         {currentStep === 4 ? (
           <CreateOrderReviewStep
+            isEditMode={isEditMode}
             values={formValues}
             selectedRoute={selectedRoute}
             selectedSchedule={selectedSchedule}
@@ -1050,18 +1203,17 @@ export default function CreateOrderScreen() {
         {!shouldHideFooter && (() => {
           let isStepValid = true;
           if (currentStep !== 4) {
-            const stepErrors = validateCreateOrderStep(currentStep, formValues, routeOptions, bookingOptions);
-            if (isEditMode) {
-              delete stepErrors.documentImage;
-              if (!formValues.lengthCm && !formValues.widthCm && !formValues.heightCm) {
-                delete stepErrors.lengthCm;
-                delete stepErrors.widthCm;
-                delete stepErrors.heightCm;
-              }
-            }
+            const stepErrors = validateCreateOrderStep(
+              currentStep,
+              formValues,
+              routeOptions,
+              bookingOptions,
+              isEditMode ? 'edit' : 'create'
+            );
             isStepValid = Object.keys(stepErrors).length === 0;
           }
           const primaryLabel = currentStep === 4 ? (isEditMode ? 'Lưu cập nhật' : 'Gửi đơn hàng') : 'Tiếp tục';
+          const isPrimaryDisabled = !isStepValid || isLoading;
 
           return (
             <View style={[styles.localFooter, { paddingBottom: Math.max(insets.bottom, 12) }]}>
@@ -1082,16 +1234,16 @@ export default function CreateOrderScreen() {
               <View
                 style={[
                   styles.localNextButtonVisual,
-                  !isStepValid && styles.localNextButtonVisualDisabled,
+                  isPrimaryDisabled && styles.localNextButtonVisualDisabled,
                 ]}
               >
                 {isLoading ? (
-                  <ActivityIndicator color={!isStepValid ? colors.text.secondary : '#FFFFFF'} />
+                  <ActivityIndicator color={isPrimaryDisabled ? colors.text.secondary : '#FFFFFF'} />
                 ) : null}
                 <Text
                   style={[
                     styles.localNextButtonText,
-                    !isStepValid && styles.localNextButtonTextDisabled,
+                    isPrimaryDisabled && styles.localNextButtonTextDisabled,
                   ]}
                 >
                   {primaryLabel}
@@ -1100,8 +1252,8 @@ export default function CreateOrderScreen() {
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={primaryLabel}
-                  accessibilityState={{ disabled: !isStepValid }}
-                  disabled={!isStepValid}
+                  accessibilityState={{ disabled: isPrimaryDisabled }}
+                  disabled={isPrimaryDisabled}
                   onPress={handleContinue}
                   style={StyleSheet.absoluteFillObject}
                 />
@@ -1129,28 +1281,6 @@ export default function CreateOrderScreen() {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function getCapacityWarning(weightValue: string, lengthValue: string, widthValue: string, heightValue: string, quantityValue: string) {
-  const weightKg = parseCreateOrderDecimal(weightValue);
-  const lengthCm = parseCreateOrderDecimal(lengthValue);
-  const widthCm = parseCreateOrderDecimal(widthValue);
-  const heightCm = parseCreateOrderDecimal(heightValue);
-  const qty = Number(quantityValue.trim());
-
-  if (Number.isFinite(weightKg) && weightKg > 1500) {
-    return 'Khối lượng dự kiến đã vượt khoảng 1.5 tấn. Backend sẽ kiểm tra năng lực tuyến và có thể yêu cầu điều chỉnh đơn.';
-  }
-  if (Number.isFinite(weightKg) && weightKg >= 1000) {
-    return 'Khối lượng dự kiến đang gần ngưỡng 1-1.5 tấn. Vui lòng kiểm tra lại trước khi gửi đơn hàng.';
-  }
-  if (Number.isFinite(lengthCm) && Number.isFinite(widthCm) && Number.isFinite(heightCm) && Number.isFinite(qty)) {
-    const estimatedCbm = (lengthCm * widthCm * heightCm * qty) / 1_000_000;
-    if (estimatedCbm >= 8) {
-      return 'Kích thước quy đổi đang khá lớn. Backend sẽ xác nhận CBM và năng lực tuyến ở bước kiểm duyệt.';
-    }
-  }
-  return null;
-}
-
 function getCreateOrderErrorMessage(error: unknown) {
   const technicalMessage = getApiErrorMessage(error).toLowerCase();
 
@@ -1182,6 +1312,9 @@ function getCreateOrderErrorMessage(error: unknown) {
   if (technicalMessage.includes('category')) {
     return 'Phân loại hàng hóa không hợp lệ.';
   }
+  if (technicalMessage.includes('package_lines') || technicalMessage.includes('capacitykg')) {
+    return 'Vui lòng kiểm tra lại quy cách đóng gói.';
+  }
   if (technicalMessage.includes('weight')) {
     return 'Khối lượng hàng hóa không hợp lệ.';
   }
@@ -1196,6 +1329,9 @@ function getCreateOrderErrorMessage(error: unknown) {
   }
   if (technicalMessage.includes('receiver') || technicalMessage.includes('người nhận')) {
     return 'Thông tin người nhận (tên hoặc số điện thoại) không hợp lệ.';
+  }
+  if (technicalMessage.includes('legal') || technicalMessage.includes('document')) {
+    return 'Chứng từ hàng hóa không hợp lệ.';
   }
   if (technicalMessage.includes('photo') || technicalMessage.includes('image') || technicalMessage.includes('cargo')) {
     return 'Ảnh lô hàng không hợp lệ.';
@@ -1216,12 +1352,14 @@ function getCreateOrderServerErrorField(error: unknown): CreateOrderFieldKey | n
   if (technicalMessage.includes('item') || technicalMessage.includes('hàng hóa')) return 'itemName';
   if (technicalMessage.includes('category')) return 'category';
   if (technicalMessage.includes('temperature') || technicalMessage.includes('temp_condition')) return 'tempCondition';
+  if (technicalMessage.includes('package_lines') || technicalMessage.includes('capacitykg')) return 'packageLines';
   if (technicalMessage.includes('weight')) return 'expectedWeightKg';
   if (technicalMessage.includes('quantity')) return 'quantity';
   if (technicalMessage.includes('packaging') || technicalMessage.includes('package')) return 'packagingType';
   if (technicalMessage.includes('length')) return 'lengthCm';
   if (technicalMessage.includes('width')) return 'widthCm';
   if (technicalMessage.includes('height') || technicalMessage.includes('dimension')) return 'heightCm';
+  if (technicalMessage.includes('legal') || technicalMessage.includes('document')) return 'legalDocument';
   if (technicalMessage.includes('photo') || technicalMessage.includes('image') || technicalMessage.includes('cargo')) return 'documentImage';
   return null;
 }

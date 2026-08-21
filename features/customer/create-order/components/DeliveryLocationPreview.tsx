@@ -1,20 +1,42 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useCallback, useMemo, useState } from 'react';
-import { Alert, Linking, Modal, Pressable, Text, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GoongRouteMap } from '../../../../components/customer/GoongRouteMap';
 import { colors } from '../../../../constants/colors';
 import type { GoongPlaceDetail } from '../../../../services/goongPlacesApi';
 import type { TripRouteResponse } from '../../../../services/trackingApi';
+import { isValidPhoneNumber } from '../createOrderValidation';
 
 type DeliveryLocationPreviewProps = {
   location: GoongPlaceDetail;
+  initialReceiverName?: string;
+  initialReceiverPhone?: string;
+  onConfirm: (payload: { receiverName: string; receiverPhone: string }) => void;
 };
 
-export function DeliveryLocationPreview({ location }: DeliveryLocationPreviewProps) {
+export function DeliveryLocationPreview({
+  location,
+  initialReceiverName = '',
+  initialReceiverPhone = '',
+  onConfirm,
+}: DeliveryLocationPreviewProps) {
   const insets = useSafeAreaInsets();
-  const [isMapFullscreen, setIsMapFullscreen] = useState(false);
+  const [receiverName, setReceiverName] = useState(initialReceiverName);
+  const [receiverPhone, setReceiverPhone] = useState(initialReceiverPhone);
+  const [touched, setTouched] = useState<{ name?: boolean; phone?: boolean }>({});
+  const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
+
   const mapRoute = useMemo<TripRouteResponse>(() => ({
     tripId: `delivery-${location.placeId}`,
     overviewPolyline: null,
@@ -31,271 +53,260 @@ export function DeliveryLocationPreview({ location }: DeliveryLocationPreviewPro
     optimizedStops: [],
   }), [location]);
 
-  const safeOpenURL = useCallback(async (primaryUrl: string, fallbackUrl?: string) => {
-    try {
-      const supported = await Linking.canOpenURL(primaryUrl);
-      if (supported) {
-        await Linking.openURL(primaryUrl);
-        return;
-      }
-    } catch {
-      // Try the browser-compatible fallback below.
-    }
+  // Field validation
+  const nameTrimmed = receiverName.trim();
+  const nameError = useMemo(() => {
+    if (!touched.name && !hasAttemptedSubmit) return undefined;
+    if (!nameTrimmed) return 'Vui lòng nhập họ tên người nhận.';
+    if (nameTrimmed.length > 100) return 'Họ tên người nhận không được vượt quá 100 ký tự.';
+    return undefined;
+  }, [nameTrimmed, touched.name, hasAttemptedSubmit]);
 
-    if (fallbackUrl) {
-      try {
-        const fallbackSupported = await Linking.canOpenURL(fallbackUrl);
-        if (fallbackSupported) {
-          await Linking.openURL(fallbackUrl);
-          return;
-        }
-      } catch {
-        // Continue to the final attempt below.
-      }
-    }
+  const phoneTrimmed = receiverPhone.trim();
+  const phoneError = useMemo(() => {
+    if (!touched.phone && !hasAttemptedSubmit) return undefined;
+    if (!phoneTrimmed) return 'Vui lòng nhập số điện thoại người nhận.';
+    if (!isValidPhoneNumber(phoneTrimmed)) return 'Vui lòng nhập số điện thoại từ 8–15 chữ số.';
+    return undefined;
+  }, [phoneTrimmed, touched.phone, hasAttemptedSubmit]);
 
-    try {
-      await Linking.openURL(fallbackUrl || primaryUrl);
-    } catch {
-      Alert.alert(
-        'Thông báo',
-        'Không thể mở ứng dụng bản đồ trên thiết bị. Vui lòng kiểm tra ứng dụng bản đồ hoặc kết nối mạng.'
-      );
-    }
-  }, []);
+  const isFormValid = Boolean(
+    nameTrimmed &&
+    nameTrimmed.length <= 100 &&
+    phoneTrimmed &&
+    isValidPhoneNumber(phoneTrimmed)
+  );
 
-  const openGoogleMaps = useCallback(async () => {
-    const destination = `${location.latitude},${location.longitude}`;
-    await safeOpenURL(
-      `comgooglemaps://?daddr=${destination}&directionsmode=driving`,
-      `https://www.google.com/maps/dir/?api=1&destination=${destination}`
-    );
-  }, [location.latitude, location.longitude, safeOpenURL]);
-
-  const openAppleMaps = useCallback(async () => {
-    const destination = `${location.latitude},${location.longitude}`;
-    await safeOpenURL(
-      `maps://?daddr=${destination}&dirflg=d`,
-      `https://maps.apple.com/?daddr=${destination}`
-    );
-  }, [location.latitude, location.longitude, safeOpenURL]);
-
-  const openGoongMap = useCallback(async () => {
-    const destination = `${location.latitude},${location.longitude}`;
-    await safeOpenURL(`https://maps.goong.io/?destination=${destination}`);
-  }, [location.latitude, location.longitude, safeOpenURL]);
+  const handleConfirm = () => {
+    setHasAttemptedSubmit(true);
+    if (!isFormValid) return;
+    onConfirm({
+      receiverName: nameTrimmed,
+      receiverPhone: phoneTrimmed,
+    });
+  };
 
   return (
-    <>
-      <View
-        accessibilityLabel={`Vị trí giao hàng đã chọn: ${location.address}`}
-        style={{ backgroundColor: colors.surface.card, borderColor: colors.border.default }}
-        className="gap-4 rounded-3xl border p-5 shadow-sm"
-      >
-        <View className="flex-row items-center justify-between gap-3">
-          <View className="flex-1 flex-row items-center gap-2">
-            <Ionicons name="map-outline" size={20} color={colors.brand.primary} />
-            <Text style={{ color: colors.text.primary }} className="text-base font-bold">
-              Bản đồ vị trí giao hàng
-            </Text>
-          </View>
-          <Pressable
-            onPress={() => setIsMapFullscreen(true)}
-            accessibilityRole="button"
-            accessibilityLabel="Phóng to bản đồ vị trí giao hàng"
-            style={{ backgroundColor: colors.brand.primarySoft }}
-            className="flex-row items-center gap-1 rounded-lg px-2.5 py-1"
-          >
-            <Ionicons name="expand-outline" size={13} color={colors.brand.primary} />
-            <Text style={{ color: colors.brand.primary }} className="text-xs font-bold">
-              Phóng to
-            </Text>
-          </Pressable>
-        </View>
-
-        <View className="flex-row items-start gap-2.5 rounded-2xl bg-emerald-50 px-3.5 py-3">
-          <Ionicons name="checkmark-circle" size={19} color="#15803D" />
-          <View className="flex-1">
-            <Text className="text-xs font-bold text-emerald-800">Đã định vị địa chỉ giao hàng</Text>
-            <Text className="mt-0.5 text-[11px] leading-4 text-emerald-700">
-              Kiểm tra ghim trên bản đồ trước khi tiếp tục tạo đơn.
-            </Text>
-          </View>
-        </View>
-
-        <GoongRouteMap
-          route={mapRoute}
-          height={300}
-          showRouteDataNotice={false}
-        />
-
-        <MapShortcuts
-          onOpenGoogleMaps={openGoogleMaps}
-          onOpenAppleMaps={openAppleMaps}
-          onOpenGoongMap={openGoongMap}
-        />
-
-        <View style={{ borderTopColor: colors.border.default }} className="flex-row items-start gap-2.5 border-t pt-3">
-          <Ionicons name="location" size={18} color={colors.brand.primary} />
-          <View className="flex-1">
-            {location.name ? (
-              <Text style={{ color: colors.text.primary }} className="text-sm font-bold">
-                {location.name}
-              </Text>
-            ) : null}
-            <Text style={{ color: colors.text.secondary }} className="mt-0.5 text-xs leading-5">
-              {location.address}
-            </Text>
-          </View>
-        </View>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 58 : 0}
+      style={styles.container}
+    >
+      <View style={styles.mapContainer}>
+        <GoongRouteMap route={mapRoute} isFullScreen showRouteDataNotice={false} />
       </View>
 
-      <Modal
-        visible={isMapFullscreen}
-        animationType="slide"
-        onRequestClose={() => setIsMapFullscreen(false)}
-      >
-        <View style={{ backgroundColor: colors.surface.page }} className="flex-1">
-          <View
-            style={{
-              backgroundColor: colors.surface.card,
-              borderColor: colors.border.default,
-              paddingTop: Math.max(insets.top + 6, 48),
-            }}
-            className="border-b px-4 pb-3 shadow-sm"
-          >
-            <View className="flex-row items-center justify-between">
-              <Pressable
-                onPress={() => setIsMapFullscreen(false)}
-                accessibilityRole="button"
-                accessibilityLabel="Đóng bản đồ toàn màn hình"
-                style={{ backgroundColor: colors.brand.primarySoft }}
-                className="rounded-full p-2.5"
-              >
-                <Ionicons name="close" size={20} color={colors.brand.primary} />
-              </Pressable>
+      <View style={[styles.confirmPanel, { paddingBottom: Math.max(insets.bottom, 16) + 4 }]}>
+        <View style={styles.handle} />
 
-              <View className="flex-1 px-3">
-                <Text style={{ color: colors.text.secondary }} className="text-[10px] font-bold uppercase tracking-wider">
-                  Bản đồ giao hàng toàn màn hình
-                </Text>
-                <Text numberOfLines={1} style={{ color: colors.text.primary }} className="text-sm font-bold">
-                  {location.name || location.address}
-                </Text>
-              </View>
-
-              <Pressable
-                onPress={() => setIsMapFullscreen(false)}
-                accessibilityRole="button"
-                accessibilityLabel="Đóng"
-                style={{ backgroundColor: colors.surface.muted }}
-                className="rounded-xl px-3 py-1.5"
-              >
-                <Text style={{ color: colors.text.primary }} className="text-xs font-semibold">Đóng</Text>
-              </Pressable>
+        <ScrollView
+          bounces={false}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+        >
+          {/* Section Header: Receiver Information */}
+          <View style={styles.panelHeaderRow}>
+            <View style={styles.panelHeaderBadge}>
+              <Ionicons name="person" size={13} color={colors.brand.primary} />
             </View>
-
-            <View className="mt-2.5">
-              <MapShortcuts
-                expanded
-                onOpenGoogleMaps={openGoogleMaps}
-                onOpenAppleMaps={openAppleMaps}
-                onOpenGoongMap={openGoongMap}
-              />
-            </View>
+            <Text style={styles.sectionEyebrow}>Người nhận</Text>
           </View>
 
-          <View className="flex-1 p-2">
-            {isMapFullscreen ? (
-              <GoongRouteMap
-                route={mapRoute}
-                isFullScreen
-                showRouteDataNotice={false}
-              />
+          {/* Field: Receiver Name */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>
+              Họ và tên <Text style={styles.required}>*</Text>
+            </Text>
+            <TextInput
+              value={receiverName}
+              onChangeText={(text) => {
+                setReceiverName(text);
+                if (!touched.name) setTouched((prev) => ({ ...prev, name: true }));
+              }}
+              onBlur={() => setTouched((prev) => ({ ...prev, name: true }))}
+              placeholder="Nhập họ tên người nhận"
+              placeholderTextColor={colors.text.muted}
+              selectionColor={colors.brand.primary}
+              returnKeyType="next"
+              accessibilityLabel="Họ và tên người nhận"
+              style={[
+                styles.textInput,
+                nameError ? styles.textInputError : null,
+              ]}
+            />
+            {nameError ? (
+              <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>
+                {nameError}
+              </Text>
             ) : null}
           </View>
-        </View>
-      </Modal>
-    </>
+
+          {/* Field: Receiver Phone */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>
+              Số điện thoại <Text style={styles.required}>*</Text>
+            </Text>
+            <TextInput
+              value={receiverPhone}
+              onChangeText={(text) => {
+                setReceiverPhone(text);
+                if (!touched.phone) setTouched((prev) => ({ ...prev, phone: true }));
+              }}
+              onBlur={() => setTouched((prev) => ({ ...prev, phone: true }))}
+              placeholder="Nhập số điện thoại"
+              placeholderTextColor={colors.text.muted}
+              selectionColor={colors.brand.primary}
+              keyboardType="phone-pad"
+              returnKeyType="done"
+              accessibilityLabel="Số điện thoại người nhận"
+              style={[
+                styles.textInput,
+                phoneError ? styles.textInputError : null,
+              ]}
+            />
+            {phoneError ? (
+              <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>
+                {phoneError}
+              </Text>
+            ) : null}
+          </View>
+
+          {/* Prominent Confirm CTA Button */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Xác nhận điểm giao hàng"
+            onPress={handleConfirm}
+            style={({ pressed }) => [
+              styles.confirmButton,
+              hasAttemptedSubmit && !isFormValid ? styles.confirmButtonDisabled : null,
+              pressed && isFormValid ? styles.confirmButtonPressed : null,
+            ]}
+          >
+            <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+            <Text style={styles.confirmButtonText}>Xác nhận điểm giao hàng</Text>
+          </Pressable>
+        </ScrollView>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
-type MapShortcutsProps = {
-  expanded?: boolean;
-  onOpenGoogleMaps: () => Promise<void>;
-  onOpenAppleMaps: () => Promise<void>;
-  onOpenGoongMap: () => Promise<void>;
-};
-
-function MapShortcuts({
-  expanded = false,
-  onOpenGoogleMaps,
-  onOpenAppleMaps,
-  onOpenGoongMap,
-}: MapShortcutsProps) {
-  return (
-    <View className={`flex-row items-center gap-1.5 ${expanded ? 'justify-between' : 'justify-end flex-wrap'}`}>
-      {!expanded ? <Text style={{ color: colors.text.muted }} className="text-[11px]">Mở ngoài:</Text> : null}
-      <MapShortcut
-        expanded={expanded}
-        label="Google Map"
-        icon="navigate-outline"
-        backgroundColor="#EEF2FF"
-        borderColor="#C7D2FE"
-        textColor="#4338CA"
-        onPress={onOpenGoogleMaps}
-      />
-      <MapShortcut
-        expanded={expanded}
-        label="Apple Map"
-        icon="compass-outline"
-        backgroundColor="#F1F5F9"
-        borderColor="#CBD5E1"
-        textColor="#334155"
-        onPress={onOpenAppleMaps}
-      />
-      <MapShortcut
-        expanded={expanded}
-        label="Goong Map"
-        icon="map-outline"
-        backgroundColor="#FEF3C7"
-        borderColor="#FDE68A"
-        textColor="#B45309"
-        onPress={onOpenGoongMap}
-      />
-    </View>
-  );
-}
-
-type MapShortcutProps = {
-  expanded: boolean;
-  label: string;
-  icon: React.ComponentProps<typeof Ionicons>['name'];
-  backgroundColor: string;
-  borderColor: string;
-  textColor: string;
-  onPress: () => Promise<void>;
-};
-
-function MapShortcut({
-  expanded,
-  label,
-  icon,
-  backgroundColor,
-  borderColor,
-  textColor,
-  onPress,
-}: MapShortcutProps) {
-  return (
-    <Pressable
-      onPress={() => void onPress()}
-      accessibilityRole="button"
-      accessibilityLabel={`Mở vị trí giao hàng bằng ${label}`}
-      style={{ backgroundColor, borderColor }}
-      className={`${expanded ? 'flex-1 justify-center py-2' : 'px-2 py-1'} flex-row items-center gap-1 rounded-lg border shadow-xs`}
-    >
-      <Ionicons name={icon} size={expanded ? 13 : 12} color={textColor} />
-      <Text style={{ color: textColor }} className="text-[11px] font-bold">{label}</Text>
-    </Pressable>
-  );
-}
+const styles = StyleSheet.create({
+  container: {
+    backgroundColor: colors.surface.page,
+    flex: 1,
+  },
+  mapContainer: {
+    flex: 1,
+    minHeight: 120,
+  },
+  confirmPanel: {
+    backgroundColor: colors.surface.card,
+    borderTopColor: colors.border.default,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderTopWidth: 1,
+    flexShrink: 0,
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    shadowColor: '#173B59',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  handle: {
+    alignSelf: 'center',
+    backgroundColor: colors.border.default,
+    borderRadius: 2,
+    height: 4,
+    marginBottom: 8,
+    width: 38,
+  },
+  scrollContent: {
+    gap: 12,
+    paddingBottom: 8,
+  },
+  panelHeaderRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  panelHeaderBadge: {
+    alignItems: 'center',
+    backgroundColor: colors.brand.primarySoft,
+    borderRadius: 6,
+    height: 22,
+    justifyContent: 'center',
+    width: 22,
+  },
+  sectionEyebrow: {
+    color: colors.text.primary,
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+    textTransform: 'uppercase',
+  },
+  inputGroup: {
+    gap: 5,
+  },
+  inputLabel: {
+    color: colors.text.primary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  required: {
+    color: '#DC2626',
+  },
+  textInput: {
+    backgroundColor: colors.surface.page,
+    borderColor: colors.border.default,
+    borderRadius: 14,
+    borderWidth: 1,
+    color: colors.text.primary,
+    fontSize: 14,
+    minHeight: 48,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  textInputError: {
+    borderColor: '#FCA5A5',
+    backgroundColor: '#FEF2F2',
+  },
+  fieldErrorText: {
+    color: '#DC2626',
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  confirmButton: {
+    alignItems: 'center',
+    backgroundColor: '#1E68A8',
+    borderRadius: 16,
+    flexDirection: 'row',
+    gap: 8,
+    height: 54,
+    justifyContent: 'center',
+    marginTop: 6,
+    shadowColor: '#1E68A8',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  confirmButtonPressed: {
+    backgroundColor: '#174f80',
+    transform: [{ scale: 0.99 }],
+  },
+  confirmButtonDisabled: {
+    opacity: 0.65,
+    shadowOpacity: 0,
+  },
+  confirmButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+});

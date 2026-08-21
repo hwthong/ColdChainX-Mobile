@@ -29,10 +29,22 @@ export interface LpnDto {
   quantity: number;
   expectedWeightKg: number;
   actualWeightKg: number;
+  actualCbm: number;
+  recordedTemperature?: number | null;
+  actualPackageLines: LpnActualPackageLineDto[];
   state: LpnState;
   condition?: string | null;
   inboundTime?: string | null;
   slaDeadline?: string | null;
+}
+
+export interface LpnActualPackageLineDto {
+  label?: string | null;
+  quantity: number;
+  actualWeightKg: number;
+  lengthCm: number;
+  widthCm: number;
+  heightCm: number;
 }
 
 export interface LpnDocumentDto {

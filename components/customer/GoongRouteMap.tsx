@@ -329,7 +329,7 @@ function buildMapHtml(
     }
     .marker.origin { background: #0f766e; }
     .marker.stop { background: #367eb8; }
-    .marker.destination { background: #b91c1c; }
+    .marker.destination { background: #367eb8; }
     .marker.vehicle { width: 38px; height: 38px; background: #1d4ed8; font-size: 18px; }
     .popup { min-width: 150px; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     .popup-title { font-size: 13px; font-weight: 700; color: #173b59; margin-bottom: 4px; }
@@ -460,7 +460,14 @@ function buildMapHtml(
           payload.points.forEach(function (point, index) {
             const marker = document.createElement('div');
             marker.className = 'marker ' + point.type;
-            marker.textContent = point.type === 'origin' ? 'A' : point.type === 'destination' ? 'B' : String(point.sequence || index);
+
+            if (point.type === 'destination') {
+              marker.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="white" style="display:block;"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>';
+            } else if (point.type === 'origin') {
+              marker.textContent = 'A';
+            } else {
+              marker.textContent = String(point.sequence || index);
+            }
 
             new goongjs.Marker(marker)
               .setLngLat([point.lon, point.lat])

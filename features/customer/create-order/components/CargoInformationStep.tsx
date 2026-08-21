@@ -1,15 +1,19 @@
-import React from 'react';
-import { Pressable, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import React from 'react';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { colors } from '../../../../constants/colors';
 import { customerRadius } from '../../../../constants/customerTheme';
+import { CREATE_ORDER_CATEGORY_OPTIONS, getCreateOrderCategoryLabel } from '../createOrderOptions';
 import {
+  calculatePackageLineSummary,
+  getPackageLineValidationErrors,
   MAX_TEMPERATURE_CELSIUS,
   MIN_TEMPERATURE_CELSIUS,
   type CreateOrderFieldKey,
   type CreateOrderValidationErrors,
   type GoodsType,
+  type OrderPackageLineFormValue,
 } from '../createOrderValidation';
 import {
   CreateOrderChoiceCard,
@@ -19,10 +23,14 @@ import {
   type RegisterCreateOrderInput,
 } from './CreateOrderUi';
 
+type PackageLineTextField = 'label' | 'capacityKg' | 'quantity';
+
 type CargoInformationStepProps = {
+  isEditMode: boolean;
   itemName: string;
   expectedWeightKg: string;
   quantity: string;
+  packageLines: OrderPackageLineFormValue[];
   category: GoodsType;
   temperature: number;
   errors: CreateOrderValidationErrors;
@@ -31,6 +39,9 @@ type CargoInformationStepProps = {
   onChangeItemName: (value: string) => void;
   onChangeExpectedWeight: (value: string) => void;
   onChangeQuantity: (value: string) => void;
+  onChangePackageLine: (id: string, field: PackageLineTextField, value: string) => void;
+  onAddPackageLine: () => void;
+  onRemovePackageLine: (id: string) => void;
   onChangeCategory: (value: GoodsType) => void;
   onChangeTemperature: (value: number) => void;
   onFocusField?: (field: CreateOrderFieldKey) => void;
@@ -38,40 +49,48 @@ type CargoInformationStepProps = {
   onSubmitField: (field: CreateOrderFieldKey) => void;
 };
 
-const GOODS_TYPES: {
-  id: GoodsType;
-  label: string;
-  description: string;
-  example: string;
-  icon: keyof typeof Ionicons.glyphMap;
-}[] = [
-  {
-    id: 'FROZEN_FRUITS_VEGGIES',
-    label: 'Thực phẩm đông lạnh',
-    description: 'Thực phẩm cần duy trì nhiệt độ âm',
-    example: 'Ví dụ: Tôm sú đông lạnh, cá hồi đông lạnh',
-    icon: 'restaurant-outline',
+const GOODS_TYPE_DETAILS: Record<
+  GoodsType,
+  { description: string; example: string; icon: keyof typeof Ionicons.glyphMap }
+> = {
+  MEAT_SEAFOOD: {
+    description: 'Thịt, thủy hải sản tươi hoặc đông lạnh',
+    example: 'Ví dụ: Thịt bò, tôm, cá',
+    icon: 'fish-outline',
   },
-  {
-    id: 'PHARMACEUTICALS',
-    label: 'Dược phẩm',
+  FRUITS_VEGGIES: {
+    description: 'Nông sản tươi cần bảo quản mát',
+    example: 'Ví dụ: Rau xanh, trái cây tươi',
+    icon: 'leaf-outline',
+  },
+  FROZEN_FRUITS_VEGGIES: {
+    description: 'Rau củ quả cần duy trì nhiệt độ âm',
+    example: 'Ví dụ: Khoai tây, xoài đông lạnh',
+    icon: 'snow-outline',
+  },
+  ICE_CREAM_BEVERAGES: {
+    description: 'Kem, đồ uống và sản phẩm cần giữ lạnh',
+    example: 'Ví dụ: Kem, sữa, nước giải khát',
+    icon: 'ice-cream-outline',
+  },
+  PHARMACEUTICALS: {
     description: 'Thuốc, vaccine và vật tư y tế',
     example: 'Ví dụ: Vaccine, thuốc bảo quản lạnh',
     icon: 'medkit-outline',
   },
-  {
-    id: 'MEAT_SEAFOOD',
-    label: 'Thịt / Hải sản',
-    description: 'Hàng tươi hoặc đông lạnh',
-    example: 'Ví dụ: Thịt bò đông lạnh, tôm, cá',
-    icon: 'fish-outline',
+  RAW_MATERIALS_OTHERS: {
+    description: 'Nguyên liệu và hàng lạnh khác',
+    example: 'Ví dụ: Men, phụ gia, nguyên liệu chế biến',
+    icon: 'cube-outline',
   },
-];
+};
 
 export function CargoInformationStep({
+  isEditMode,
   itemName,
   expectedWeightKg,
   quantity,
+  packageLines,
   category,
   temperature,
   errors,
@@ -80,12 +99,18 @@ export function CargoInformationStep({
   onChangeItemName,
   onChangeExpectedWeight,
   onChangeQuantity,
+  onChangePackageLine,
+  onAddPackageLine,
+  onRemovePackageLine,
   onChangeCategory,
   onChangeTemperature,
   onFocusField,
   onBlurField,
   onSubmitField,
 }: CargoInformationStepProps) {
+  const packageLineErrors = errors.packageLines ? getPackageLineValidationErrors(packageLines) : [];
+  const packageSummary = calculatePackageLineSummary(packageLines);
+
   return (
     <View className="gap-6">
       <CreateOrderFormSection
@@ -108,44 +133,131 @@ export function CargoInformationStep({
           onSubmitEditing={() => onSubmitField('itemName')}
         />
 
-        <View className="flex-row gap-3">
-          <View className="flex-1">
-            <CreateOrderTextField
-              fieldKey="expectedWeightKg"
-              label="Khối lượng (kg)"
-              required
-              placeholder="VD: 500"
-              keyboardType="decimal-pad"
-              value={expectedWeightKg}
-              error={errors.expectedWeightKg}
-              registerField={registerField}
-              registerInput={registerInput}
-              onChangeText={onChangeExpectedWeight}
-              onFocus={() => onFocusField?.('expectedWeightKg')}
-              onBlur={() => onBlurField('expectedWeightKg')}
-              onSubmitEditing={() => onSubmitField('expectedWeightKg')}
-            />
-          </View>
+        {isEditMode ? (
+          <View className="flex-row gap-3">
+            <View className="flex-1">
+              <CreateOrderTextField
+                fieldKey="expectedWeightKg"
+                label="Khối lượng (kg)"
+                required
+                placeholder="VD: 500"
+                keyboardType="decimal-pad"
+                value={expectedWeightKg}
+                error={errors.expectedWeightKg}
+                registerField={registerField}
+                registerInput={registerInput}
+                onChangeText={onChangeExpectedWeight}
+                onFocus={() => onFocusField?.('expectedWeightKg')}
+                onBlur={() => onBlurField('expectedWeightKg')}
+                onSubmitEditing={() => onSubmitField('expectedWeightKg')}
+              />
+            </View>
 
-          <View className="flex-1">
-            <CreateOrderTextField
-              fieldKey="quantity"
-              label="Số kiện"
-              required
-              placeholder="VD: 20"
-              keyboardType="number-pad"
-              value={quantity}
-              error={errors.quantity}
-              registerField={registerField}
-              registerInput={registerInput}
-              onChangeText={onChangeQuantity}
-              onFocus={() => onFocusField?.('quantity')}
-              onBlur={() => onBlurField('quantity')}
-              onSubmitEditing={() => onSubmitField('quantity')}
-            />
+            <View className="flex-1">
+              <CreateOrderTextField
+                fieldKey="quantity"
+                label="Số kiện"
+                required
+                placeholder="VD: 20"
+                keyboardType="number-pad"
+                value={quantity}
+                error={errors.quantity}
+                registerField={registerField}
+                registerInput={registerInput}
+                onChangeText={onChangeQuantity}
+                onFocus={() => onFocusField?.('quantity')}
+                onBlur={() => onBlurField('quantity')}
+                onSubmitEditing={() => onSubmitField('quantity')}
+              />
+            </View>
           </View>
-        </View>
+        ) : null}
       </CreateOrderFormSection>
+
+      {!isEditMode ? (
+        <CreateOrderFormSection
+          title="Thông tin đóng gói"
+          icon="layers-outline"
+          description="Thêm từng quy cách kiện để hệ thống tính tổng số kiện và khối lượng."
+        >
+          <View ref={(node) => registerField('packageLines', node)} className="gap-3">
+            {packageLines.map((line, index) => (
+              <View key={line.id} style={styles.packageLineCard}>
+                <View className="mb-3 flex-row items-center justify-between">
+                  <Text style={styles.packageLineTitle}>Quy cách {index + 1}</Text>
+                  {packageLines.length > 1 ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Xóa quy cách ${index + 1}`}
+                      hitSlop={8}
+                      onPress={() => onRemovePackageLine(line.id)}
+                      style={styles.removeButton}
+                    >
+                      <Ionicons name="trash-outline" size={18} color="#B42318" />
+                    </Pressable>
+                  ) : null}
+                </View>
+
+                <CompactTextField
+                  label="Tên kiện"
+                  optional
+                  placeholder="VD: Thùng carton 5kg"
+                  value={line.label}
+                  onChangeText={(value) => onChangePackageLine(line.id, 'label', value)}
+                />
+
+                <View className="mt-3 flex-row gap-3">
+                  <View className="flex-1">
+                    <CompactTextField
+                      label="Khối lượng / kiện"
+                      suffix="kg"
+                      placeholder="5"
+                      keyboardType="decimal-pad"
+                      value={line.capacityKg}
+                      error={packageLineErrors[index]?.capacityKg}
+                      onChangeText={(value) => onChangePackageLine(line.id, 'capacityKg', value)}
+                      onFocus={() => onFocusField?.('packageLines')}
+                      onBlur={() => onBlurField('packageLines')}
+                    />
+                  </View>
+                  <View className="flex-1">
+                    <CompactTextField
+                      label="Số lượng"
+                      placeholder="10"
+                      keyboardType="number-pad"
+                      value={line.quantity}
+                      error={packageLineErrors[index]?.quantity}
+                      onChangeText={(value) => onChangePackageLine(line.id, 'quantity', value)}
+                      onFocus={() => onFocusField?.('packageLines')}
+                      onBlur={() => onBlurField('packageLines')}
+                    />
+                  </View>
+                </View>
+              </View>
+            ))}
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Thêm quy cách đóng gói"
+              onPress={onAddPackageLine}
+              style={styles.addPackageLineButton}
+            >
+              <Ionicons name="add-circle-outline" size={20} color={colors.brand.primary} />
+              <Text style={styles.addPackageLineText}>Thêm quy cách</Text>
+            </Pressable>
+
+            <View style={styles.packageSummary}>
+              <SummaryRow label="Tổng số kiện" value={formatNumber(packageSummary.totalQuantity)} />
+              <SummaryRow
+                label="Tổng khối lượng"
+                value={`${formatNumber(packageSummary.totalWeightKg)} kg`}
+              />
+            </View>
+
+            {errors.packageLines ? <FieldError message={errors.packageLines} /> : null}
+          </View>
+        </CreateOrderFormSection>
+      ) : null}
 
       <CreateOrderFormSection
         title="Loại hàng hóa"
@@ -153,19 +265,20 @@ export function CargoInformationStep({
         description="Chọn loại hàng phù hợp để áp dụng quy chuẩn bảo quản."
       >
         <View ref={(node) => registerField('category', node)} className="gap-3">
-          {GOODS_TYPES.map((type) => {
-            const isSelected = category === type.id;
+          {CREATE_ORDER_CATEGORY_OPTIONS.map((option) => {
+            const isSelected = category === option.value;
+            const details = GOODS_TYPE_DETAILS[option.value];
             return (
               <CreateOrderChoiceCard
-                key={type.id}
+                key={option.value}
                 selected={isSelected}
-                title={type.label}
-                subtitle={type.description}
-                helperText={type.example}
-                icon={type.icon}
-                accessibilityLabel={`Loại hàng ${type.label}`}
+                title={option.label}
+                subtitle={details.description}
+                helperText={details.example}
+                icon={details.icon}
+                accessibilityLabel={`Loại hàng ${option.label}`}
                 rightElement={<CategorySelectionIndicator selected={isSelected} />}
-                onPress={() => onChangeCategory(type.id)}
+                onPress={() => onChangeCategory(option.value)}
               />
             );
           })}
@@ -184,10 +297,7 @@ export function CargoInformationStep({
           </Text>
           <View
             className="flex-row items-center justify-between p-3"
-            style={{
-              backgroundColor: colors.surface.selected,
-              borderRadius: customerRadius.control,
-            }}
+            style={{ backgroundColor: colors.surface.selected, borderRadius: customerRadius.control }}
           >
             <TemperatureButton
               icon="remove"
@@ -218,6 +328,45 @@ export function CargoInformationStep({
           {errors.tempCondition ? <FieldError message={errors.tempCondition} centered /> : null}
         </View>
       </CreateOrderFormSection>
+    </View>
+  );
+}
+
+function CompactTextField({
+  label,
+  optional,
+  suffix,
+  error,
+  ...inputProps
+}: React.ComponentProps<typeof TextInput> & {
+  label: string;
+  optional?: boolean;
+  suffix?: string;
+  error?: string;
+}) {
+  return (
+    <View className="gap-1.5">
+      <Text style={styles.compactLabel}>
+        {label}{optional ? <Text style={styles.optionalLabel}> (không bắt buộc)</Text> : null}
+      </Text>
+      <View style={[styles.compactInputShell, error ? styles.compactInputShellError : null]}>
+        <TextInput
+          {...inputProps}
+          placeholderTextColor={colors.text.muted}
+          style={styles.compactInput}
+        />
+        {suffix ? <Text style={styles.inputSuffix}>{suffix}</Text> : null}
+      </View>
+      {error ? <Text style={styles.inlineError}>{error}</Text> : null}
+    </View>
+  );
+}
+
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View className="flex-row items-center justify-between gap-4">
+      <Text style={styles.summaryLabel}>{label}</Text>
+      <Text style={styles.summaryValue}>{value}</Text>
     </View>
   );
 }
@@ -282,6 +431,104 @@ function FieldError({ message, centered = false }: { message: string; centered?:
   );
 }
 
-export function getGoodsTypeLabel(category: GoodsType) {
-  return GOODS_TYPES.find((type) => type.id === category)?.label ?? category;
+function formatNumber(value: number) {
+  return value.toLocaleString('vi-VN', { maximumFractionDigits: 2 });
 }
+
+export function getGoodsTypeLabel(category: GoodsType) {
+  return getCreateOrderCategoryLabel(category);
+}
+
+const styles = StyleSheet.create({
+  packageLineCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.96)',
+    borderColor: colors.border.default,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 14,
+  },
+  packageLineTitle: {
+    color: colors.text.primary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  removeButton: {
+    alignItems: 'center',
+    backgroundColor: '#FEF3F2',
+    borderRadius: 10,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  compactLabel: {
+    color: colors.text.primary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  optionalLabel: {
+    color: colors.text.secondary,
+    fontWeight: '500',
+  },
+  compactInputShell: {
+    alignItems: 'center',
+    backgroundColor: colors.surface.card,
+    borderColor: colors.border.default,
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    minHeight: 46,
+    paddingHorizontal: 12,
+  },
+  compactInputShellError: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FCA5A5',
+  },
+  compactInput: {
+    color: colors.text.primary,
+    flex: 1,
+    fontSize: 14,
+    minWidth: 0,
+    paddingVertical: 10,
+  },
+  inputSuffix: {
+    color: colors.text.secondary,
+    fontSize: 13,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  inlineError: {
+    color: '#DC2626',
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  addPackageLineButton: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    gap: 7,
+    minHeight: 42,
+    paddingHorizontal: 4,
+  },
+  addPackageLineText: {
+    color: colors.brand.primary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  packageSummary: {
+    backgroundColor: colors.surface.selected,
+    borderRadius: customerRadius.control,
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  summaryLabel: {
+    color: colors.text.secondary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  summaryValue: {
+    color: colors.text.primary,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+});

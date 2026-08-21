@@ -1,14 +1,17 @@
+import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 
 import { colors } from '../../../../constants/colors';
 import { customerRadius } from '../../../../constants/customerTheme';
 import {
-  parseCreateOrderDecimal,
-  type CreateOrderFieldKey,
-  type CreateOrderValidationErrors,
-  type DocumentImage,
+  CREATE_ORDER_PACKAGING_OPTIONS,
+  getCreateOrderPackagingLabel,
+} from '../createOrderOptions';
+import type {
+  CreateOrderFieldKey,
+  CreateOrderValidationErrors,
+  DocumentImage,
 } from '../createOrderValidation';
 import {
   CreateOrderFormSection,
@@ -17,18 +20,10 @@ import {
   type RegisterCreateOrderInput,
 } from './CreateOrderUi';
 
-export const PACKAGING_OPTIONS = [
-  { label: 'Thùng carton', value: 'Carton Box' },
-  { label: 'Thùng xốp giữ nhiệt', value: 'Foam Box' },
-  { label: 'Thùng nhựa', value: 'Plastic Box' },
-  { label: 'Pallet', value: 'Pallet' },
-  { label: 'Thùng', value: 'Thùng' },
-  { label: 'Bao', value: 'Bao' },
-];
+export const PACKAGING_OPTIONS = CREATE_ORDER_PACKAGING_OPTIONS;
 
 export function getPackagingTypeLabel(type: string): string {
-  const option = PACKAGING_OPTIONS.find((opt) => opt.value === type);
-  return option?.label || type;
+  return getCreateOrderPackagingLabel(type);
 }
 
 const PACKAGING_ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -41,13 +36,13 @@ const PACKAGING_ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
 };
 
 type PackagingImageStepProps = {
+  isEditMode: boolean;
   packagingTypes: string[];
   lengthCm: string;
   widthCm: string;
   heightCm: string;
-  quantity: string;
   image: DocumentImage | null;
-  capacityWarning: string | null;
+  legalDocument: DocumentImage | null;
   existingCbm?: number | null;
   errors: CreateOrderValidationErrors;
   registerField: RegisterCreateOrderField;
@@ -58,19 +53,21 @@ type PackagingImageStepProps = {
   onChangeHeight: (value: string) => void;
   onPickImage: () => void;
   onRemoveImage: () => void;
+  onPickLegalDocument: () => void;
+  onRemoveLegalDocument: () => void;
   onFocusField?: (field: CreateOrderFieldKey) => void;
   onBlurField: (field: CreateOrderFieldKey) => void;
   onSubmitField: (field: CreateOrderFieldKey) => void;
 };
 
 export function PackagingImageStep({
+  isEditMode,
   packagingTypes,
   lengthCm,
   widthCm,
   heightCm,
-  quantity,
   image,
-  capacityWarning,
+  legalDocument,
   existingCbm,
   errors,
   registerField,
@@ -81,15 +78,16 @@ export function PackagingImageStep({
   onChangeHeight,
   onPickImage,
   onRemoveImage,
+  onPickLegalDocument,
+  onRemoveLegalDocument,
   onFocusField,
   onBlurField,
   onSubmitField,
 }: PackagingImageStepProps) {
   const [touchedFields, setTouchedFields] = React.useState<Record<string, boolean>>({});
-  const cbmPreview = calculateCbmPreview(lengthCm, widthCm, heightCm, quantity);
 
   const touchField = (field: string) => {
-    setTouchedFields((prev) => ({ ...prev, [field]: true }));
+    setTouchedFields((previous) => ({ ...previous, [field]: true }));
   };
 
   const selectPackagingType = (value: string) => {
@@ -118,10 +116,7 @@ export function PackagingImageStep({
               return (
                 <View
                   key={option.value}
-                  style={[
-                    styles.packagingTile,
-                    selected && styles.packagingTileSelected,
-                  ]}
+                  style={[styles.packagingTile, selected && styles.packagingTileSelected]}
                 >
                   <Ionicons
                     name={iconName}
@@ -130,19 +125,12 @@ export function PackagingImageStep({
                   />
                   <Text
                     numberOfLines={2}
-                    style={[
-                      styles.packagingTileText,
-                      selected && styles.packagingTileTextSelected,
-                    ]}
+                    style={[styles.packagingTileText, selected && styles.packagingTileTextSelected]}
                   >
                     {option.label}
                   </Text>
                   {selected ? (
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={18}
-                      color={colors.brand.primary}
-                    />
+                    <Ionicons name="checkmark-circle" size={18} color={colors.brand.primary} />
                   ) : null}
                   <Pressable
                     accessibilityRole="button"
@@ -154,109 +142,92 @@ export function PackagingImageStep({
               );
             })}
           </View>
-          {touchedFields.packagingType && errors.packagingType ? <FieldError message={errors.packagingType} /> : null}
-        </View>
-      </CreateOrderFormSection>
-
-      <CreateOrderFormSection
-        title="Kích thước mỗi kiện"
-        icon="resize-outline"
-        description="Nhập kích thước của một kiện. Hệ thống sẽ tính tổng theo số kiện."
-      >
-        <View className="gap-3">
-          <View className="flex-row gap-2.5">
-            <View className="flex-1">
-              <CreateOrderTextField
-                field="lengthCm"
-                label="Dài (cm)"
-                placeholder="0"
-                value={lengthCm}
-                error={touchedFields.lengthCm ? errors.lengthCm : undefined}
-                keyboardType="decimal-pad"
-                returnKeyType="next"
-                onChangeText={(val) => {
-                  touchField('lengthCm');
-                  onChangeLength(val);
-                }}
-                onFocus={() => onFocusField?.('lengthCm')}
-                onBlur={() => handleFieldBlur('lengthCm')}
-                onSubmitEditing={() => onSubmitField('lengthCm')}
-                registerField={registerField}
-                registerInput={registerInput}
-              />
-            </View>
-            <View className="flex-1">
-              <CreateOrderTextField
-                field="widthCm"
-                label="Rộng (cm)"
-                placeholder="0"
-                value={widthCm}
-                error={touchedFields.widthCm ? errors.widthCm : undefined}
-                keyboardType="decimal-pad"
-                returnKeyType="next"
-                onChangeText={(val) => {
-                  touchField('widthCm');
-                  onChangeWidth(val);
-                }}
-                onFocus={() => onFocusField?.('widthCm')}
-                onBlur={() => handleFieldBlur('widthCm')}
-                onSubmitEditing={() => onSubmitField('widthCm')}
-                registerField={registerField}
-                registerInput={registerInput}
-              />
-            </View>
-            <View className="flex-1">
-              <CreateOrderTextField
-                field="heightCm"
-                label="Cao (cm)"
-                placeholder="0"
-                value={heightCm}
-                error={touchedFields.heightCm ? errors.heightCm : undefined}
-                keyboardType="decimal-pad"
-                onChangeText={(val) => {
-                  touchField('heightCm');
-                  onChangeHeight(val);
-                }}
-                onFocus={() => onFocusField?.('heightCm')}
-                onBlur={() => handleFieldBlur('heightCm')}
-                onSubmitEditing={() => onSubmitField('heightCm')}
-                registerField={registerField}
-                registerInput={registerInput}
-              />
-            </View>
-          </View>
-          {cbmPreview ? (
-            <CbmPreviewStrip preview={cbmPreview} />
-          ) : existingCbm ? (
-            <View style={{ backgroundColor: colors.surface.selected, borderRadius: customerRadius.control }} className="gap-1 px-4 py-3">
-              <Text style={{ color: colors.text.secondary }} className="text-xs font-medium leading-5">
-                Kích thước đã lưu trong đơn hàng
-              </Text>
-              <Text style={{ color: colors.text.primary }} className="text-sm font-bold leading-5">
-                Tổng thể tích: {existingCbm} m³ (Nhập số mới nếu bạn muốn thay đổi)
-              </Text>
-            </View>
+          {touchedFields.packagingType && errors.packagingType ? (
+            <FieldError message={errors.packagingType} />
           ) : null}
         </View>
-
-        {capacityWarning ? (
-          <View
-            style={{
-              backgroundColor: 'rgba(255, 247, 237, 0.9)',
-              borderColor: 'rgba(251, 191, 36, 0.4)',
-              borderWidth: 1,
-              borderRadius: 16,
-            }}
-            className="flex-row items-start gap-2.5 p-4"
-          >
-            <Ionicons name="warning-outline" size={18} color="#B45309" />
-            <Text className="flex-1 text-xs font-semibold leading-5 text-amber-900">{capacityWarning}</Text>
-          </View>
-        ) : null}
       </CreateOrderFormSection>
 
+      {isEditMode ? (
+        <CreateOrderFormSection
+          title="Kích thước mỗi kiện"
+          icon="resize-outline"
+          description="Giữ trống để dùng kích thước hiện tại, hoặc nhập đủ ba chiều để cập nhật."
+        >
+          <View className="gap-3">
+            <View className="flex-row gap-2.5">
+              <View className="flex-1">
+                <CreateOrderTextField
+                  field="lengthCm"
+                  label="Dài (cm)"
+                  placeholder="0"
+                  value={lengthCm}
+                  error={touchedFields.lengthCm ? errors.lengthCm : undefined}
+                  keyboardType="decimal-pad"
+                  returnKeyType="next"
+                  onChangeText={(value) => {
+                    touchField('lengthCm');
+                    onChangeLength(value);
+                  }}
+                  onFocus={() => onFocusField?.('lengthCm')}
+                  onBlur={() => handleFieldBlur('lengthCm')}
+                  onSubmitEditing={() => onSubmitField('lengthCm')}
+                  registerField={registerField}
+                  registerInput={registerInput}
+                />
+              </View>
+              <View className="flex-1">
+                <CreateOrderTextField
+                  field="widthCm"
+                  label="Rộng (cm)"
+                  placeholder="0"
+                  value={widthCm}
+                  error={touchedFields.widthCm ? errors.widthCm : undefined}
+                  keyboardType="decimal-pad"
+                  returnKeyType="next"
+                  onChangeText={(value) => {
+                    touchField('widthCm');
+                    onChangeWidth(value);
+                  }}
+                  onFocus={() => onFocusField?.('widthCm')}
+                  onBlur={() => handleFieldBlur('widthCm')}
+                  onSubmitEditing={() => onSubmitField('widthCm')}
+                  registerField={registerField}
+                  registerInput={registerInput}
+                />
+              </View>
+              <View className="flex-1">
+                <CreateOrderTextField
+                  field="heightCm"
+                  label="Cao (cm)"
+                  placeholder="0"
+                  value={heightCm}
+                  error={touchedFields.heightCm ? errors.heightCm : undefined}
+                  keyboardType="decimal-pad"
+                  onChangeText={(value) => {
+                    touchField('heightCm');
+                    onChangeHeight(value);
+                  }}
+                  onFocus={() => onFocusField?.('heightCm')}
+                  onBlur={() => handleFieldBlur('heightCm')}
+                  onSubmitEditing={() => onSubmitField('heightCm')}
+                  registerField={registerField}
+                  registerInput={registerInput}
+                />
+              </View>
+            </View>
+            {existingCbm ? (
+              <View style={styles.existingCbmNotice}>
+                <Text style={styles.existingCbmLabel}>Thể tích hiện tại của đơn hàng</Text>
+                <Text style={styles.existingCbmValue}>{existingCbm} m³</Text>
+              </View>
+            ) : null}
+          </View>
+        </CreateOrderFormSection>
+      ) : null}
+
       <CreateOrderFormSection
-        title="Ảnh lô hàng *"
+        title={`Ảnh lô hàng${isEditMode ? '' : ' *'}`}
         icon="camera-outline"
         description="Thêm ảnh để kiểm tra tình trạng và cách đóng gói."
       >
@@ -269,36 +240,12 @@ export function PackagingImageStep({
                 className="h-44 w-full rounded-2xl"
                 resizeMode="cover"
               />
-              <View className="flex-row gap-3">
-                <Pressable
-                  onPress={onPickImage}
-                  accessibilityRole="button"
-                  accessibilityLabel="Thay ảnh lô hàng"
-                  style={{
-                    backgroundColor: colors.brand.primarySoft,
-                    borderRadius: 14,
-                    minHeight: 46,
-                  }}
-                  className="flex-1 items-center justify-center"
-                >
-                  <Text style={{ color: colors.brand.primary }} className="text-sm font-bold">Thay ảnh</Text>
-                </Pressable>
-                <Pressable
-                  onPress={onRemoveImage}
-                  accessibilityRole="button"
-                  accessibilityLabel="Xóa ảnh lô hàng"
-                  style={{
-                    backgroundColor: '#FFFFFF',
-                    borderColor: 'rgba(189, 214, 231, 0.5)',
-                    borderRadius: 14,
-                    borderWidth: 1,
-                    minHeight: 46,
-                  }}
-                  className="flex-1 items-center justify-center"
-                >
-                  <Text style={{ color: colors.text.primary }} className="text-sm font-bold">Xóa ảnh</Text>
-                </Pressable>
-              </View>
+              <FileActionButtons
+                replaceLabel="Thay ảnh"
+                removeLabel="Xóa ảnh"
+                onReplace={onPickImage}
+                onRemove={onRemoveImage}
+              />
             </>
           ) : (
             <Pressable
@@ -306,85 +253,107 @@ export function PackagingImageStep({
               accessibilityRole="button"
               accessibilityLabel="Thêm ảnh lô hàng"
               accessibilityHint="Chụp ảnh hoặc chọn ảnh từ thư viện"
-              style={{
-                backgroundColor: errors.documentImage ? '#FEF2F2' : 'rgba(238, 246, 252, 0.5)',
-                borderColor: errors.documentImage ? '#FCA5A5' : 'rgba(114, 169, 210, 0.45)',
-                borderRadius: 18,
-                borderStyle: 'dashed',
-                borderWidth: 1.5,
-                minHeight: 136,
-              }}
+              style={[
+                styles.uploadArea,
+                errors.documentImage ? styles.uploadAreaError : null,
+              ]}
               className="items-center justify-center px-5 py-6"
             >
-              <View
-                style={{
-                  backgroundColor: '#FFFFFF',
-                  shadowColor: '#173b59',
-                  shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.05,
-                  shadowRadius: 4,
-                  elevation: 2,
-                }}
-                className="h-12 w-12 items-center justify-center rounded-full"
-              >
+              <View style={styles.uploadIconCircle} className="h-12 w-12 items-center justify-center rounded-full">
                 <Ionicons name="camera-outline" size={24} color={colors.brand.primary} />
               </View>
-              <Text style={{ color: colors.text.primary }} className="mt-3 text-center text-sm font-bold">Thêm ảnh lô hàng</Text>
-              <Text style={{ color: colors.text.secondary }} className="mt-1 text-center text-xs leading-5">
-                Chụp ảnh hoặc chọn từ thư viện.
+              <Text style={styles.uploadTitle} className="mt-3 text-center">Thêm ảnh lô hàng</Text>
+              <Text style={styles.uploadDescription} className="mt-1 text-center">
+                Chụp ảnh hoặc chọn từ thư viện · tối đa 10 MB.
               </Text>
             </Pressable>
           )}
           {errors.documentImage ? <FieldError message={errors.documentImage} /> : null}
         </View>
       </CreateOrderFormSection>
+
+      <CreateOrderFormSection
+        title={`Chứng từ hàng hóa${isEditMode ? '' : ' *'}`}
+        icon="document-attach-outline"
+        description="Chọn hóa đơn, phiếu xuất kho hoặc chứng từ pháp lý liên quan."
+      >
+        <View ref={(node) => registerField('legalDocument', node)} className="gap-3">
+          {legalDocument ? (
+            <View style={styles.selectedDocumentCard}>
+              <View style={styles.documentIcon}>
+                <Ionicons name="document-text-outline" size={24} color={colors.brand.primary} />
+              </View>
+              <View className="flex-1">
+                <Text numberOfLines={2} style={styles.documentName}>
+                  {legalDocument.fileName || 'Chứng từ đã chọn'}
+                </Text>
+                <Text style={styles.documentMeta}>PDF hoặc hình ảnh · tối đa 10 MB</Text>
+              </View>
+            </View>
+          ) : (
+            <Pressable
+              onPress={onPickLegalDocument}
+              accessibilityRole="button"
+              accessibilityLabel="Chọn chứng từ hàng hóa"
+              style={[
+                styles.documentPickerButton,
+                errors.legalDocument ? styles.uploadAreaError : null,
+              ]}
+            >
+              <Ionicons name="document-attach-outline" size={22} color={colors.brand.primary} />
+              <View className="flex-1">
+                <Text style={styles.documentPickerTitle}>Chọn chứng từ</Text>
+                <Text style={styles.documentMeta}>PDF hoặc hình ảnh · tối đa 10 MB</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.text.secondary} />
+            </Pressable>
+          )}
+          {legalDocument ? (
+            <FileActionButtons
+              replaceLabel="Thay chứng từ"
+              removeLabel="Xóa chứng từ"
+              onReplace={onPickLegalDocument}
+              onRemove={onRemoveLegalDocument}
+            />
+          ) : null}
+          {errors.legalDocument ? <FieldError message={errors.legalDocument} /> : null}
+        </View>
+      </CreateOrderFormSection>
     </View>
   );
 }
 
-export type CbmPreview = {
-  packageCount: number;
-  perPackageLabel: string;
-  totalLabel: string;
-};
-
-export function calculateCbmPreview(
-  lengthValue: string,
-  widthValue: string,
-  heightValue: string,
-  quantityValue: string
-): CbmPreview | null {
-  const lengthCm = parseCreateOrderDecimal(lengthValue);
-  const widthCm = parseCreateOrderDecimal(widthValue);
-  const heightCm = parseCreateOrderDecimal(heightValue);
-  const packageCount = Number(quantityValue.trim());
-
-  if (
-    !Number.isFinite(lengthCm) || lengthCm <= 0
-    || !Number.isFinite(widthCm) || widthCm <= 0
-    || !Number.isFinite(heightCm) || heightCm <= 0
-    || !Number.isInteger(packageCount) || packageCount < 1
-  ) {
-    return null;
-  }
-
-  const perPackageCbm = (lengthCm * widthCm * heightCm) / 1_000_000;
-  return {
-    packageCount,
-    perPackageLabel: formatCbm(perPackageCbm, 4),
-    totalLabel: formatCbm(perPackageCbm * packageCount, 3),
-  };
-}
-
-function CbmPreviewStrip({ preview }: { preview: CbmPreview }) {
+function FileActionButtons({
+  replaceLabel,
+  removeLabel,
+  onReplace,
+  onRemove,
+}: {
+  replaceLabel: string;
+  removeLabel: string;
+  onReplace: () => void;
+  onRemove: () => void;
+}) {
   return (
-    <View style={{ backgroundColor: colors.surface.selected, borderRadius: customerRadius.control }} className="gap-1 px-4 py-3">
-      <Text style={{ color: colors.text.secondary }} className="text-xs font-medium leading-5">
-        {preview.packageCount} kiện · {preview.perPackageLabel} m³/kiện
-      </Text>
-      <Text style={{ color: colors.text.primary }} className="text-sm font-bold leading-5">
-        Tổng thể tích dự kiến: {preview.totalLabel} m³
-      </Text>
+    <View className="flex-row gap-3">
+      <Pressable
+        onPress={onReplace}
+        accessibilityRole="button"
+        accessibilityLabel={replaceLabel}
+        style={styles.replaceButton}
+        className="flex-1 items-center justify-center"
+      >
+        <Text style={styles.replaceButtonText}>{replaceLabel}</Text>
+      </Pressable>
+      <Pressable
+        onPress={onRemove}
+        accessibilityRole="button"
+        accessibilityLabel={removeLabel}
+        style={styles.removeFileButton}
+        className="flex-1 items-center justify-center"
+      >
+        <Text style={styles.removeFileButtonText}>{removeLabel}</Text>
+      </Pressable>
     </View>
   );
 }
@@ -395,13 +364,6 @@ function FieldError({ message }: { message: string }) {
       {message}
     </Text>
   );
-}
-
-function formatCbm(value: number, decimalDigits: number) {
-  return value.toLocaleString('vi-VN', {
-    maximumFractionDigits: decimalDigits,
-    minimumFractionDigits: 0,
-  });
 }
 
 const styles = StyleSheet.create({
@@ -440,5 +402,124 @@ const styles = StyleSheet.create({
   },
   packagingTileTextSelected: {
     color: colors.brand.primary,
+  },
+  existingCbmNotice: {
+    backgroundColor: colors.surface.selected,
+    borderRadius: customerRadius.control,
+    gap: 3,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  existingCbmLabel: {
+    color: colors.text.secondary,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  existingCbmValue: {
+    color: colors.text.primary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  uploadArea: {
+    backgroundColor: 'rgba(238, 246, 252, 0.5)',
+    borderColor: 'rgba(114, 169, 210, 0.45)',
+    borderRadius: 18,
+    borderStyle: 'dashed',
+    borderWidth: 1.5,
+    minHeight: 136,
+  },
+  uploadAreaError: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FCA5A5',
+  },
+  uploadIconCircle: {
+    backgroundColor: '#FFFFFF',
+    elevation: 2,
+    shadowColor: '#173b59',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+  },
+  uploadTitle: {
+    color: colors.text.primary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  uploadDescription: {
+    color: colors.text.secondary,
+    fontSize: 12,
+    lineHeight: 20,
+  },
+  replaceButton: {
+    backgroundColor: colors.brand.primarySoft,
+    borderRadius: 14,
+    minHeight: 46,
+  },
+  replaceButtonText: {
+    color: colors.brand.primary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  removeFileButton: {
+    backgroundColor: '#FFFFFF',
+    borderColor: 'rgba(189, 214, 231, 0.5)',
+    borderRadius: 14,
+    borderWidth: 1,
+    minHeight: 46,
+  },
+  removeFileButtonText: {
+    color: colors.text.primary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  documentPickerButton: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(238, 246, 252, 0.5)',
+    borderColor: 'rgba(114, 169, 210, 0.45)',
+    borderRadius: 16,
+    borderStyle: 'dashed',
+    borderWidth: 1.5,
+    flexDirection: 'row',
+    gap: 12,
+    minHeight: 76,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  documentPickerTitle: {
+    color: colors.text.primary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  selectedDocumentCard: {
+    alignItems: 'center',
+    backgroundColor: colors.surface.selected,
+    borderColor: colors.border.default,
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    minHeight: 76,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  documentIcon: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
+  documentName: {
+    color: colors.text.primary,
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
+  documentMeta: {
+    color: colors.text.secondary,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 2,
   },
 });

@@ -6,21 +6,23 @@ type CreateOrderStepProgressProps = {
   currentStep: number;
   totalSteps: number;
   title: string;
+  compact?: boolean;
 };
 
 export function CreateOrderStepProgress({
   currentStep,
   totalSteps,
   title,
+  compact = false,
 }: CreateOrderStepProgressProps) {
   const percentage = Math.round((currentStep / totalSteps) * 100);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, compact ? styles.containerCompact : null]}>
       <View style={styles.headerRow}>
         <View style={styles.titleWrapper}>
           <Text style={styles.stepLabel}>
-            Bước {currentStep} trên {totalSteps}
+            {compact ? `Bước ${currentStep}/${totalSteps}` : `Bước ${currentStep} trên ${totalSteps}`}
           </Text>
           <Text style={styles.titleText}>{title}</Text>
         </View>
@@ -46,6 +48,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.03,
     shadowRadius: 6,
     elevation: 2,
+  },
+  containerCompact: {
+    backgroundColor: 'transparent',
+    borderRadius: 0,
+    borderWidth: 0,
+    elevation: 0,
+    paddingHorizontal: 0,
+    paddingVertical: 4,
+    shadowOpacity: 0,
   },
   headerRow: {
     flexDirection: 'row',
