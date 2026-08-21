@@ -105,6 +105,7 @@ const STOP_STATUS: Record<string, string> = {
   ARRIVED: 'Đã check-in',
   DEPARTED: 'Đã hoàn tất (dữ liệu cũ)',
   FAILED_DELIVERY: 'Giao hàng thất bại',
+  SKIPPED_NOSHOW: 'Khách vắng mặt (No-Show)',
 };
 
 const HANDOVER_STATUSES = new Set([
@@ -856,7 +857,10 @@ export default function StopDetailScreen() {
       });
       await loadData(false);
       resetOrderForm();
-      Alert.alert('Đã báo khách không có mặt', 'Trạng thái điểm dừng và kiện hàng đã được tải lại từ hệ thống.');
+      Alert.alert(
+        'Đã báo khách không có mặt',
+        'Hàng chưa được giao và phải nhập lại kho. Toàn bộ đơn hàng tại điểm giao này đã chuyển sang trạng thái chờ trả về kho (RETURN_PENDING).'
+      );
     } catch (error) {
       Alert.alert('Không thể báo khách không có mặt', formatActionError(error, 'NO_SHOW'));
       await loadData(false);
@@ -873,7 +877,7 @@ export default function StopDetailScreen() {
     }
     Alert.alert(
       'Xác nhận khách không có mặt',
-      'Bạn xác nhận khách hàng không xuất hiện hoặc từ chối nhận hàng tại điểm giao này?',
+      'Bạn xác nhận khách hàng không xuất hiện hoặc từ chối nhận hàng tại điểm giao này? Hàng sẽ được chuyển sang luồng trả về kho.',
       [
         { text: 'Hủy', style: 'cancel' },
         { text: 'Xác nhận', style: 'destructive', onPress: () => void submitNoShow() },
@@ -968,9 +972,18 @@ export default function StopDetailScreen() {
 
       // Kết ca thành công, xe và tài xế đã được giải phóng
       await loadData(false);
+      const warehouse = warehouses?.find((item) => item.warehouseId === selectedWarehouseId);
+      const locationName = result.newLocation || warehouse?.warehouseName || 'kho trả hàng';
+      const successTitle = '✅ Đóng ca thành công';
+      const successMessage = result.message || (
+        `Đã bàn giao luồng trả hàng về ${locationName}.\n` +
+        `Nhân viên kho sẽ nhập lại hàng bằng seal tại màn hình Inbound sự cố.\n` +
+        `Hàng không cần thực hiện QC lại.`
+      );
+
       Alert.alert(
-        '✅ Đóng ca thành công',
-        result.message || 'Tài xế và xe đã được giải phóng, sẵn sàng cho chuyến mới.',
+        successTitle,
+        successMessage,
         [{ text: 'Về danh sách chuyến', onPress: () => router.replace('/(driver)/trips' as never) }]
       );
     } catch (error) {
@@ -986,11 +999,11 @@ export default function StopDetailScreen() {
     if (!selectedWarehouseId || !canCloseShift || isProcessing) return;
     const warehouse = warehouses?.find((item) => item.warehouseId === selectedWarehouseId);
     Alert.alert(
-      'Xác nhận đóng ca',
-      `Đóng ca và cập nhật vị trí xe về ${warehouse?.warehouseName || 'kho đã chọn'}?`,
+      'Xác nhận đã đến kho và đóng ca',
+      `Vui lòng xác nhận bạn đã đưa hàng và xe về đúng ${warehouse?.warehouseName || 'kho đã chọn'} và sẵn sàng đóng ca?`,
       [
         { text: 'Hủy', style: 'cancel' },
-        { text: 'Đóng ca', onPress: () => void submitCloseShift() },
+        { text: 'Xác nhận đóng ca', onPress: () => void submitCloseShift() },
       ]
     );
   };
@@ -1434,13 +1447,24 @@ export default function StopDetailScreen() {
               </View>
             ) : null}
 
-            {hasCutSeal && !allOrdersHandedOver && stopStatus !== 'SKIPPED_NOSHOW' ? (
+            {hasCheckedIn && !allOrdersHandedOver && stopStatus !== 'SKIPPED_NOSHOW' ? (
               <View className="mt-4">
                 <AppButton
-                  label="Báo khách hàng không có mặt"
+                  label="Khách không có mặt (No-Show)"
                   variant="secondary"
                   disabled={isProcessing}
                   onPress={startNoShow}
+                />
+              </View>
+            ) : null}
+
+            {stopStatus === 'SKIPPED_NOSHOW' ? (
+              <View className="mt-4">
+                <DeliveryNotice
+                  icon="warning"
+                  title="Khách không có mặt (No-Show)"
+                  detail="Hàng chưa được giao và phải nhập lại kho. Toàn bộ kiện hàng đã được chuyển sang trạng thái chờ trả về kho (RETURN_PENDING)."
+                  tone="warning"
                 />
               </View>
             ) : null}
@@ -1478,20 +1502,42 @@ export default function StopDetailScreen() {
                 <View className="flex-row items-start gap-3">
                   <Ionicons name="business-outline" size={24} color="#9A3412" />
                   <View className="flex-1">
-                    <Text className="font-bold text-orange-950">
-                      {isReturnFlow ? 'Kho quy đầu gần vị trí xe' : 'Kho kết ca gần vị trí xe'}
-                    </Text>
-                    <Text className="mt-1 text-sm text-orange-800">
+                    <Text className="font-bold text-orange-950">Kho trả hàng gần vị trí xe</Text>
+                    <Text className="mt-1 text-xs text-orange-800">
                       {isReturnFlow
-                        ? 'Khoảng cách do Backend tính từ dữ liệu vị trí xe.'
-                        : 'Sau khi hoàn tất điểm cuối và thanh toán COD, chọn kho để đóng ca.'}
+                        ? 'Chọn kho trả hàng để đưa hàng về và đóng ca.'
+                        : 'Sau khi hoàn tất toàn bộ điểm giao và thanh toán COD, chọn kho để đóng ca.'}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Thanh tiến trình quy trình trả hàng */}
+                <View className="mt-3 rounded-xl bg-orange-100/80 p-2.5">
+                  <Text className="text-[11px] font-bold text-orange-950 mb-1.5">Quy trình trả hàng:</Text>
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-[10.5px] font-bold text-emerald-800">1. Khách vắng mặt ✓</Text>
+                    <Text className="text-slate-400">→</Text>
+                    <Text className={`text-[10.5px] font-bold ${selectedWarehouseId ? 'text-emerald-800' : 'text-orange-900'}`}>2. Chọn kho</Text>
+                    <Text className="text-slate-400">→</Text>
+                    <Text className="text-[10.5px] font-medium text-orange-800">3. Về kho</Text>
+                    <Text className="text-slate-400">→</Text>
+                    <Text className="text-[10.5px] font-medium text-orange-800">4. Đóng ca</Text>
+                  </View>
+                </View>
+
+                {/* Cảnh báo đưa hàng về đúng kho đã chọn */}
+                <View className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3">
+                  <View className="flex-row items-center gap-2">
+                    <Ionicons name="alert-circle" size={18} color="#D97706" />
+                    <Text className="text-xs font-bold text-amber-900 flex-1">
+                      Vui lòng đưa hàng về đúng kho đã chọn. Chỉ đóng ca khi xe đã đến kho.
                     </Text>
                   </View>
                 </View>
 
                 {warehouses === null && !warehouseError ? (
                   <View className="mt-4">
-                    <AppButton label="Tìm kho phù hợp" variant="secondary" loading={isLoadingWarehouses} onPress={() => void loadReturnWarehouses()} />
+                    <AppButton label="Tìm kho trả hàng phù hợp" variant="secondary" loading={isLoadingWarehouses} onPress={() => void loadReturnWarehouses()} />
                   </View>
                 ) : null}
 
@@ -1515,33 +1561,33 @@ export default function StopDetailScreen() {
                       key={warehouse.warehouseId}
                       disabled={!canCloseShift || isProcessing}
                       onPress={() => setSelectedWarehouseId(warehouse.warehouseId)}
-                      className={`mt-3 rounded-xl border p-3 ${selected ? 'border-orange-700 bg-white' : 'border-orange-200 bg-white/80'}`}
+                      className={`mt-3 rounded-xl border p-3.5 ${selected ? 'border-orange-700 bg-white shadow-sm' : 'border-orange-200 bg-white/80'}`}
                       style={({ pressed }) => ({ opacity: !canCloseShift ? 0.8 : pressed ? 0.7 : 1 })}
                     >
                       <View className="flex-row items-start justify-between gap-3">
                         <View className="flex-1">
-                          <Text className="font-bold text-orange-950">{warehouse.warehouseName}</Text>
-                          <Text className="mt-1 text-sm text-orange-800">{warehouse.address}</Text>
+                          <Text className="font-bold text-orange-950 text-sm">{warehouse.warehouseName}</Text>
+                          <Text className="mt-1 text-xs text-orange-800 leading-4">{warehouse.address}</Text>
                         </View>
                         {selected ? <Ionicons name="checkmark-circle" size={22} color="#9A3412" /> : null}
                       </View>
-                      <Text className="mt-2 text-xs text-orange-700">
-                        {warehouse.distanceKm} · khoảng {warehouse.estimatedTravelTimeMinutes} phút · {formatWarehouseStatus(warehouse.status)}
+                      <Text className="mt-2 text-xs font-semibold text-orange-700">
+                        {warehouse.distanceKm} · khoảng {warehouse.estimatedTravelTimeMinutes} phút di chuyển · {formatWarehouseStatus(warehouse.status)}
                       </Text>
                     </Pressable>
                   );
                 })}
 
                 {hasRemainingStops ? (
-                  <Text className="mt-4 text-sm text-orange-800">Tiếp tục xử lý các điểm dừng còn lại theo trạng thái hệ thống.</Text>
+                  <Text className="mt-4 text-xs text-orange-800">Tiếp tục xử lý các điểm dừng còn lại trước khi đóng ca.</Text>
                 ) : null}
                 {!allPaymentsReady ? (
-                  <Text className="mt-4 text-sm text-orange-800">Hoàn tất thanh toán COD của mọi ePOD trước khi đóng ca.</Text>
+                  <Text className="mt-4 text-xs text-orange-800">Hoàn tất thanh toán COD của mọi ePOD trước khi đóng ca.</Text>
                 ) : null}
                 {canCloseShift && warehouses && warehouses.length > 0 ? (
                   <View className="mt-4">
                     <AppButton
-                      label="Đóng ca tại kho đã chọn"
+                      label="Xác nhận đã đến kho và đóng ca"
                       loading={isProcessing}
                       disabled={!selectedWarehouseId}
                       onPress={confirmCloseShift}
@@ -2248,16 +2294,32 @@ function DeliveryNotice({
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
   detail: string;
-  tone: 'success' | 'neutral';
+  tone: 'success' | 'neutral' | 'warning';
 }) {
-  const color = tone === 'success' ? '#15803d' : '#92400E';
+  const color = tone === 'success' ? '#15803d' : tone === 'warning' ? '#DC2626' : '#92400E';
+  const containerStyle = tone === 'success'
+    ? 'border-green-200 bg-green-50'
+    : tone === 'warning'
+    ? 'border-red-200 bg-red-50'
+    : 'border-amber-200 bg-amber-50';
+  const titleStyle = tone === 'success'
+    ? 'font-bold text-green-900'
+    : tone === 'warning'
+    ? 'font-bold text-red-900'
+    : 'font-bold text-amber-950';
+  const detailStyle = tone === 'success'
+    ? 'text-green-800'
+    : tone === 'warning'
+    ? 'text-red-800'
+    : 'text-amber-800';
+
   return (
-    <View className={`mt-5 rounded-2xl border p-4 ${tone === 'success' ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}>
+    <View className={`mt-5 rounded-2xl border p-4 ${containerStyle}`}>
       <View className="flex-row gap-3">
         <Ionicons name={icon} size={24} color={color} />
         <View className="flex-1">
-          <Text className={tone === 'success' ? 'font-bold text-green-900' : 'font-bold text-amber-950'}>{title}</Text>
-          <Text className={`mt-1 text-sm ${tone === 'success' ? 'text-green-800' : 'text-amber-800'}`}>{detail}</Text>
+          <Text className={titleStyle}>{title}</Text>
+          <Text className={`mt-1 text-sm ${detailStyle}`}>{detail}</Text>
         </View>
       </View>
     </View>
@@ -2375,6 +2437,9 @@ function formatActionError(
       return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
     }
     if (error.status === 403) {
+      if (action === 'NO_SHOW' || action === 'CLOSE_SHIFT') {
+        return 'Tài xế không thuộc chuyến xe này hoặc không có quyền thao tác.';
+      }
       return 'Bạn không có quyền thực hiện thao tác này.';
     }
     if (error.status === 404) return action === 'HANDOVER'
@@ -2431,10 +2496,19 @@ function formatActionError(
       return 'Thao tác này chưa thể thực hiện ở trạng thái hiện tại.';
     }
     if (error.status === 409) {
+      if (action === 'NO_SHOW') {
+        return 'Đơn hàng tại điểm dừng đã có ePOD hoàn tất trước đó.';
+      }
       return 'Thao tác xung đột với trạng thái hiện tại. Dữ liệu sẽ được tải lại.';
     }
     if (error.status === 400 || error.status === 422) {
-      return 'Backend từ chối yêu cầu do điều kiện nghiệp vụ chưa hợp lệ.';
+      if (action === 'CLOSE_SHIFT') {
+        return 'Không thể đóng ca: còn đơn chưa hoàn tất, kiện hàng chưa ở trạng thái chờ trả kho (RETURN_PENDING) hoặc kho trả hàng không hoạt động.';
+      }
+      if (action === 'NO_SHOW') {
+        return error.message || 'Yêu cầu báo khách không có mặt không hợp lệ. Vui lòng kiểm tra lại ảnh minh chứng.';
+      }
+      return error.message || 'Backend từ chối yêu cầu do điều kiện nghiệp vụ chưa hợp lệ.';
     }
   }
 
