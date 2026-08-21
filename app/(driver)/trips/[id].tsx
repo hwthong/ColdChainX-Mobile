@@ -282,15 +282,21 @@ export default function DriverTripDetailScreen() {
       return trip.stops;
     }
     if (route?.optimizedStops && route.optimizedStops.length > 0) {
-      return route.optimizedStops.map((s, idx) => ({
-        stopId: s.stopId || (s as { locationId?: string }).locationId || `stop-${idx}`,
-        stopSequence: s.optimizedSequence ?? s.originalStopSequence ?? idx + 1,
-        address: s.address || 'Điểm giao hàng',
-        plannedArrivalTime: (s as { plannedArrivalTime?: string }).plannedArrivalTime ?? null,
-        plannedDepartureTime: (s as { plannedDepartureTime?: string }).plannedDepartureTime ?? null,
-        status: (s as { status?: string }).status || 'PLANNED',
-        stopType: s.stopType || 'DELIVERY',
-      }));
+      return route.optimizedStops.map((s, idx) => {
+        const matchingTripStop = trip?.stops?.find(
+          (ts) => ts.stopId === s.stopId || (ts.locationId && (ts.locationId === s.stopId || ts.locationId === (s as { locationId?: string }).locationId)) || ts.stopSequence === (s.optimizedSequence ?? s.originalStopSequence ?? idx + 1)
+        ) || trip?.stops?.[idx];
+        return {
+          stopId: matchingTripStop?.stopId || s.stopId || (s as { locationId?: string }).locationId || `stop-${idx}`,
+          locationId: matchingTripStop?.locationId || (s as { locationId?: string }).locationId,
+          stopSequence: s.optimizedSequence ?? s.originalStopSequence ?? idx + 1,
+          address: s.address || matchingTripStop?.address || 'Điểm giao hàng',
+          plannedArrivalTime: (s as { plannedArrivalTime?: string }).plannedArrivalTime ?? matchingTripStop?.plannedArrivalTime ?? null,
+          plannedDepartureTime: (s as { plannedDepartureTime?: string }).plannedDepartureTime ?? matchingTripStop?.plannedDepartureTime ?? null,
+          status: matchingTripStop?.status || (s as { status?: string }).status || 'PLANNED',
+          stopType: s.stopType || matchingTripStop?.stopType || 'DELIVERY',
+        };
+      });
     }
     if (tracking?.orders && tracking.orders.length > 0) {
       return tracking.orders.map((o, idx) => ({

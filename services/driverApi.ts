@@ -59,12 +59,15 @@ export interface DriverTripVehicleDto {
 
 export interface DriverTripStopDto {
   stopId: string;
+  locationId?: string;
   stopSequence: number;
   address: string;
   plannedArrivalTime?: string | null;
   plannedDepartureTime?: string | null;
   status: string;
   stopType: string;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 export interface DriverTripDetailResponseDto {
@@ -146,7 +149,7 @@ export const driverApi = {
    * Fetch history of completed trips
    * Route: GET /api/drivers/my/trip-history
    */
-  getMyTripHistory: async (pageNumber = 1, pageSize = 20): Promise<TripListDto[]> => {
+  getMyTripHistory: async (pageNumber: number = 1, pageSize: number = 10): Promise<TripListDto[]> => {
     const endpoint = `/api/drivers/my/trip-history?pageNumber=${pageNumber}&pageSize=${pageSize}`;
 
     const response = await authenticatedDriverRequest((token) =>
@@ -194,12 +197,15 @@ export const driverApi = {
     const normalizedStops: DriverTripStopDto[] = Array.isArray(rawStops)
       ? rawStops.map((s: any, idx: number) => ({
           stopId: s.stopId || s.tripStopId || s.id || s.TripStopId || s.StopId || s.Id || '',
+          locationId: s.locationId || s.LocationId || '',
           stopSequence: s.stopSequence ?? s.sequence ?? s.StopSequence ?? s.Sequence ?? idx + 1,
           address: s.address ?? s.Address ?? 'Điểm giao hàng',
           plannedArrivalTime: s.plannedArrivalTime ?? s.PlannedArrivalTime ?? null,
           plannedDepartureTime: s.plannedDepartureTime ?? s.PlannedDepartureTime ?? null,
           status: s.status ?? s.Status ?? 'PLANNED',
           stopType: s.stopType ?? s.StopType ?? 'DELIVERY',
+          latitude: s.latitude ?? s.Latitude ?? null,
+          longitude: s.longitude ?? s.Longitude ?? null,
         }))
       : [];
 

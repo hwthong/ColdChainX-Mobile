@@ -264,8 +264,8 @@ export default function StopDetailScreen() {
             }
           : undefined);
 
-      // 1. Tìm trực tiếp theo stopId trong tripDetail.stops nếu có
-      let matchedStop = tripDetail.stops?.find((stop) => stop.stopId === stopId);
+      // 1. Tìm trực tiếp theo stopId hoặc locationId trong tripDetail.stops nếu có
+      let matchedStop = tripDetail.stops?.find((stop) => stop.stopId === stopId || (Boolean(stop.locationId) && stop.locationId === stopId));
 
       // 2. Nếu không thấy theo ID trực tiếp, tìm theo stopSequence của routeStop
       if (!matchedStop && routeStop) {
@@ -464,7 +464,9 @@ export default function StopDetailScreen() {
 
       // Resolve targetStopId từ chi tiết chuyến mới nhất từ database
       const latestDetail = await driverApi.getMyTripDetail(validTripId);
-      const verifiedStop = latestDetail.stops?.find((s) => s.stopId === driverStop?.stopId || s.stopId === stopId)
+      const verifiedStop = latestDetail.stops?.find(
+        (s) => s.stopId === driverStop?.stopId || s.stopId === stopId || (Boolean(s.locationId) && (s.locationId === stopId || s.locationId === driverStop?.locationId))
+      )
         || latestDetail.stops?.find((s) => s.stopSequence === driverStop?.stopSequence)
         || (latestDetail.stops?.length === 1 ? latestDetail.stops[0] : null);
 
