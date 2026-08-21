@@ -4,9 +4,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
 
 import { colors } from '../../constants/colors';
-import { TripRoutePointDto, TripRouteResponse } from '../../services/trackingApi';
+import { TripRouteOrderDto, TripRoutePointDto, TripRouteResponse } from '../../services/trackingApi';
 
-type RouteMapPoint = {
+export type RouteMapPoint = {
   id: string;
   label: string;
   address: string;
@@ -14,6 +14,10 @@ type RouteMapPoint = {
   lon: number;
   type: 'origin' | 'stop' | 'destination';
   sequence?: number;
+  stopType?: string | null;
+  ordersCount?: number;
+  lpnsCount?: number;
+  orderItemsSummary?: string;
 };
 
 type GoongRouteMapProps = {
@@ -135,31 +139,64 @@ export function buildRoutePoints(route?: TripRouteResponse | null): RouteMapPoin
 
   const points: RouteMapPoint[] = [];
   const origin = toMapPoint(route.origin, 'origin', 'Điểm xuất phát');
-  const destination = toMapPoint(route.destination, 'destination', 'Điểm đến');
-
   if (origin) points.push(origin);
 
-  route.optimizedStops
+  // Sắp xếp các điểm dừng trung gian theo optimizedSequence
+  const sortedStops = (route.optimizedStops || [])
     .slice()
-    .sort((left, right) => (left.optimizedSequence ?? 0) - (right.optimizedSequence ?? 0))
-    .forEach((stop, index) => {
-      const sequence = stop.optimizedSequence ?? index + 1;
-      const point = toMapPoint(stop, 'stop', `Điểm dừng ${sequence}`, sequence);
-      if (point) {
-        const isDuplicateOrigin = origin && Math.abs(point.lat - origin.lat) < 0.0001 && Math.abs(point.lon - origin.lon) < 0.0001;
-        const isDuplicateDest = destination && Math.abs(point.lat - destination.lat) < 0.0001 && Math.abs(point.lon - destination.lon) < 0.0001;
-        if (!isDuplicateOrigin && !isDuplicateDest) {
-          points.push(point);
-        }
-      }
-    });
+    .sort((left, right) => (left.optimizedSequence ?? 0) - (right.optimizedSequence ?? 0));
 
-  if (destination) {
-    const isDuplicateOrigin = origin && Math.abs(destination.lat - origin.lat) < 0.0001 && Math.abs(destination.lon - origin.lon) < 0.0001;
-    if (!isDuplicateOrigin) {
-      points.push(destination);
+  const validStops: RouteMapPoint[] = [];
+  sortedStops.forEach((stop, index) => {
+    const sequence = stop.optimizedSequence ?? index + 1;
+    const point = toMapPoint(
+      stop,
+      'stop',
+      `Điểm giao hàng #${sequence}`,
+      sequence,
+      stop.stopType,
+      stop.orders,
+      stop.lpns
+    );
+    if (point) {
+      const isDuplicateOrigin =
+        origin &&
+        Math.abs(point.lat - origin.lat) < 0.0001 &&
+        Math.abs(point.lon - origin.lon) < 0.0001;
+      if (!isDuplicateOrigin) {
+        validStops.push(point);
+      }
+    }
+  });
+
+  validStops.forEach((p) => points.push(p));
+
+  // Điểm đến cuối cùng (destination)
+  if (route.destination) {
+    const finalDestSeq = validStops.length + 1;
+    const isSingleDest = validStops.length === 0;
+    const destination = toMapPoint(
+      route.destination,
+      'destination',
+      isSingleDest ? 'Điểm giao hàng #1' : `Điểm đến cuối (#${finalDestSeq})`,
+      finalDestSeq
+    );
+    if (destination) {
+      const isDuplicateOrigin =
+        origin &&
+        Math.abs(destination.lat - origin.lat) < 0.0001 &&
+        Math.abs(destination.lon - origin.lon) < 0.0001;
+      const isDuplicateAnyStop = validStops.some(
+        (s) =>
+          Math.abs(destination.lat - s.lat) < 0.0001 &&
+          Math.abs(destination.lon - s.lon) < 0.0001
+      );
+      if (!isDuplicateOrigin && !isDuplicateAnyStop) {
+        points.push(destination);
+      }
     }
   }
+
   return points;
 }
 
@@ -193,14 +230,28 @@ function RouteMapFallback({
       <Text style={{ color: colors.brand.primary }} className="text-sm font-semibold">{message}</Text>
       {points.length > 0 ? (
         <View className="gap-2">
-          {points.map((point, index) => (
+          {points.map((point) => (
             <View key={point.id} className="flex-row items-start gap-3">
-              <View style={{ backgroundColor: colors.brand.primary }} className="mt-0.5 h-6 w-6 items-center justify-center rounded-full">
-                <Text style={{ color: colors.text.onPrimary }} className="text-[10px] font-bold">{index + 1}</Text>
+              <View
+                style={{
+                  backgroundColor: point.type === 'origin' ? '#10B981' : point.type === 'destination' ? '#DC2626' : colors.brand.primary,
+                }}
+                className="mt-0.5 h-6 w-6 items-center justify-center rounded-full shadow-xs"
+              >
+                <Text style={{ color: colors.text.onPrimary }} className="text-[10px] font-bold">
+                  {point.type === 'origin' ? '🏢' : point.sequence}
+                </Text>
               </View>
               <View className="flex-1">
                 <Text style={{ color: colors.text.primary }} className="text-xs font-bold">{point.label}</Text>
-                <Text style={{ color: colors.text.secondary }} className="mt-1 text-xs leading-5">{point.address || `${point.lat}, ${point.lon}`}</Text>
+                <Text style={{ color: colors.text.secondary }} className="mt-0.5 text-xs leading-5">
+                  {point.address || `${point.lat}, ${point.lon}`}
+                </Text>
+                {point.ordersCount ? (
+                  <Text style={{ color: colors.brand.primary }} className="text-[11px] font-semibold mt-0.5">
+                    📦 {point.ordersCount} đơn hàng {point.lpnsCount ? `· ${point.lpnsCount} LPN` : ''}
+                  </Text>
+                ) : null}
               </View>
             </View>
           ))}
@@ -235,18 +286,29 @@ function toMapPoint(
   point: TripRoutePointDto | null | undefined,
   type: RouteMapPoint['type'],
   label: string,
-  sequence?: number
+  sequence?: number,
+  stopType?: string | null,
+  orders?: TripRouteOrderDto[],
+  lpns?: unknown[]
 ): RouteMapPoint | null {
   if (!point || !isValidMapCoordinate(point.lat, point.lon)) return null;
 
+  const ordersCount = orders?.length || 0;
+  const lpnsCount = lpns?.length || 0;
+  const orderItemsSummary = orders?.map((o) => o.itemName).filter(Boolean).slice(0, 2).join(', ');
+
   return {
-    id: `${type}-${point.locationId ?? `${point.lat}-${point.lon}`}`,
+    id: `${type}-${point.locationId ?? `${point.lat}-${point.lon}`}-${sequence ?? 0}`,
     label,
-    address: point.address,
+    address: point.address || 'Chưa có địa chỉ chi tiết',
     lat: point.lat,
     lon: point.lon,
     type,
     sequence,
+    stopType,
+    ordersCount,
+    lpnsCount,
+    orderItemsSummary,
   };
 }
 
@@ -315,25 +377,167 @@ function buildMapHtml(
   <script src="https://cdn.jsdelivr.net/npm/@goongmaps/goong-js@1.0.9/dist/goong-js.js"></script>
   <style>
     html, body, #map { height: 100%; margin: 0; padding: 0; background: #eef2f5; }
-    .marker {
-      width: 30px;
-      height: 30px;
+    
+    /* ─── CUSTOM PIN MARKER STYLES ─── */
+    .custom-pin-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      cursor: pointer;
+      user-select: none;
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .custom-pin-container:hover {
+      transform: scale(1.15);
+      z-index: 50;
+    }
+    
+    .pin-svg {
+      display: block;
+      filter: drop-shadow(0 6px 12px rgba(15, 23, 42, 0.35));
+    }
+
+    .pin-badge {
+      margin-top: 2px;
+      font-size: 9px;
+      font-weight: 800;
+      padding: 1.5px 6px;
       border-radius: 999px;
-      color: #fff;
+      white-space: nowrap;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      border: 1px solid rgba(255,255,255,0.8);
+      letter-spacing: 0.2px;
+    }
+    .pin-badge.origin-badge {
+      background: #059669;
+      color: #FFFFFF;
+    }
+    .pin-badge.stop-badge {
+      background: #E11D48;
+      color: #FFFFFF;
+    }
+    .pin-badge.final-badge {
+      background: #DC2626;
+      color: #FFFFFF;
+      border-color: #FEF08A;
+    }
+
+    /* ─── VEHICLE MOVING RADAR MARKER ─── */
+    .vehicle-marker-wrapper {
+      position: relative;
       display: flex;
       align-items: center;
       justify-content: center;
-      font: 700 12px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      border: 3px solid #fff;
-      box-shadow: 0 8px 18px rgba(23, 59, 89, 0.22);
     }
-    .marker.origin { background: #0f766e; }
-    .marker.stop { background: #367eb8; }
-    .marker.destination { background: #b91c1c; }
-    .marker.vehicle { width: 38px; height: 38px; background: #1d4ed8; font-size: 18px; }
-    .popup { min-width: 150px; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    .popup-title { font-size: 13px; font-weight: 700; color: #173b59; margin-bottom: 4px; }
-    .popup-address { font-size: 12px; line-height: 1.35; color: #607b90; }
+    .vehicle-marker-bubble {
+      width: 40px;
+      height: 40px;
+      border-radius: 999px;
+      background: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%);
+      border: 3px solid #FFFFFF;
+      box-shadow: 0 8px 22px rgba(29, 78, 216, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      z-index: 10;
+    }
+    .vehicle-pulse-ring {
+      position: absolute;
+      width: 56px;
+      height: 56px;
+      border-radius: 999px;
+      border: 2.5px solid #3B82F6;
+      animation: pulse-ring 2s infinite cubic-bezier(0.215, 0.61, 0.355, 1);
+      pointer-events: none;
+      z-index: 1;
+    }
+    @keyframes pulse-ring {
+      0% { transform: scale(0.6); opacity: 0.9; }
+      100% { transform: scale(1.45); opacity: 0; }
+    }
+
+    /* ─── POPUP DIALOG STYLING ─── */
+    .goongjs-popup {
+      z-index: 100;
+    }
+    .goongjs-popup-content {
+      padding: 0 !important;
+      border-radius: 18px !important;
+      box-shadow: 0 16px 36px rgba(15, 23, 42, 0.28) !important;
+      border: 1px solid rgba(226, 232, 240, 0.9) !important;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+    }
+    .goongjs-popup-close-button {
+      padding: 6px 10px !important;
+      color: #64748B !important;
+      font-size: 16px !important;
+    }
+    .custom-popup-card {
+      padding: 14px 16px;
+      min-width: 210px;
+      max-width: 270px;
+      background: #FFFFFF;
+    }
+    .popup-badge-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+    .popup-badge {
+      font-size: 10px;
+      font-weight: 800;
+      padding: 2.5px 8px;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: inline-block;
+    }
+    .popup-badge.origin {
+      background: #DCFCE7;
+      color: #15803D;
+    }
+    .popup-badge.stop {
+      background: #FFE4E6;
+      color: #BE123C;
+    }
+    .popup-badge.destination {
+      background: #FEE2E2;
+      color: #B91C1C;
+    }
+    .popup-title {
+      font-size: 13px;
+      font-weight: 800;
+      color: #0F172A;
+      margin-bottom: 4px;
+      line-height: 1.35;
+    }
+    .popup-address {
+      font-size: 11.5px;
+      color: #475569;
+      line-height: 1.45;
+      margin-bottom: 6px;
+    }
+    .popup-orders {
+      font-size: 11px;
+      font-weight: 700;
+      color: #2563EB;
+      background: #EFF6FF;
+      padding: 4px 8px;
+      border-radius: 6px;
+      margin-top: 4px;
+      display: inline-block;
+    }
+    .popup-items {
+      font-size: 10.5px;
+      color: #64748B;
+      margin-top: 4px;
+      font-style: italic;
+      line-height: 1.3;
+    }
+
     #map-error {
       display: none;
       position: absolute;
@@ -458,31 +662,80 @@ function buildMapHtml(
           const bounds = new goongjs.LngLatBounds();
 
           payload.points.forEach(function (point, index) {
-            const marker = document.createElement('div');
-            marker.className = 'marker ' + point.type;
-            marker.textContent = point.type === 'origin' ? 'A' : point.type === 'destination' ? 'B' : String(point.sequence || index);
+            const isOrigin = point.type === 'origin';
+            const isFinal = point.type === 'destination';
+            const seqNumber = point.sequence || (index + 1);
 
-            new goongjs.Marker(marker)
+            const markerEl = document.createElement('div');
+            markerEl.className = 'custom-pin-container ' + point.type;
+
+            const pinColorTop = isFinal ? '#EF4444' : isOrigin ? '#10B981' : '#F43F5E';
+            const pinColorBottom = isFinal ? '#B91C1C' : isOrigin ? '#047857' : '#BE123C';
+            const shadowColor = isFinal ? 'rgba(220,38,38,0.55)' : isOrigin ? 'rgba(5,150,105,0.55)' : 'rgba(225,29,72,0.5)';
+            const textFill = isFinal ? '#B91C1C' : isOrigin ? '#047857' : '#BE123C';
+            const labelText = isOrigin ? '🏢' : String(seqNumber);
+            const fontSize = labelText.length > 1 && !isOrigin ? '11.5' : '13.5';
+
+            markerEl.innerHTML = 
+              '<svg class="pin-svg" width="36" height="46" viewBox="0 0 36 46" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+                '<defs>' +
+                  '<linearGradient id="grad-' + point.id + '" x1="0" y1="0" x2="0" y2="46" gradientUnits="userSpaceOnUse">' +
+                    '<stop offset="0%" stop-color="' + pinColorTop + '" />' +
+                    '<stop offset="100%" stop-color="' + pinColorBottom + '" />' +
+                  '</linearGradient>' +
+                '</defs>' +
+                '<path d="M18 0C8.05887 0 0 8.05887 0 18C0 30.5 18 46 18 46C18 46 36 30.5 36 18C36 8.05887 27.9411 0 18 0Z" fill="url(#grad-' + point.id + ')" stroke="#FFFFFF" stroke-width="2.5" />' +
+                '<circle cx="18" cy="17" r="11" fill="#FFFFFF" />' +
+                '<text x="18" y="21.5" text-anchor="middle" font-size="' + fontSize + '" font-weight="900" fill="' + textFill + '" font-family="system-ui, -apple-system, sans-serif">' + labelText + '</text>' +
+              '</svg>' +
+              (isFinal ? '<div class="pin-badge final-badge">Điểm ' + seqNumber + ' (Cuối)</div>' : isOrigin ? '<div class="pin-badge origin-badge">Xuất phát</div>' : '<div class="pin-badge stop-badge">Điểm ' + seqNumber + '</div>');
+
+            let popupHtml = '<div class="custom-popup-card">';
+            popupHtml += '<div class="popup-badge-row">';
+            if (isOrigin) {
+              popupHtml += '<span class="popup-badge origin">🏢 Xuất phát</span>';
+            } else if (isFinal) {
+              popupHtml += '<span class="popup-badge destination">🏁 Điểm đến #' + seqNumber + '</span>';
+            } else {
+              popupHtml += '<span class="popup-badge stop">📍 Điểm giao #' + seqNumber + '</span>';
+            }
+            if (point.stopType) {
+              popupHtml += '<span class="popup-badge" style="background:#F1F5F9; color:#475569;">' + escapeHtml(point.stopType) + '</span>';
+            }
+            popupHtml += '</div>';
+
+            popupHtml += '<div class="popup-title">' + escapeHtml(point.label) + '</div>';
+            popupHtml += '<div class="popup-address">' + escapeHtml(point.address || point.lat + ', ' + point.lon) + '</div>';
+            
+            if (point.ordersCount) {
+              popupHtml += '<div class="popup-orders">📦 ' + point.ordersCount + ' Đơn hàng' + (point.lpnsCount ? ' · ' + point.lpnsCount + ' LPN' : '') + '</div>';
+            }
+            if (point.orderItemsSummary) {
+              popupHtml += '<div class="popup-items">' + escapeHtml(point.orderItemsSummary) + '</div>';
+            }
+            popupHtml += '</div>';
+
+            new goongjs.Marker({ element: markerEl, anchor: 'bottom' })
               .setLngLat([point.lon, point.lat])
-              .setPopup(new goongjs.Popup({ offset: 18 }).setHTML(
-                '<div class="popup">' +
-                  '<div class="popup-title">' + escapeHtml(point.label) + '</div>' +
-                  '<div class="popup-address">' + escapeHtml(point.address || point.lat + ', ' + point.lon) + '</div>' +
-                '</div>'
-              ))
+              .setPopup(new goongjs.Popup({ offset: [0, -42], closeButton: true, maxWidth: '280px' }).setHTML(popupHtml))
               .addTo(map);
 
             bounds.extend([point.lon, point.lat]);
           });
 
           if (payload.vehiclePosition) {
-            const vehicleMarker = document.createElement('div');
-            vehicleMarker.className = 'marker vehicle';
-            vehicleMarker.textContent = '🚚';
-            new goongjs.Marker(vehicleMarker)
+            const vehicleEl = document.createElement('div');
+            vehicleEl.className = 'vehicle-marker-wrapper';
+            vehicleEl.innerHTML = '<div class="vehicle-pulse-ring"></div><div class="vehicle-marker-bubble">🚚</div>';
+
+            new goongjs.Marker({ element: vehicleEl })
               .setLngLat([payload.vehiclePosition.longitude, payload.vehiclePosition.latitude])
-              .setPopup(new goongjs.Popup({ offset: 22 }).setHTML(
-                '<div class="popup"><div class="popup-title">Vị trí xe hiện tại</div></div>'
+              .setPopup(new goongjs.Popup({ offset: [0, -24] }).setHTML(
+                '<div class="custom-popup-card">' +
+                  '<div class="popup-badge-row"><span class="popup-badge" style="background:#DBEAFE; color:#1D4ED8;">🚚 Đang vận chuyển</span></div>' +
+                  '<div class="popup-title">Vị trí xe hiện tại</div>' +
+                  '<div class="popup-address">Tọa độ: ' + payload.vehiclePosition.latitude.toFixed(5) + ', ' + payload.vehiclePosition.longitude.toFixed(5) + '</div>' +
+                '</div>'
               ))
               .addTo(map);
             bounds.extend([payload.vehiclePosition.longitude, payload.vehiclePosition.latitude]);
@@ -501,6 +754,23 @@ function buildMapHtml(
               }
             });
 
+            // Outer casing for polyline
+            map.addLayer({
+              id: 'planned-route-casing',
+              type: 'line',
+              source: 'planned-route',
+              layout: {
+                'line-join': 'round',
+                'line-cap': 'round'
+              },
+              paint: {
+                'line-color': '#1E3A8A',
+                'line-width': 7.5,
+                'line-opacity': 0.7
+              }
+            });
+
+            // Inner vibrant polyline
             map.addLayer({
               id: 'planned-route-line',
               type: 'line',
@@ -510,15 +780,15 @@ function buildMapHtml(
                 'line-cap': 'round'
               },
               paint: {
-                'line-color': '#8b4513',
+                'line-color': '#2563EB',
                 'line-width': 5,
-                'line-opacity': 0.86
+                'line-opacity': 0.95
               }
             });
           }
 
           if (payload.points.length > 1 || payload.vehiclePosition) {
-            map.fitBounds(bounds, { padding: 44, maxZoom: 13, duration: 0 });
+            map.fitBounds(bounds, { padding: 48, maxZoom: 14, duration: 0 });
           }
 
           postBridge({ type: 'MAP_READY' });
@@ -554,75 +824,56 @@ function escapeJsonForHtml(value: string) {
     .replace(/\u2029/g, '\\u2029');
 }
 
-function isValidMapCoordinate(latitude: number, longitude: number) {
-  return Number.isFinite(latitude)
-    && Number.isFinite(longitude)
-    && latitude >= -90
-    && latitude <= 90
-    && longitude >= -180
-    && longitude <= 180;
+function sanitizeDiagnosticMessage(value?: string | null): string {
+  if (!value) return 'Unknown diagnostic message';
+  return value
+    .replace(/https?:\/\/[^\s]+/gi, '[URL]')
+    .replace(/[a-zA-Z0-9_\-]{20,}/g, '[REDACTED]')
+    .slice(0, 200);
 }
 
-function parseMapBridgeMessage(value: string): MapBridgeMessage | null {
+function getHostname(url?: string | null): string | undefined {
+  if (!url) return undefined;
   try {
-    const message = JSON.parse(value) as Partial<MapBridgeMessage>;
-    const allowedTypes = new Set<MapBridgeMessage['type']>([
-      'MAP_READY',
-      'MAP_ERROR',
-      'MAP_UNSUPPORTED',
-      'RESOURCE_ERROR',
-      'JS_ERROR',
-      'UNHANDLED_REJECTION',
-    ]);
-    if (!message.type || !allowedTypes.has(message.type)) return null;
-    return {
-      type: message.type,
-      message: sanitizeDiagnosticMessage(message.message),
-      status: typeof message.status === 'number' && Number.isFinite(message.status) ? message.status : undefined,
-      domain: sanitizeDomain(message.domain),
-    };
+    return new URL(url).hostname;
+  } catch {
+    return undefined;
+  }
+}
+
+function parseMapBridgeMessage(raw: unknown): MapBridgeMessage | null {
+  if (typeof raw !== 'string') return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || typeof parsed.type !== 'string') return null;
+    return parsed as MapBridgeMessage;
   } catch {
     return null;
   }
 }
 
-function getMapFailureMessage(failure: MapBridgeMessage) {
-  if (failure.status === 401 || failure.status === 403) {
-    return `Goong MapTiles key không hợp lệ hoặc không được phép (HTTP ${failure.status}).`;
-  }
-  if (failure.status === 404) {
-    return 'Không tìm thấy tài nguyên bản đồ Goong.';
-  }
+function getMapFailureMessage(failure: MapBridgeMessage): string {
   if (failure.type === 'MAP_UNSUPPORTED') {
-    return 'Android WebView hiện tại không hỗ trợ WebGL để hiển thị bản đồ.';
+    return 'Thiết bị chưa hỗ trợ WebGL để dựng bản đồ Goong.';
   }
-  if (failure.type === 'RESOURCE_ERROR') {
-    return failure.domain
-      ? `Không thể tải tài nguyên bản đồ từ ${failure.domain}.`
-      : 'Không thể tải tài nguyên bản đồ.';
+  if (failure.type === 'RESOURCE_ERROR' && failure.domain?.includes('jsdelivr')) {
+    return 'Không tải được thư viện Goong JS từ CDN.';
   }
-  return 'Không thể khởi tạo bản đồ từ dữ liệu tuyến đường.';
+  if (failure.domain?.includes('goong.io') || failure.status === 401 || failure.status === 403) {
+    return 'Không xác thực được Goong Map key.';
+  }
+  return 'Chưa thể hiển thị bản đồ trực quan lúc này.';
 }
 
-function sanitizeDiagnosticMessage(value?: string) {
-  if (!value) return undefined;
-  return value
-    .replace(/https?:\/\/([^/\s]+)[^\s]*/gi, '$1')
-    .replace(/([?&](?:access_token|api_key|key)=)[^&\s]+/gi, '$1[REDACTED]')
-    .slice(0, 240);
-}
-
-function sanitizeDomain(value?: string) {
-  if (!value) return undefined;
-  const domain = value.trim().toLowerCase();
-  return /^[a-z0-9.-]+$/.test(domain) ? domain.slice(0, 120) : undefined;
-}
-
-function getHostname(value?: string) {
-  if (!value) return undefined;
-  try {
-    return sanitizeDomain(new URL(value).hostname);
-  } catch {
-    return undefined;
-  }
+function isValidMapCoordinate(lat?: number | null, lon?: number | null): lat is number {
+  return (
+    typeof lat === 'number' &&
+    typeof lon === 'number' &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lon) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lon >= -180 &&
+    lon <= 180
+  );
 }

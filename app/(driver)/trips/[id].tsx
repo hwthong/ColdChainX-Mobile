@@ -783,91 +783,93 @@ export default function DriverTripDetailScreen() {
     </ScrollView>
 
     {/* ── MODAL BẢN ĐỒ TOÀN MÀN HÌNH ── */}
-    <Modal
-      visible={isMapFullscreen}
-      animationType="slide"
-      onRequestClose={() => setIsMapFullscreen(false)}
-    >
-      <View style={{ backgroundColor: colors.surface.page }} className="flex-1">
-        {/* Header với Safe Area Insets */}
-        <View
-          style={{
-            backgroundColor: colors.surface.card,
-            borderColor: colors.border.default,
-            paddingTop: Math.max(insets.top + 6, 48),
-          }}
-          className="border-b px-4 pb-3 shadow-sm"
-        >
-          <View className="flex-row items-center justify-between">
-            <Pressable
-              onPress={() => setIsMapFullscreen(false)}
-              style={{ backgroundColor: colors.brand.primarySoft }}
-              className="rounded-full p-2.5"
-            >
-              <Ionicons name="close" size={20} color={colors.brand.primary} />
-            </Pressable>
+    {isMapFullscreen && (
+      <Modal
+        visible={true}
+        animationType="slide"
+        onRequestClose={() => setIsMapFullscreen(false)}
+      >
+        <View style={{ backgroundColor: colors.surface.page }} className="flex-1">
+          {/* Header với Safe Area Insets */}
+          <View
+            style={{
+              backgroundColor: colors.surface.card,
+              borderColor: colors.border.default,
+              paddingTop: Math.max(insets.top + 6, 48),
+            }}
+            className="border-b px-4 pb-3 shadow-sm"
+          >
+            <View className="flex-row items-center justify-between">
+              <Pressable
+                onPress={() => setIsMapFullscreen(false)}
+                style={{ backgroundColor: colors.brand.primarySoft }}
+                className="rounded-full p-2.5"
+              >
+                <Ionicons name="close" size={20} color={colors.brand.primary} />
+              </Pressable>
 
-            <View className="flex-1 px-3">
-              <Text style={{ color: colors.text.secondary }} className="text-[10px] font-bold uppercase tracking-wider">
-                Bản đồ lộ trình toàn màn hình
-              </Text>
-              <Text numberOfLines={1} style={{ color: colors.text.primary }} className="text-sm font-bold">
-                {tripId ? `Chuyến #${tripId.slice(0, 8).toUpperCase()}` : '--'}
-              </Text>
+              <View className="flex-1 px-3">
+                <Text style={{ color: colors.text.secondary }} className="text-[10px] font-bold uppercase tracking-wider">
+                  Bản đồ lộ trình toàn màn hình
+                </Text>
+                <Text numberOfLines={1} style={{ color: colors.text.primary }} className="text-sm font-bold">
+                  {tripId ? `Chuyến #${tripId.slice(0, 8).toUpperCase()}` : '--'}
+                </Text>
+              </View>
+
+              <Pressable
+                onPress={() => setIsMapFullscreen(false)}
+                style={{ backgroundColor: colors.surface.muted }}
+                className="rounded-xl px-3 py-1.5"
+              >
+                <Text style={{ color: colors.text.primary }} className="text-xs font-semibold">Đóng</Text>
+              </Pressable>
             </View>
 
-            <Pressable
-              onPress={() => setIsMapFullscreen(false)}
-              style={{ backgroundColor: colors.surface.muted }}
-              className="rounded-xl px-3 py-1.5"
-            >
-              <Text style={{ color: colors.text.primary }} className="text-xs font-semibold">Đóng</Text>
-            </Pressable>
+            {/* Thanh nút điều hướng bên ngoài (Google Map, Apple Map, Goong Map) */}
+            <View className="mt-2.5 flex-row items-center justify-between gap-1.5">
+              <Pressable
+                onPress={openGoogleMaps}
+                style={{ backgroundColor: '#EEF2FF', borderColor: '#C7D2FE' }}
+                className="flex-1 flex-row items-center justify-center gap-1 rounded-xl border py-2 shadow-xs"
+              >
+                <Ionicons name="navigate-outline" size={13} color="#4338CA" />
+                <Text className="text-[11px] font-bold text-indigo-800">Google Map</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={openAppleMaps}
+                style={{ backgroundColor: '#F1F5F9', borderColor: '#CBD5E1' }}
+                className="flex-1 flex-row items-center justify-center gap-1 rounded-xl border py-2 shadow-xs"
+              >
+                <Ionicons name="compass-outline" size={13} color="#334155" />
+                <Text className="text-[11px] font-bold text-slate-700">Apple Map</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={openGoongMap}
+                style={{ backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }}
+                className="flex-1 flex-row items-center justify-center gap-1 rounded-xl border py-2 shadow-xs"
+              >
+                <Ionicons name="map-outline" size={13} color="#B45309" />
+                <Text className="text-[11px] font-bold text-amber-800">Goong Map</Text>
+              </Pressable>
+            </View>
           </View>
 
-          {/* Thanh nút điều hướng bên ngoài (Google Map, Apple Map, Goong Map) */}
-          <View className="mt-2.5 flex-row items-center justify-between gap-1.5">
-            <Pressable
-              onPress={openGoogleMaps}
-              style={{ backgroundColor: '#EEF2FF', borderColor: '#C7D2FE' }}
-              className="flex-1 flex-row items-center justify-center gap-1 rounded-xl border py-2 shadow-xs"
-            >
-              <Ionicons name="navigate-outline" size={13} color="#4338CA" />
-              <Text className="text-[11px] font-bold text-indigo-800">Google Map</Text>
-            </Pressable>
-
-            <Pressable
-              onPress={openAppleMaps}
-              style={{ backgroundColor: '#F1F5F9', borderColor: '#CBD5E1' }}
-              className="flex-1 flex-row items-center justify-center gap-1 rounded-xl border py-2 shadow-xs"
-            >
-              <Ionicons name="compass-outline" size={13} color="#334155" />
-              <Text className="text-[11px] font-bold text-slate-700">Apple Map</Text>
-            </Pressable>
-
-            <Pressable
-              onPress={openGoongMap}
-              style={{ backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }}
-              className="flex-1 flex-row items-center justify-center gap-1 rounded-xl border py-2 shadow-xs"
-            >
-              <Ionicons name="map-outline" size={13} color="#B45309" />
-              <Text className="text-[11px] font-bold text-amber-800">Goong Map</Text>
-            </Pressable>
+          {/* Bản đồ Goong toàn màn hình */}
+          <View className="flex-1 p-2">
+            {route ? (
+              <GoongRouteMap
+                route={route}
+                vehiclePosition={vehiclePosition}
+                isFullScreen
+              />
+            ) : null}
           </View>
         </View>
-
-        {/* Bản đồ Goong toàn màn hình */}
-        <View className="flex-1 p-2">
-          {route && isMapFullscreen ? (
-            <GoongRouteMap
-              route={route}
-              vehiclePosition={vehiclePosition}
-              isFullScreen
-            />
-          ) : null}
-        </View>
-      </View>
-    </Modal>
+      </Modal>
+    )}
   </View>
   );
 }
