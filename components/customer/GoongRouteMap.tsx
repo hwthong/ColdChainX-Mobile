@@ -197,7 +197,69 @@ export function buildRoutePoints(route?: TripRouteResponse | null): RouteMapPoin
     }
   }
 
-  return points;
+  return disperseOverlappingPoints(points);
+}
+
+/**
+ * Thuật toán tách các điểm dừng có tọa độ trùng hoặc quá gần nhau (Spiderfy Dispersion)
+ * để các icon không bị đè/chồng lấn lên nhau trên bản đồ.
+ */
+function disperseOverlappingPoints(points: RouteMapPoint[]): RouteMapPoint[] {
+  if (points.length <= 1) return points;
+
+  const CLUSTER_THRESHOLD = 0.00035; // Khoảng ~35m
+  const DISPERSION_RADIUS = 0.00028; // Bán kính xòe ~28m
+
+  const clusters: RouteMapPoint[][] = [];
+  const visited = new Set<string>();
+
+  for (let i = 0; i < points.length; i++) {
+    const p1 = points[i];
+    if (visited.has(p1.id)) continue;
+
+    const currentCluster: RouteMapPoint[] = [p1];
+    visited.add(p1.id);
+
+    for (let j = i + 1; j < points.length; j++) {
+      const p2 = points[j];
+      if (visited.has(p2.id)) continue;
+
+      const dLat = Math.abs(p1.lat - p2.lat);
+      const dLon = Math.abs(p1.lon - p2.lon);
+      if (dLat < CLUSTER_THRESHOLD && dLon < CLUSTER_THRESHOLD) {
+        currentCluster.push(p2);
+        visited.add(p2.id);
+      }
+    }
+    clusters.push(currentCluster);
+  }
+
+  const result: RouteMapPoint[] = [];
+  for (const cluster of clusters) {
+    if (cluster.length === 1) {
+      result.push(cluster[0]);
+    } else {
+      const count = cluster.length;
+      const centerLat = cluster.reduce((sum, p) => sum + p.lat, 0) / count;
+      const centerLon = cluster.reduce((sum, p) => sum + p.lon, 0) / count;
+
+      cluster.forEach((point, idx) => {
+        // Điểm xuất phát giữ nguyên vị trí trung tâm nếu có thể
+        if (point.type === 'origin' && count > 1) {
+          result.push(point);
+          return;
+        }
+        const angle = (2 * Math.PI * idx) / count - Math.PI / 2;
+        result.push({
+          ...point,
+          lat: centerLat + DISPERSION_RADIUS * Math.sin(angle),
+          lon: centerLon + DISPERSION_RADIUS * Math.cos(angle),
+        });
+      });
+    }
+  }
+
+  return result;
 }
 
 function RouteMapFallback({
@@ -385,11 +447,14 @@ function buildMapHtml(
       align-items: center;
       cursor: pointer;
       user-select: none;
-      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+      margin-top: -46px;
+      margin-left: -18px;
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), z-index 0.2s ease;
+      z-index: 10;
     }
-    .custom-pin-container:hover {
-      transform: scale(1.15);
-      z-index: 50;
+    .custom-pin-container:hover, .custom-pin-container:active {
+      transform: scale(1.22);
+      z-index: 999 !important;
     }
     
     .pin-svg {
@@ -431,7 +496,14 @@ function buildMapHtml(
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      z-index: 50;
+      margin-top: -22px;
+      margin-left: -22px;
+      z-index: 100;
+      transition: transform 0.2s ease;
+    }
+    .vehicle-marker-wrapper:hover, .vehicle-marker-wrapper:active {
+      transform: scale(1.25);
+      z-index: 1000 !important;
     }
     .vehicle-marker-bubble {
       width: 40px;
