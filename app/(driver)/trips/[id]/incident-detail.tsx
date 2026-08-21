@@ -1569,8 +1569,8 @@ export default function DriverIncidentDetailScreen() {
               </Pressable>
             ) : null}
 
-            {/* CTA: Khi sự cố đã tiếp tục chuyến (CONTINUED) */}
-            {incident.status === 'CONTINUED' ? (
+            {/* CTA: Khi sự cố đã tiếp tục chuyến hoặc cứu hộ đã xong (CONTINUED, TRANSLOAD_COMPLETED, RESOLVED) */}
+            {(incident.status === 'CONTINUED' || incident.status === 'TRANSLOAD_COMPLETED' || incident.status === 'RESOLVED' || currentStep >= 5) && !canDriverSelfContinue ? (
               <View className="gap-2 w-full">
                 <Pressable
                   disabled
@@ -1579,7 +1579,7 @@ export default function DriverIncidentDetailScreen() {
                 >
                   <Ionicons name="checkmark-circle" size={18} color="#ffffff" />
                   <Text className="text-base font-bold text-white">
-                    ✓ Đã tiếp tục chuyến rồi
+                    ✓ Đã tiếp tục chuyến xe
                   </Text>
                 </Pressable>
                 <Pressable
@@ -1593,20 +1593,6 @@ export default function DriverIncidentDetailScreen() {
                   </Text>
                 </Pressable>
               </View>
-            ) : null}
-
-            {/* CTA: Bước 5 hoặc Khi sự cố cứu hộ đã sang hàng xong (RESOLVED, TRANSLOAD_COMPLETED) */}
-            {(incident.status === 'RESOLVED' || incident.status === 'TRANSLOAD_COMPLETED' || currentStep >= 5) && !canDriverSelfContinue && incident.status !== 'CONTINUED' ? (
-              <Pressable
-                onPress={handleOpenTripFromStep5}
-                style={{ backgroundColor: colors.brand.primary, minHeight: 48 }}
-                className="flex-row items-center justify-center gap-2 rounded-2xl shadow-sm px-4 active:opacity-80"
-              >
-                <Ionicons name="navigate" size={18} color="#ffffff" />
-                <Text className="text-base font-bold text-white">
-                  🚀 Tiếp tục chuyến xe & Giao hàng
-                </Text>
-              </Pressable>
             ) : null}
           </>
         )}
