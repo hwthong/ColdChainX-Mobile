@@ -47,7 +47,7 @@ export function GoongRouteMap({
   showRouteDataNotice = false,
   vehiclePosition,
 }: GoongRouteMapProps) {
-  const webViewRef = useRef<WebView>(null);
+  const webViewRef = React.useRef<WebView>(null);
   const [mapFailure, setMapFailure] = useState<MapBridgeMessage | null>(null);
   const [isMapReady, setIsMapReady] = useState(false);
   const points = useMemo(() => buildRoutePoints(route), [route]);
