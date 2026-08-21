@@ -7,6 +7,7 @@ import {
   Alert,
   Image,
   Linking,
+  Modal,
   ScrollView,
   Switch,
   Text,
@@ -24,7 +25,7 @@ import {
 } from '../../../../components/driver/PartialHandoverPanel';
 import { LocalQrCode } from '../../../../components/local-qr-code';
 import { TemperatureChart } from '../../../../components/customer/TemperatureChart';
-import { ApiClientError } from '../../../../services/apiClient';
+import { API_BASE_URL, ApiClientError } from '../../../../services/apiClient';
 import {
   ApplySealResponse,
   CutSealResponse,
@@ -57,6 +58,13 @@ import {
 } from '../../../../services/trackingApi';
 import { useAuthStore } from '../../../../store/useAuthStore';
 
+function getFullAssetUrl(url?: string | null): string | null {
+  if (!url) return null;
+  if (url.startsWith('http') || url.startsWith('file:') || url.startsWith('data:')) return url;
+  const assetBaseUrl = API_BASE_URL.replace(/\/api$/i, '');
+  return `${assetBaseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
+}
+
 type ScreenStep = 'ORDERS' | 'ORDER_ACTIONS' | 'SIGNATURE' | 'PAYMENT' | 'REJECT' | 'NO_SHOW' | 'PARTIAL_HANDOVER';
 
 type StopOrder = {
@@ -72,8 +80,16 @@ type StopOrder = {
   originAddress?: string | null;
   destAddress?: string | null;
   tempCondition?: string | number | null;
+  expectedWeightKg?: number | null;
+  actualWeightKg?: number | null;
+  packingType?: string | null;
+  cargoValue?: number | null;
+  expectedCbm?: number | null;
+  dimensions?: { length?: number | null; width?: number | null; height?: number | null } | null;
   originalQuantity: number;
   status: string;
+  imageUrl?: string | null;
+  documentUrls?: string[];
   lpns: TripRouteLpnDto[];
   epod: EpodResponse | null;
 };
@@ -127,6 +143,7 @@ export default function StopDetailScreen() {
   const [step, setStep] = useState<ScreenStep>('ORDERS');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [checkinProofAsset, setCheckinProofAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [signatureAsset, setSignatureAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [handoverPhotoAsset, setHandoverPhotoAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
@@ -289,6 +306,19 @@ export default function StopDetailScreen() {
         const routeOrder = routeOrderById.get(order.orderId);
         const matchingLpns = routeLpns.filter((lpn) => lpn.orderId === order.orderId);
         const firstLpnQuantity = matchingLpns[0]?.quantity;
+
+        // Trích xuất danh sách hình ảnh hàng hóa
+        const rawImages = (order.documents || [])
+          .map((d) => getFullAssetUrl(d.imageUrl))
+          .filter(Boolean) as string[];
+        if (order.documentUrl) {
+          const docUrl = getFullAssetUrl(order.documentUrl);
+          if (docUrl && !rawImages.includes(docUrl)) {
+            rawImages.unshift(docUrl);
+          }
+        }
+        const primaryImage = rawImages[0] || null;
+
         return {
           orderId: order.orderId,
           trackingCode: order.trackingCode || routeOrder?.trackingCode || order.orderId.slice(0, 8),
@@ -302,10 +332,22 @@ export default function StopDetailScreen() {
           originAddress: order.route?.originCity || null,
           destAddress: order.destination?.address || order.route?.destCity || null,
           tempCondition: order.tempCondition || routeOrder?.tempCondition,
+          expectedWeightKg: order.expectedWeightKg,
+          actualWeightKg: order.actualWeightKg,
+          packingType: order.packingType,
+          cargoValue: order.cargoValue,
+          expectedCbm: order.expectedCbm,
+          dimensions: (order.lengthCm || order.widthCm || order.heightCm) ? {
+            length: order.lengthCm,
+            width: order.widthCm,
+            height: order.heightCm,
+          } : null,
           originalQuantity: firstLpnQuantity && firstLpnQuantity > 0
             ? firstLpnQuantity
-            : order.quantity,
+            : (order.quantity || 1),
           status: order.status,
+          imageUrl: primaryImage,
+          documentUrls: rawImages,
           lpns: matchingLpns,
           epod: null,
         };
@@ -1054,6 +1096,7 @@ export default function StopDetailScreen() {
                     selected={false}
                     disabled={true}
                     onSelect={() => {}}
+                    onPreviewImage={(url) => setPreviewImageUrl(url)}
                   />
                 ))}
               </View>
@@ -1273,6 +1316,7 @@ export default function StopDetailScreen() {
                 selected={selectedOrderId === order.orderId}
                 disabled={isProcessing}
                 onSelect={() => startOrderActions(order)}
+                onPreviewImage={(url) => setPreviewImageUrl(url)}
               />
             ))}
 
@@ -1503,6 +1547,31 @@ export default function StopDetailScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* ── FULLSCREEN IMAGE PREVIEW MODAL ── */}
+      <Modal
+        visible={Boolean(previewImageUrl)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPreviewImageUrl(null)}
+      >
+        <View className="flex-1 bg-black/90 items-center justify-center p-4">
+          <Pressable
+            onPress={() => setPreviewImageUrl(null)}
+            style={{ top: Math.max(insets.top + 10, 40) }}
+            className="absolute right-5 z-50 rounded-full bg-white/20 p-2.5 active:bg-white/40"
+          >
+            <Ionicons name="close" size={24} color="#FFFFFF" />
+          </Pressable>
+          {previewImageUrl ? (
+            <Image
+              source={{ uri: previewImageUrl }}
+              className="h-4/5 w-full rounded-2xl"
+              resizeMode="contain"
+            />
+          ) : null}
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1630,11 +1699,13 @@ function OrderCard({
   selected,
   disabled,
   onSelect,
+  onPreviewImage,
 }: {
   order: StopOrder;
   selected: boolean;
   disabled: boolean;
   onSelect: () => void;
+  onPreviewImage?: (url: string) => void;
 }) {
   const confirmed = isHandoverConfirmed(order);
   const status = getOrderStatus(order.status);
@@ -1643,23 +1714,153 @@ function OrderCard({
     <Pressable
       disabled={disabled || confirmed}
       onPress={onSelect}
-      style={{ backgroundColor: colors.surface.card, borderColor: selected ? colors.brand.primary : colors.border.default }}
-      className={`mb-3 rounded-2xl border p-4 shadow-xs ${confirmed ? 'opacity-75' : ''}`}
+      style={{
+        backgroundColor: colors.surface.card,
+        borderColor: selected ? colors.brand.primary : colors.border.default,
+      }}
+      className={`mb-4 rounded-2xl border p-4 shadow-sm ${confirmed ? 'opacity-80' : ''}`}
     >
-      <View className="flex-row items-start justify-between gap-3">
+      {/* ── HÀNG 1: ẢNH ĐẠI DIỆN + MÃ ĐƠN + TÊN HÀNG + TRẠNG THÁI ── */}
+      <View className="flex-row items-start gap-3">
+        {order.imageUrl ? (
+          <Pressable
+            onPress={(e) => {
+              e.stopPropagation();
+              onPreviewImage?.(order.imageUrl!);
+            }}
+            className="h-16 w-16 overflow-hidden rounded-xl border border-slate-200 bg-slate-100 active:opacity-75"
+          >
+            <Image
+              source={{ uri: order.imageUrl }}
+              className="h-full w-full"
+              resizeMode="cover"
+            />
+            <View className="absolute bottom-0 right-0 rounded-tl bg-black/60 px-1 py-0.5">
+              <Ionicons name="expand-outline" size={10} color="#FFFFFF" />
+            </View>
+          </Pressable>
+        ) : (
+          <View
+            style={{ backgroundColor: colors.brand.primarySoft }}
+            className="h-16 w-16 items-center justify-center rounded-xl"
+          >
+            <Ionicons name="cube-outline" size={26} color={colors.brand.primary} />
+          </View>
+        )}
+
         <View className="flex-1">
-          <Text style={{ color: colors.brand.primary }} className="font-bold text-sm">#{order.trackingCode}</Text>
-          <Text style={{ color: colors.text.primary }} className="mt-1 text-sm font-bold">{order.itemName}</Text>
-          <Text style={{ color: colors.text.secondary }} className="mt-1 text-xs">
-            {order.lpns.length} LPN · {order.originalQuantity} kiện {order.tempCondition ? `· ${order.tempCondition}°C` : ''}
+          <View className="flex-row items-center justify-between gap-2">
+            <Text style={{ color: colors.brand.primary }} className="font-bold text-sm">
+              #{order.trackingCode}
+            </Text>
+            <View className={`rounded-lg px-2.5 py-1 ${status.background}`}>
+              <Text className={`text-[11px] font-bold ${status.text}`}>{status.label}</Text>
+            </View>
+          </View>
+
+          <Text style={{ color: colors.text.primary }} className="mt-1 text-sm font-bold leading-5" numberOfLines={2}>
+            {order.itemName}
           </Text>
-        </View>
-        <View className={`rounded-lg px-2.5 py-1.5 ${status.background}`}>
-          <Text className={`text-xs font-bold ${status.text}`}>{status.label}</Text>
+
+          {order.category ? (
+            <View className="mt-1 self-start rounded-md bg-slate-100 px-2 py-0.5">
+              <Text style={{ color: colors.text.secondary }} className="text-[10px] font-medium">
+                {order.category}
+              </Text>
+            </View>
+          ) : null}
         </View>
       </View>
 
-      {/* Thông tin Người nhận & Người gửi của từng Order */}
+      {/* ── HÀNG 2: THÔNG SỐ CHI TIẾT ĐƠN HÀNG (SỐ KIỆN, KHỐI LƯỢNG, ĐÓNG GÓI, NHIỆT ĐỘ) ── */}
+      <View style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default }} className="mt-3 rounded-xl border p-3">
+        <View className="flex-row flex-wrap gap-y-2">
+          {/* Số lượng kiện */}
+          <View className="w-1/2 flex-row items-center gap-1.5 pr-1">
+            <Ionicons name="cube" size={13} color={colors.brand.primary} />
+            <Text style={{ color: colors.text.secondary }} className="text-xs">
+              Số kiện: <Text style={{ color: colors.text.primary }} className="font-bold">{order.originalQuantity} kiện</Text>
+            </Text>
+          </View>
+
+          {/* Trọng lượng */}
+          <View className="w-1/2 flex-row items-center gap-1.5 pl-1">
+            <Ionicons name="scale-outline" size={13} color="#D97706" />
+            <Text style={{ color: colors.text.secondary }} className="text-xs">
+              Khối lượng: <Text style={{ color: colors.text.primary }} className="font-bold">{order.actualWeightKg || order.expectedWeightKg || '--'} kg</Text>
+            </Text>
+          </View>
+
+          {/* Đóng gói */}
+          <View className="w-1/2 flex-row items-center gap-1.5 pr-1">
+            <Ionicons name="archive-outline" size={13} color="#6366F1" />
+            <Text style={{ color: colors.text.secondary }} className="text-xs" numberOfLines={1}>
+              Gói: <Text style={{ color: colors.text.primary }} className="font-bold">{order.packingType || 'Thùng xốp'}</Text>
+            </Text>
+          </View>
+
+          {/* Nhiệt độ */}
+          <View className="w-1/2 flex-row items-center gap-1.5 pl-1">
+            <Ionicons name="thermometer-outline" size={13} color="#0284C7" />
+            <Text style={{ color: colors.text.secondary }} className="text-xs">
+              Nhiệt độ: <Text style={{ color: colors.text.primary }} className="font-bold">{order.tempCondition ? `${order.tempCondition}°C` : 'Chuẩn'}</Text>
+            </Text>
+          </View>
+        </View>
+
+        {/* Kích thước nếu có */}
+        {order.dimensions ? (
+          <View className="mt-2 flex-row items-center gap-1.5 border-t border-slate-200/60 pt-1.5">
+            <Ionicons name="resize-outline" size={13} color="#64748B" />
+            <Text style={{ color: colors.text.secondary }} className="text-xs">
+              Kích thước (D x R x C): <Text style={{ color: colors.text.primary }} className="font-semibold">{order.dimensions.length || '-'} x {order.dimensions.width || '-'} x {order.dimensions.height || '-'} cm</Text>
+            </Text>
+          </View>
+        ) : null}
+
+        {/* Danh sách mã LPN */}
+        {order.lpns && order.lpns.length > 0 ? (
+          <View className="mt-2 border-t border-slate-200/60 pt-2">
+            <Text style={{ color: colors.text.muted }} className="text-[11px] font-medium">
+              Mã LPN ({order.lpns.length}):
+            </Text>
+            <View className="mt-1 flex-row flex-wrap gap-1.5">
+              {order.lpns.map((lpn, idx) => (
+                <View key={lpn.lpnId || idx} className="rounded-md border border-slate-200 bg-white px-2 py-0.5">
+                  <Text style={{ color: colors.text.primary }} className="text-[11px] font-semibold">
+                    {lpn.lpnCode || `LPN #${idx + 1}`} {lpn.quantity ? `(${lpn.quantity} kiện)` : ''}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
+      </View>
+
+      {/* ── HÀNG 3: BỘ SƯU TẬP ẢNH HÀNG HÓA NẾU CÓ NHIỀU ẢNH ── */}
+      {order.documentUrls && order.documentUrls.length > 1 ? (
+        <View className="mt-3">
+          <Text style={{ color: colors.text.muted }} className="mb-1.5 text-[11px] font-medium">
+            Ảnh hàng hóa đính kèm ({order.documentUrls.length}):
+          </Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-2">
+            {order.documentUrls.map((imgUrl, imgIdx) => (
+              <Pressable
+                key={imgIdx}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  onPreviewImage?.(imgUrl);
+                }}
+                className="h-14 w-14 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 active:opacity-75"
+              >
+                <Image source={{ uri: imgUrl }} className="h-full w-full" resizeMode="cover" />
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+      ) : null}
+
+      {/* ── HÀNG 4: THÔNG TIN NGƯỜI NHẬN & NGƯỜI GỬI ── */}
       <View style={{ borderColor: colors.border.default }} className="mt-3 border-t pt-2.5 gap-2">
         {/* Người nhận */}
         <View className="flex-row items-center justify-between">
@@ -1677,7 +1878,7 @@ function OrderCard({
                 void Linking.openURL(`tel:${order.receiverPhone}`);
               }}
               style={{ backgroundColor: '#DCFCE7', borderColor: '#86EFAC' }}
-              className="flex-row items-center gap-1.5 rounded-xl border px-3 py-1.5"
+              className="flex-row items-center gap-1.5 rounded-xl border px-3 py-1.5 active:opacity-75"
             >
               <Ionicons name="call" size={13} color="#16A34A" />
               <Text style={{ color: '#16A34A' }} className="text-xs font-bold">
@@ -1704,7 +1905,7 @@ function OrderCard({
                   void Linking.openURL(`tel:${order.customerPhone}`);
                 }}
                 style={{ backgroundColor: '#DBEAFE', borderColor: '#BFDBFE' }}
-                className="flex-row items-center gap-1 rounded-lg border px-2 py-1"
+                className="flex-row items-center gap-1 rounded-lg border px-2 py-1 active:opacity-75"
               >
                 <Ionicons name="call" size={11} color="#2563EB" />
                 <Text style={{ color: '#2563EB' }} className="text-[11px] font-semibold">
