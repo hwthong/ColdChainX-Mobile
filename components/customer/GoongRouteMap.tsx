@@ -61,6 +61,25 @@ export function GoongRouteMap({
     () => decodePolyline(route.overviewPolyline),
     [route.overviewPolyline]
   );
+  const bootstrapVehicleRef = React.useRef<{
+    tripId: string;
+    position: GoongRouteMapProps['vehiclePosition'];
+  }>({ tripId: route.tripId, position: null });
+
+  if (bootstrapVehicleRef.current.tripId !== route.tripId) {
+    bootstrapVehicleRef.current = { tripId: route.tripId, position: null };
+  }
+  if (
+    points.length === 0 &&
+    !bootstrapVehicleRef.current.position &&
+    vehiclePosition &&
+    isValidMapCoordinate(vehiclePosition.latitude, vehiclePosition.longitude)
+  ) {
+    bootstrapVehicleRef.current.position = {
+      latitude: vehiclePosition.latitude,
+      longitude: vehiclePosition.longitude,
+    };
+  }
 
   const hasAnyLocation =
     points.length > 0 ||
@@ -71,8 +90,14 @@ export function GoongRouteMap({
 
   const mapHtml = useMemo(() => {
     if (!GOONG_MAPTILES_KEY || !hasAnyLocation) return '';
-    return buildMapHtml(GOONG_MAPTILES_KEY, points, routeCoordinates, vehiclePosition);
-  }, [hasAnyLocation, points, routeCoordinates, vehiclePosition]);
+    return buildMapHtml(
+      GOONG_MAPTILES_KEY,
+      points,
+      routeCoordinates,
+      points.length === 0 ? bootstrapVehicleRef.current.position : null
+    );
+  }, [hasAnyLocation, points, routeCoordinates]);
+  const webViewSource = useMemo(() => ({ html: mapHtml }), [mapHtml]);
 
   // Update vehicle marker smoothly via JS injection
   useEffect(() => {
@@ -164,7 +189,7 @@ export function GoongRouteMap({
         ref={webViewRef}
         key={`map-${isFullScreen ? 'full' : 'inline'}-${route.tripId}`}
         originWhitelist={['about:blank', 'https://*']}
-        source={{ html: mapHtml }}
+        source={webViewSource}
         javaScriptEnabled
         domStorageEnabled
         mixedContentMode="never"
