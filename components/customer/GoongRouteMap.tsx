@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
@@ -42,11 +42,12 @@ const GOONG_MAPTILES_KEY = process.env.EXPO_PUBLIC_GOONG_MAPTILES_KEY?.trim() ||
 
 export function GoongRouteMap({
   route,
-  height = 300,
+  height = 280,
   isFullScreen = false,
-  showRouteDataNotice = true,
-  vehiclePosition = null,
+  showRouteDataNotice = false,
+  vehiclePosition,
 }: GoongRouteMapProps) {
+  const webViewRef = useRef<WebView>(null);
   const [mapFailure, setMapFailure] = useState<MapBridgeMessage | null>(null);
   const [isMapReady, setIsMapReady] = useState(false);
   const points = useMemo(() => buildRoutePoints(route), [route]);
@@ -60,12 +61,25 @@ export function GoongRouteMap({
   const mapHtml = useMemo(() => {
     if (!GOONG_MAPTILES_KEY || !hasAnyLocation) return '';
     return buildMapHtml(GOONG_MAPTILES_KEY, points, routeCoordinates, vehiclePosition);
-  }, [hasAnyLocation, points, routeCoordinates, vehiclePosition]);
+  }, [hasAnyLocation, points, routeCoordinates]);
+
+  // Cập nhật vị trí xe trực tiếp mượt mà qua JS injection, KHÔNG reload/remount WebView để tránh giật/nhảy bản đồ
+  useEffect(() => {
+    if (isMapReady && vehiclePosition && webViewRef.current) {
+      const lat = vehiclePosition.latitude;
+      const lon = vehiclePosition.longitude;
+      if (typeof lat === 'number' && typeof lon === 'number' && !isNaN(lat) && !isNaN(lon)) {
+        webViewRef.current.injectJavaScript(
+          `if (typeof window.updateVehicleMarker === 'function') { window.updateVehicleMarker(${lat}, ${lon}); } true;`
+        );
+      }
+    }
+  }, [vehiclePosition, isMapReady]);
 
   useEffect(() => {
     setMapFailure(null);
     setIsMapReady(false);
-  }, [route.tripId, route.overviewPolyline, vehiclePosition?.latitude, vehiclePosition?.longitude]);
+  }, [route.tripId, route.overviewPolyline]);
 
   if (!hasAnyLocation) {
     return <RouteMapFallback message="Đang cập nhật tọa độ tuyến đường..." points={points} vehiclePosition={vehiclePosition} />;
@@ -81,7 +95,8 @@ export function GoongRouteMap({
       className={`overflow-hidden rounded-2xl border border-[#DAC2B6]/60 bg-[#F8F9FA] ${isFullScreen ? 'flex-1' : ''}`}
     >
       <WebView
-        key={`map-${isFullScreen ? 'full' : 'inline'}-${route.tripId}-${route.overviewPolyline ?? 'route'}-${vehiclePosition?.latitude ?? 'no-lat'}-${vehiclePosition?.longitude ?? 'no-lon'}`}
+        ref={webViewRef}
+        key={`map-${isFullScreen ? 'full' : 'inline'}-${route.tripId}`}
         originWhitelist={['about:blank', 'https://*']}
         source={{ html: mapHtml }}
         javaScriptEnabled
@@ -748,25 +763,37 @@ function buildMapHtml(
             bounds.extend([point.lon, point.lat]);
           });
 
+          let vehicleMarker = null;
+          window.updateVehicleMarker = function(lat, lon) {
+            const numLat = parseFloat(lat);
+            const numLon = parseFloat(lon);
+            if (isNaN(numLat) || isNaN(numLon) || numLat < -90 || numLat > 90 || numLon < -180 || numLon > 180) return;
+            if (vehicleMarker) {
+              vehicleMarker.setLngLat([numLon, numLat]);
+            } else if (map) {
+              const vehicleEl = document.createElement('div');
+              vehicleEl.className = 'vehicle-marker';
+              vehicleEl.textContent = '🚚';
+
+              vehicleMarker = new goongjs.Marker(vehicleEl)
+                .setLngLat([numLon, numLat])
+                .setPopup(new goongjs.Popup({ offset: [0, -18], closeButton: true, maxWidth: '260px' }).setHTML(
+                  '<div class="custom-popup-card">' +
+                    '<div class="popup-badge-row"><span class="popup-badge" style="background:#DBEAFE; color:#1D4ED8;">🚚 Đang vận chuyển</span></div>' +
+                    '<div class="popup-title">Vị trí xe hiện tại</div>' +
+                    '<div class="popup-address">Tọa độ: ' + numLat.toFixed(5) + ', ' + numLon.toFixed(5) + '</div>' +
+                  '</div>'
+                ))
+                .addTo(map);
+            }
+          };
+
           const vPos = payload.vehiclePosition;
           if (vPos) {
             const vLat = typeof vPos.latitude === 'number' ? vPos.latitude : parseFloat(vPos.latitude || vPos.lat);
             const vLon = typeof vPos.longitude === 'number' ? vPos.longitude : parseFloat(vPos.longitude || vPos.lon || vPos.lng);
             if (!isNaN(vLat) && !isNaN(vLon) && vLat >= -90 && vLat <= 90 && vLon >= -180 && vLon <= 180) {
-              const vehicleEl = document.createElement('div');
-              vehicleEl.className = 'vehicle-marker';
-              vehicleEl.textContent = '🚚';
-
-              new goongjs.Marker(vehicleEl)
-                .setLngLat([vLon, vLat])
-                .setPopup(new goongjs.Popup({ offset: [0, -18], closeButton: true, maxWidth: '260px' }).setHTML(
-                  '<div class="custom-popup-card">' +
-                    '<div class="popup-badge-row"><span class="popup-badge" style="background:#DBEAFE; color:#1D4ED8;">🚚 Đang vận chuyển</span></div>' +
-                    '<div class="popup-title">Vị trí xe hiện tại</div>' +
-                    '<div class="popup-address">Tọa độ: ' + vLat.toFixed(5) + ', ' + vLon.toFixed(5) + '</div>' +
-                  '</div>'
-                ))
-                .addTo(map);
+              window.updateVehicleMarker(vLat, vLon);
               bounds.extend([vLon, vLat]);
             }
           }
