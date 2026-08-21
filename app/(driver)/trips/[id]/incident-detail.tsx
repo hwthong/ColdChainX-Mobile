@@ -1322,6 +1322,19 @@ export default function DriverIncidentDetailScreen() {
             <Ionicons name="information-circle-outline" size={20} color={colors.brand.primary} />
             <Text style={{ color: colors.text.primary }} className="text-base font-bold">Chi tiết sự cố ban đầu</Text>
           </View>
+          <InfoRow
+            label="Mã chuyến đi"
+            value={
+              incident.tripCode
+                ? `#${incident.tripCode.replace(/^#/, '')}`
+                : incident.tripId
+                  ? `${incident.tripId.slice(0, 8)}...`
+                  : typeof params.id === 'string'
+                    ? `#${params.id.slice(0, 8).toUpperCase()}`
+                    : '--'
+            }
+            highlight
+          />
           <InfoRow label="Loại sự cố" value={INCIDENT_TYPE_LABEL[incident.incidentType] || incident.incidentType} />
           <InfoRow label="Mức độ" value={SEVERITY_LABEL[incident.severity] || incident.severity} />
           <InfoRow label="Mô tả" value={incident.description} />
@@ -1342,6 +1355,15 @@ export default function DriverIncidentDetailScreen() {
               value={`${brokenVehicle.maxWeight.toLocaleString('vi-VN')} kg`}
             />
           ) : null}
+          <InfoRow
+            label="Số tiền đã ứng"
+            value={
+              (incident.driverPaidAmount ?? 0) > 0
+                ? `${incident.driverPaidAmount?.toLocaleString('vi-VN')} VNĐ`
+                : '0 VNĐ (Không có tạm ứng)'
+            }
+            highlight={(incident.driverPaidAmount ?? 0) > 0}
+          />
           <InfoRow
             label="Tọa độ GPS"
             value={
