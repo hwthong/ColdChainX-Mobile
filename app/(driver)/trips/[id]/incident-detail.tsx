@@ -23,6 +23,7 @@ import {
 import { StatusBadge } from '../../../../components/StatusBadge';
 import { colors } from '../../../../constants/colors';
 import { ApiClientError, getApiErrorMessage } from '../../../../services/apiClient';
+import { driverApi } from '../../../../services/driverApi';
 import {
   assessIncidentRisk,
   confirmTransload,
@@ -181,18 +182,48 @@ export default function DriverIncidentDetailScreen() {
         });
       }
 
-      // Tải danh sách đơn hàng & LPN của chuyến xe
-      const targetTripId = incData.tripId || currentTripId;
+      // Tải thông tin chuyến xe để lấy thông tin xe ban đầu & danh sách đơn hàng & LPN
+      const targetTripId = incData.tripId || (currentTripId !== 'active' ? currentTripId : null);
       if (targetTripId) {
         void Promise.all([
+          driverApi.getMyTripDetail(targetTripId).catch(() => null),
           getPlannedTripRoute(token, targetTripId).catch(() => null),
           getTrackingByTripId(token, targetTripId).catch(() => null),
-        ]).then(async ([routeRes, trackingRes]) => {
+        ]).then(async ([tripRes, routeRes, trackingRes]) => {
+          // Trích xuất thông tin xe ban đầu từ chuyến xe nếu chưa có
+          if (tripRes?.vehicle) {
+            const v = tripRes.vehicle;
+            setBrokenVehicle((prev) => prev || ({
+              vehicleId: v.vehicleId,
+              truckPlate: v.truckPlate,
+              brand: v.vehicleType || '',
+              maxWeight: v.maxWeight,
+              maxCbm: v.maxCbm,
+            } as any));
+
+            if (v.vehicleId && !incData.brokenVehicleId) {
+              void getVehicleDetail(token, v.vehicleId).then((vRes) => {
+                if (vRes.success && vRes.data) setBrokenVehicle(vRes.data);
+              });
+            }
+          } else {
+            void driverApi.getMyTrips().then((trips) => {
+              const matched = trips?.find((t) => t.tripId === targetTripId);
+              if (matched?.vehiclePlate) {
+                setBrokenVehicle((prev) => prev || ({
+                  vehicleId: '',
+                  truckPlate: matched.vehiclePlate!,
+                  brand: '',
+                } as any));
+              }
+            }).catch(() => null);
+          }
+
           const rawOrders = [
-            ...(routeRes?.data?.optimizedStops?.flatMap((s) => s.orders) ?? []),
+            ...(routeRes?.data?.optimizedStops?.flatMap((s: any) => s.orders ?? []) ?? []),
             ...(trackingRes?.data?.orders ?? []),
           ];
-          const rawLpns = routeRes?.data?.optimizedStops?.flatMap((s) => s.lpns) ?? [];
+          const rawLpns = routeRes?.data?.optimizedStops?.flatMap((s: any) => s.lpns ?? []) ?? [];
           setTripLpns(rawLpns);
 
           const uniqueOrderIds = Array.from(
@@ -1205,13 +1236,13 @@ export default function DriverIncidentDetailScreen() {
             ) : null}
 
             <View style={{ backgroundColor: colors.surface.page, borderColor: colors.border.default }} className="gap-2.5 rounded-2xl border p-4">
-              {incident.brokenVehicleId ? (
+              {brokenVehicle?.truckPlate || incident.brokenVehicleId ? (
                 <InfoRow
                   label="Xe cũ gặp sự cố"
                   value={
-                    brokenVehicle
+                    brokenVehicle?.truckPlate
                       ? `${brokenVehicle.truckPlate}${brokenVehicle.brand ? ` (${brokenVehicle.brand})` : ''}`
-                      : incident.brokenVehicleId
+                      : incident.brokenVehicleId || '--'
                   }
                 />
               ) : null}
@@ -1299,10 +1330,11 @@ export default function DriverIncidentDetailScreen() {
           <InfoRow
             label="Xe gặp sự cố"
             value={
-              brokenVehicle
-                ? `${brokenVehicle.truckPlate}${brokenVehicle.brand ? ` (${brokenVehicle.brand})` : ''}`
+              brokenVehicle?.truckPlate || (brokenVehicle as any)?.vehiclePlate
+                ? `${brokenVehicle?.truckPlate || (brokenVehicle as any)?.vehiclePlate}${brokenVehicle?.brand ? ` (${brokenVehicle.brand})` : ''}`
                 : incident.brokenVehicleId || '--'
             }
+            highlight
           />
           {brokenVehicle?.maxWeight ? (
             <InfoRow
